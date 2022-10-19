@@ -186,11 +186,8 @@ class BaseModel(nn.Module):
                 # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
                 output, loss, loss_detail = self.train_step(train_X, train_y)
                 
-                if self.use_amp:  # 混合精度
-                    scale_before_step = self.scaler.get_scale()
-                    self.scaler.scale(loss).backward()
-                else:
-                    loss.backward()
+                # 主要是方便bert4torch中的对抗训练
+                scale_before_step, loss, loss_detail = self.after_train_step(train_X, train_y, output, loss, loss_detail)
                 
                 # 参数更新, 真实的参数更新次数要除以grad_accumulation_steps，注意调整总的训练步数
                 if (self.global_step+1) % self.grad_accumulation_steps == 0:
@@ -257,6 +254,15 @@ class BaseModel(nn.Module):
             return output[return_all]
         else:
             raise ValueError('Return format error')
+    
+    def after_train_step(self, train_X, train_y, output, loss, loss_detail):
+        scale_before_step = 0
+        if self.use_amp:  # 混合精度
+            scale_before_step = self.scaler.get_scale()
+            self.scaler.scale(loss).backward()
+        else:
+            loss.backward()
+        return scale_before_step, loss, loss_detail
 
 class BaseModelDP(BaseModel, nn.DataParallel):
     '''DataParallel模式使用多gpu的方法
