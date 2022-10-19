@@ -1,3 +1,4 @@
 ./examples/MNIST
 .vscode
 *.pyc
+__pycache__
