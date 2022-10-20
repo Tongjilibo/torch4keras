@@ -1,0 +1,8 @@
+examples/MNIST/
+.vscode
+*.pyc
+*.txt
+__pycache__
+torch4keras.egg-info/
+build/
+dist/
