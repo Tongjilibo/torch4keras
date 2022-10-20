@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-from torch4keras import BaseModel, Callback, seed_everything
+from torch4keras import BaseModel, Callback, seed_everything, Checkpoint, Evaluator
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 
@@ -34,28 +34,17 @@ class Model(BaseModel):
 model = Model().to(device)
 model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
-class Evaluator(Callback):
-    """评估与保存
-    """
-    def __init__(self):
-        self.best_acc = 0.
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
-        acc = self.evaluate(test_dataloader)
-
-        if acc > self.best_acc:
-            self.best_test_acc = acc
-            # model.save_weights('best_model.pt')
-        print(f'test_acc: {acc:.5f}, best_test_acc: {self.best_test_acc:.5f}\n')
-
-    # 定义评价函数
-    def evaluate(self, data):
+class MyEvaluator(Evaluator):
+    # 重构评价函数
+    def evaluate(self):
         total, hit = 1e-5, 0
-        for X, y in tqdm(data, desc='Evaluate'):
-            pred_y = model(X).argmax(dim=-1)
+        for X, y in tqdm(test_dataloader, desc='Evaluate'):
+            pred_y = self.model(X).argmax(dim=-1)
             hit += pred_y.eq(y).sum().item()
             total += y.shape[0]
-        return hit/total
+        return {'test_acc': hit/total}
 
 if __name__ == '__main__':
-    model.fit(train_dataloader, steps_per_epoch=None, epochs=5, callbacks=Evaluator())
+    evaluator = MyEvaluator(model, monitor='test_acc', save_ckpt=False)
+    model.fit(train_dataloader, steps_per_epoch=None, epochs=5, callbacks=[evaluator, Checkpoint(model)])

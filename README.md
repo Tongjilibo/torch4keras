@@ -28,3 +28,8 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - 简单示例[turorials_mnist](https://github.com/Tongjilibo/torch4kerass/blob/master/examples/turorials_mnist.py)
 
 ## 4. 版本说明
+- **v0.0.1**：20221019 初始版本
+
+## 5. 更新：
+- **20221020**：增加Checkpoint, Evaluator等自带Callback
+- **20221019**：初版提交

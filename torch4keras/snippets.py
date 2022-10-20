@@ -286,7 +286,7 @@ class EarlyStopping(Callback):
         self.wait = 0
         self.stopped_epoch = 0
 
-        if mode not in ['auto', 'min', 'max']:
+        if mode not in {'auto', 'min', 'max'}:
             warnings.warn('EarlyStopping mode %s is unknown, fallback to auto mode.' % mode, RuntimeWarning)
             mode = 'auto'
 
@@ -331,6 +331,66 @@ class EarlyStopping(Callback):
                 'which is not available. Available metrics are: %s' %
                 (self.monitor, ','.join(list(logs.keys()))), RuntimeWarning)
         return monitor_value
+
+
+class Checkpoint(Callback):
+    '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
+    '''
+    def __init__(self, model, optimizer=None, save_dir='./', method='epoch', step_interval=100):
+        super().__init__()
+        assert method in {'step', 'epoch'}, 'Save checkpints only support step or epoch method'
+        self.model = model
+        self.optimizer = optimizer
+        self.save_dir = save_dir
+        self.method = method
+        self.step_interval = step_interval
+    
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if self.method == 'epoch':
+            self.process(epoch+1, logs)
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        if (self.method == 'step') and ((global_step+1) % self.step_interval == 0):
+            self.process(global_step+1, logs)
+
+    def process(self, suffix, logs):
+        torch.save(self.model.state_dict(), os.path.join(self.save_dir, f'model{suffix}.pt'))
+        if self.optimizer is not None:
+            torch.save(self.optimizer.state_dict(), os.path.join(self.save_dir, f'optimizer{suffix}.pt'))
+
+
+class Evaluator(Checkpoint):
+    '''评估并保存Checkpoint, 可以只评估
+    '''
+    def __init__(self, model, optimizer=None, save_dir='./', method='epoch', step_interval=100, monitor='perf', mode='max', save_ckpt=True):
+        super().__init__(model, optimizer, save_dir, method, step_interval)
+        self.monitor = monitor
+        assert mode in {'max', 'min'}, 'Compare performance only support max/min mode'
+        self.mode = mode
+        self.best_perf = np.inf if mode == 'min' else -np.inf
+        self.save_ckpt = save_ckpt
+
+    def process(self, suffix, logs):
+        perf = self.evaluate()
+        perf = perf if isinstance(perf, dict) else {'perf': perf}
+        logs.update(perf)
+        
+        # 满足条件
+        if ((self.mode == 'max') and (perf[self.monitor] > self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] < self.best_perf)):
+            self.best_perf = perf[self.monitor]
+            # 保存ckpt
+            if self.save_ckpt:
+                torch.save(self.model.state_dict(), os.path.join(self.save_dir, f'best_model.pt'))
+                if self.optimizer is not None:
+                    torch.save(self.optimizer.state_dict(), os.path.join(self.save_dir, f'best_optimizer.pt'))
+        print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
+        print(print_str + f'. bert_{self.monitor}: {self.best_perf:.5f}\n')
+        
+    # 定义评价函数
+    def evaluate(self):
+        # 需要返回一个字典，且self.monitor在字典key中
+        # 如果返回的是一个数值型，则默认使用'perf'作为指标名
+        raise NotImplemented
 
 
 class Logger(Callback):
