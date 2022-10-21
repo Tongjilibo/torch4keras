@@ -1,5 +1,5 @@
 # torch4keras
-**use torch like keras**
+**Use torch like keras**
 
 [![licence](https://img.shields.io/github/license/Tongjilibo/torch4keras.svg?maxAge=3600)](https://github.com/Tongjilibo/torch4keras/blob/master/LICENSE) 
 [![GitHub release](https://img.shields.io/github/release/Tongjilibo/torch4keras.svg?maxAge=3600)](https://github.com/Tongjilibo/torch4keras/releases) 
@@ -20,8 +20,9 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 ```
 
 ## 2. 功能
-- 抽象出来的Trainer，适用于一般神经网络的训练
-- 前期功能是作为[bert4torch](https://github.com/Tongjilibo/bert4torch)和[rec4torch](https://github.com/Tongjilibo/rec4torch)的Trainer
+- 简述：抽象出来的Trainer，适用于一般神经网络的训练
+- 特色：进度条展示训练过程，自定义metric，自带Evaluator, Checkpoint, Tensorboard, Logger等Callback，也可自定义Callback
+- 初衷：前期功能是作为[bert4torch](https://github.com/Tongjilibo/bert4torch)和[rec4torch](https://github.com/Tongjilibo/rec4torch)的Trainer
 
 ## 3. 快速上手
 - 参考[bert4torch](https://github.com/Tongjilibo/bert4torch)的训练过程
@@ -31,5 +32,5 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20221020**：增加Checkpoint, Evaluator等自带Callback
+- **20221020**：增加Checkpoint, Evaluator等自带Callback, 修改BaseModel为Model，支持Model(net)方式
 - **20221019**：初版提交

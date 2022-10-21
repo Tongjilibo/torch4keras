@@ -4,15 +4,19 @@ from torch4keras.snippets import metric_mapping, ProgbarLogger, EarlyStopping
 from collections import OrderedDict
 from inspect import isfunction
 
-class BaseModel(nn.Module):
-    """Trainer
+
+class Model(nn.Module):
+    """Trainer, 支持继承、传入Module实例两种方式
     """
-    def __init__(self):
-        super(BaseModel, self).__init__()
+    def __init__(self, module=None):
+        super(Model, self).__init__()
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.callbacks = []
+        # 传入Module实例方式
+        if module is not None:
+            self.module = module
     
     def save_steps_params(self, save_path):
         '''保存训练过程参数
@@ -28,6 +32,14 @@ class BaseModel(nn.Module):
         self.resume_step = step_params['resume_step'] 
         self.resume_epoch = step_params['resume_epoch']
         return step_params
+
+    def forward(self, *inputs, **kwargs):
+        # 如果传入了网络结构module，则调用module的forward
+        if hasattr(self, 'module'):
+            return self.module.forward(*inputs, **kwargs)
+        # 如果是继承方式，则调用自身的forward
+        else:
+            return self.forward(*inputs, **kwargs)
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, grad_accumulation_steps=1):
         '''定义loss, optimizer, metrics, 是否在计算loss前reshape
@@ -72,27 +84,28 @@ class BaseModel(nn.Module):
         # 梯度累积
         self.grad_accumulation_steps = grad_accumulation_steps
 
+    def args_segmentate(self, train_X):
+        '''参数是否展开
+        '''
+        if isinstance(train_X, torch.Tensor):  # tensor不展开
+            pass
+        elif isinstance(self, (ModelDP, ModelDDP)) or hasattr(self, 'module'):
+            if self.module.forward.__code__.co_argcount >= 3:
+                return True
+        elif self.forward.__code__.co_argcount >= 3:
+            return True
+        return False
+
     def train_step(self, train_X, train_y):
         '''forward并返回loss
         '''
-        def args_segmentate(train_X):
-            '''参数是否展开
-            '''
-            if isinstance(train_X, torch.Tensor):  # tensor不展开
-                pass
-            elif isinstance(self, (BaseModelDP, BaseModelDDP)):
-                if self.module.forward.__code__.co_argcount >= 3:
-                    return True
-            elif self.forward.__code__.co_argcount >= 3:
-                return True
-            return False
 
         if self.use_amp:
             with self.autocast():
-                output = self.forward(*train_X) if args_segmentate(train_X) else self.forward(train_X)
+                output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
                 loss_detail = self.criterion(output, train_y)
         else:
-            output = self.forward(*train_X) if args_segmentate(train_X) else self.forward(train_X)
+            output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
             loss_detail = self.criterion(output, train_y)
 
         if isinstance(loss_detail, torch.Tensor):
@@ -115,7 +128,7 @@ class BaseModel(nn.Module):
         '''统一调用callback, 方便一些判断条件的触发
         '''
         # 如果是分布式DDP训练，则仅masker_rank可以callback
-        if isinstance(self, BaseModelDDP) and self.master_rank!=torch.distributed.get_rank():
+        if isinstance(self, ModelDDP) and self.master_rank!=torch.distributed.get_rank():
             return
 
         if mode == 'train_begin':
@@ -242,12 +255,9 @@ class BaseModel(nn.Module):
         self.callback_fun('train_end', logs)
 
     @torch.no_grad()
-    def predict(self, input_tensor_list, return_all=None):
+    def predict(self, train_X, return_all=None):
         self.eval()
-        if self.forward.__code__.co_argcount >= 3:
-            output = self.forward(*input_tensor_list)
-        else:
-            output = self.forward(input_tensor_list)
+        output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
         if return_all is None:
             return output
         elif isinstance(output, (tuple, list)) and isinstance(return_all, int) and return_all < len(output):
@@ -264,14 +274,15 @@ class BaseModel(nn.Module):
             loss.backward()
         return scale_before_step, loss, loss_detail
 
-class BaseModelDP(BaseModel, nn.DataParallel):
+
+class ModelDP(Model, nn.DataParallel):
     '''DataParallel模式使用多gpu的方法
     '''
     def __init__(self, *args, **kwargs):
         nn.DataParallel.__init__(self, *args, **kwargs)
 
 
-class BaseModelDDP(BaseModel, nn.parallel.DistributedDataParallel):
+class ModelDDP(Model, nn.parallel.DistributedDataParallel):
     '''DistributedDataParallel模式使用多gpu的方法
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
