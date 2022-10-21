@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-from torch4keras.model import Model
+from torch4keras.model import BaseModel
 from torch4keras.snippets import seed_everything, Checkpoint, Evaluator
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
@@ -43,7 +43,7 @@ net = torch.nn.Sequential(
             nn.Flatten(),
             nn.Linear(7744, 10)
         )
-model = Model(net).to(device)
+model = BaseModel(net).to(device)
 
 model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
 

@@ -5,11 +5,11 @@ from collections import OrderedDict
 from inspect import isfunction
 
 
-class Model(nn.Module):
+class BaseModel(nn.Module):
     """Trainer, 支持继承、传入Module实例两种方式
     """
     def __init__(self, module=None):
-        super(Model, self).__init__()
+        super(BaseModel, self).__init__()
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
@@ -89,7 +89,7 @@ class Model(nn.Module):
         '''
         if isinstance(train_X, torch.Tensor):  # tensor不展开
             pass
-        elif isinstance(self, (ModelDP, ModelDDP)) or hasattr(self, 'module'):
+        elif isinstance(self, (BaseModelDP, BaseModelDDP)) or hasattr(self, 'module'):
             if self.module.forward.__code__.co_argcount >= 3:
                 return True
         elif self.forward.__code__.co_argcount >= 3:
@@ -128,7 +128,7 @@ class Model(nn.Module):
         '''统一调用callback, 方便一些判断条件的触发
         '''
         # 如果是分布式DDP训练，则仅masker_rank可以callback
-        if isinstance(self, ModelDDP) and self.master_rank!=torch.distributed.get_rank():
+        if isinstance(self, BaseModelDDP) and self.master_rank!=torch.distributed.get_rank():
             return
 
         if mode == 'train_begin':
@@ -275,14 +275,14 @@ class Model(nn.Module):
         return scale_before_step, loss, loss_detail
 
 
-class ModelDP(Model, nn.DataParallel):
+class BaseModelDP(BaseModel, nn.DataParallel):
     '''DataParallel模式使用多gpu的方法
     '''
     def __init__(self, *args, **kwargs):
         nn.DataParallel.__init__(self, *args, **kwargs)
 
 
-class ModelDDP(Model, nn.parallel.DistributedDataParallel):
+class BaseModelDDP(BaseModel, nn.parallel.DistributedDataParallel):
     '''DistributedDataParallel模式使用多gpu的方法
     '''
     def __init__(self, *args, master_rank=0, **kwargs):

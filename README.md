@@ -32,5 +32,5 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20221020**：增加Checkpoint, Evaluator等自带Callback, 修改BaseModel为Model，支持Model(net)方式
+- **20221020**：增加Checkpoint, Evaluator等自带Callback, 修改BaseModel(net)方式
 - **20221019**：初版提交
