@@ -89,7 +89,7 @@ class BaseModel(nn.Module):
         '''
         if isinstance(train_X, torch.Tensor):  # tensor不展开
             pass
-        elif isinstance(self, (BaseModelDP, BaseModelDDP)) or hasattr(self, 'module'):
+        elif hasattr(self, 'module'):
             if self.module.forward.__code__.co_argcount >= 3:
                 return True
         elif self.forward.__code__.co_argcount >= 3:
@@ -128,7 +128,7 @@ class BaseModel(nn.Module):
         '''统一调用callback, 方便一些判断条件的触发
         '''
         # 如果是分布式DDP训练，则仅masker_rank可以callback
-        if isinstance(self, BaseModelDDP) and self.master_rank!=torch.distributed.get_rank():
+        if hasattr(self, 'master_rank') and self.master_rank!=torch.distributed.get_rank():
             return
 
         if mode == 'train_begin':
@@ -275,16 +275,18 @@ class BaseModel(nn.Module):
         return scale_before_step, loss, loss_detail
 
 
-class BaseModelDP(BaseModel, nn.DataParallel):
-    '''DataParallel模式使用多gpu的方法
+class BaseModelDP(nn.DataParallel, BaseModel):
+    '''DataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
     '''
     def __init__(self, *args, **kwargs):
+        BaseModel.__init__(self)
         nn.DataParallel.__init__(self, *args, **kwargs)
 
 
-class BaseModelDDP(BaseModel, nn.parallel.DistributedDataParallel):
-    '''DistributedDataParallel模式使用多gpu的方法
+class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
+    '''DistributedDataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
         self.master_rank = master_rank  # 用于记录打印条的rank
+        BaseModel.__init__(self)
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
