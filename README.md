@@ -57,7 +57,7 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 
 ## 3. 快速上手
 - 参考[bert4torch](https://github.com/Tongjilibo/bert4torch)的训练过程
-- 简单示例[turorials_mnist](https://github.com/Tongjilibo/torch4kerass/blob/master/examples/turorials_mnist.py)
+- 简单示例: [turorials_mnist](https://github.com/Tongjilibo/torch4keras/blob/master/examples/turorials_mnist.py)
 
 ## 4. 版本说明
 - **v0.0.2**：20221023 增加Checkpoint, Evaluator等自带Callback, 修改BaseModel(net)方式，修复DP和DDP的__init__()
