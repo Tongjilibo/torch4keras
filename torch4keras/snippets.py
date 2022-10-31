@@ -447,13 +447,13 @@ class Tensorboard(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         for k, v in logs.items():
             index = k if '/' in k else f"{self.prefix}/{k}"
-            self.writer.add_scalar(index, v, global_step)
+            self.writer.add_scalar(index, v, global_step+1)
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if (global_step+1) % self.interval == 0:
             for k, v in logs.items():
                 index = k if '/' in k else f"{self.prefix}/{k}"
-                self.writer.add_scalar(index, v, global_step)
+                self.writer.add_scalar(index, v, global_step+1)
 
 
 def metric_mapping(metric, func, y_pred, y_true):
