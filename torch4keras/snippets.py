@@ -436,23 +436,27 @@ class Tensorboard(Callback):
     赋值需要分栏目的用'/'进行分隔
     若每隔一定steps对验证集评估，则Tensorboard的interval设置成和Evaluater一致或者约数，保证Tensorboard能记录到
     '''
-    def __init__(self, dirname, interval=10, prefix='train'):
+    def __init__(self, dirname, interval=10, prefix='', on_epoch_end_scalar_epoch=True):
         super(Tensorboard, self).__init__()
         self.interval = interval
-        self.prefix = prefix
+        self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
+        self.on_epoch_end_scalar_epoch = on_epoch_end_scalar_epoch  # 控制on_epoch_end记录的是epoch还是global_step
 
         from tensorboardX import SummaryWriter
         self.writer = SummaryWriter(log_dir=str(dirname))  # prepare summary writer
 
     def on_epoch_end(self, global_step, epoch, logs=None):
+        # 默认记录的是epoch
         for k, v in logs.items():
-            index = k if '/' in k else f"{self.prefix}/{k}"
-            self.writer.add_scalar(index, v, global_step+1)
+            index = k if '/' in k else f"{self.prefix}{k}"
+            log_step = epoch+1 if self.on_epoch_end_scalar_epoch else global_step+1
+            self.writer.add_scalar(index, v, log_step)
 
     def on_batch_end(self, global_step, local_step, logs=None):
+        # 默认记录的是global_step
         if (global_step+1) % self.interval == 0:
             for k, v in logs.items():
-                index = k if '/' in k else f"{self.prefix}/{k}"
+                index = k if '/' in k else f"{self.prefix}{k}"
                 self.writer.add_scalar(index, v, global_step+1)
 
 
