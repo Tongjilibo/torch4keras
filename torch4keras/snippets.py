@@ -436,7 +436,7 @@ class Tensorboard(Callback):
     赋值需要分栏目的用'/'进行分隔
     若每隔一定steps对验证集评估，则Tensorboard的interval设置成和Evaluater一致或者约数，保证Tensorboard能记录到
     '''
-    def __init__(self, dirname, interval=10, prefix='', on_epoch_end_scalar_epoch=True):
+    def __init__(self, dirname, interval=10, prefix='train', on_epoch_end_scalar_epoch=True):
         super(Tensorboard, self).__init__()
         self.interval = interval
         self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
