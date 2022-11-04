@@ -233,7 +233,8 @@ class ProgbarLogger(Callback):
 
     def on_train_begin(self, logs=None):
         if self.verbose:
-            print('Start Training'.center(40, '='))
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Start Training' % (time_start))
 
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
@@ -269,7 +270,8 @@ class ProgbarLogger(Callback):
     
     def on_train_end(self, logs=None):
         if self.verbose:
-            print('Finish Training'.center(40, '='))
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Finish Training' % (time_start))
 
 
 class EarlyStopping(Callback):
@@ -384,7 +386,7 @@ class Evaluator(Checkpoint):
                 if self.optimizer is not None:
                     torch.save(self.optimizer.state_dict(), os.path.join(self.save_dir, f'best_optimizer.pt'))
         print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
-        print(print_str + f'. bert_{self.monitor}: {self.best_perf:.5f}\n')
+        print(print_str + f'. best_{self.monitor}: {self.best_perf:.5f}\n')
         
     # 定义评价函数
     def evaluate(self):

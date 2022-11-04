@@ -60,4 +60,4 @@ class MyEvaluator(Evaluator):
 
 if __name__ == '__main__':
     evaluator = MyEvaluator(model, monitor='test_acc', save_ckpt=False)
-    model.fit(train_dataloader, steps_per_epoch=None, epochs=5, callbacks=[evaluator, Checkpoint(model)])
+    model.fit(train_dataloader, steps_per_epoch=None, epochs=2, callbacks=[evaluator, Checkpoint(model)])
