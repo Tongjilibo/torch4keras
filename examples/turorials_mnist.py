@@ -44,8 +44,8 @@ model = MyModel().to(device)
 #             nn.Linear(7744, 10)
 #         )
 # model = BaseModel(net).to(device)
-
-model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
+optimizer=optim.Adam(model.parameters())
+model.compile(optimizer=optimizer, loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 
 class MyEvaluator(Evaluator):
@@ -58,6 +58,8 @@ class MyEvaluator(Evaluator):
             total += y.shape[0]
         return {'test_acc': hit/total}
 
+
 if __name__ == '__main__':
-    evaluator = MyEvaluator(model, monitor='test_acc', save_ckpt=False)
-    model.fit(train_dataloader, steps_per_epoch=None, epochs=2, callbacks=[evaluator, Checkpoint(model)])
+    evaluator = MyEvaluator('./best_model.pt', monitor='test_acc', save_ckpt=True)
+    ckpt = Checkpoint('./model{epoch}-{test_acc:.5f}.pt')
+    model.fit(train_dataloader, steps_per_epoch=100, epochs=5, callbacks=[evaluator, ckpt])

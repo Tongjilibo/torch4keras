@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from torch4keras.snippets import metric_mapping, ProgbarLogger, EarlyStopping
+from torch4keras.snippets import metric_mapping, ProgbarLogger, EarlyStopping, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
 
@@ -124,36 +124,7 @@ class BaseModel(nn.Module):
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
         return output, loss, loss_detail
 
-    def callback_fun(self, mode, logs={}):
-        '''统一调用callback, 方便一些判断条件的触发
-        '''
-        # 如果是分布式DDP训练，则仅masker_rank可以callback
-        if hasattr(self, 'master_rank') and self.master_rank!=torch.distributed.get_rank():
-            return
-
-        if mode == 'train_begin':
-            for callback in self.callbacks:
-                callback.on_train_begin()
-        elif mode == 'epoch_begin':
-            for callback in self.callbacks:
-                callback.on_epoch_begin(self.global_step, self.epoch, logs)
-        elif mode == 'batch_begin':
-            for callback in self.callbacks:
-                callback.on_batch_begin(self.global_step, self.local_step, logs)
-        elif mode == 'batch_end':
-            for callback in self.callbacks:
-                callback.on_batch_end(self.global_step, self.local_step, logs)
-        elif mode == 'epoch_end':
-            for callback in self.callbacks:
-                callback.on_epoch_end(self.global_step, self.epoch, logs)
-        elif mode == 'train_end':
-            for callback in self.callbacks:
-                callback.on_train_end()
-        elif mode == 'dataloader_end':
-            for callback in self.callbacks:
-                callback.on_dataloader_end()
-
-    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None):
+    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, verbose=1, callbacks=None):
         if not hasattr(train_dataloader, '__len__'):
             assert steps_per_epoch is not None, 'Either train_dataloader has attr "__len__" or steps_per_epoch is not None'
 
@@ -161,11 +132,27 @@ class BaseModel(nn.Module):
         self.total_steps = self.steps_per_epoch * epochs
         self.train_dataloader = train_dataloader  # 设置为成员变量，可由外部的callbacks进行修改
         train_dataloader_iter = iter(self.train_dataloader)  # 循环epoch时不重生成
-
-        callbacks = [] if callbacks is None else callbacks
-        callbacks = callbacks if isinstance(callbacks, (list, tuple)) else [callbacks]
-        self.callbacks = [ProgbarLogger(epochs, self.steps_per_epoch, [i for i in self.metrics.keys() if isinstance(i, str)])] + callbacks
-        self.callback_fun('train_begin')
+        
+        # callbacks设置
+        if callbacks is None:
+            callbacks = []
+        if not isinstance(callbacks, (list, tuple)):
+            callbacks = [callbacks]
+        for callback in callbacks:
+            assert isinstance(callback, Callback), "Args 'callbacks' only support Callback() inputs"
+        progbarlogger = ProgbarLogger()  # 进度条
+        history = History()
+        self.callbacks = CallbackList([BaseLogger(), progbarlogger] + callbacks + [history])
+        callback_model = self.module if hasattr(self, 'module') else self
+        self.callbacks.set_model(callback_model)
+        self.callbacks.set_params({
+            'epochs': epochs,
+            'steps': self.steps_per_epoch,
+            'verbose': verbose,
+            'metrics': [i for i in self.metrics.keys() if isinstance(i, str)],
+        })
+        self.callbacks.on_train_begin()
+        callback_model.stop_training = False  # 在EarlyStopping中会重新设置
 
         # epoch：当前epoch
         # global_step：当前全局训练步数
@@ -176,8 +163,8 @@ class BaseModel(nn.Module):
             self.epoch = epoch
             # resume_step：判断local_step的起点，以及进度条的起始位置
             resume_step = self.resume_step if epoch==self.resume_epoch else 0
-            self.callback_fun('epoch_begin')
-            self.callbacks[0].seen = resume_step
+            self.callbacks.on_epoch_begin(self.global_step, self.epoch)
+            progbarlogger.seen = resume_step  # 这里设置进度条的seen，在callbacks中也会修改
             
             for local_step in range(resume_step, self.steps_per_epoch):
                 self.local_step = local_step
@@ -186,14 +173,23 @@ class BaseModel(nn.Module):
                 try:
                     batch = next(train_dataloader_iter)
                 except StopIteration:
-                    self.callback_fun('dataloader_end')  # 适用于数据量较大时，动态读取文件并重新生成dataloader的情况，如预训练
+                    self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成dataloader的情况，如预训练
                     train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
                     self.bti = 0
                     batch = next(train_dataloader_iter)
                 train_X, train_y = batch
 
-                logs = OrderedDict()
-                self.callback_fun('batch_begin', logs)
+                # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
+                if isinstance(train_X, (list, tuple)) and isinstance(train_X[0], (list, tuple)):
+                    btz = train_X[0][0].size(0)
+                elif isinstance(train_X, (list, tuple)) and (not isinstance(train_X[0], (list, tuple))):
+                    btz = train_X[0].size(0)
+                elif isinstance(train_X, torch.Tensor):
+                    btz = train_X.size(0)
+                else:
+                    raise ValueError('Input only support [list, tuple, tensor]')
+                logs = {'size': btz}
+                self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
                 self.train()  # 设置为train模式
                 # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
@@ -231,7 +227,7 @@ class BaseModel(nn.Module):
                 logs_loss_detail = {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in loss_detail.items()}
                 logs.update(logs_loss_detail)
                 if self.global_step == resume_step:
-                    self.callbacks[0].add_metrics(list(logs_loss_detail.keys()), add_position=1)
+                    progbarlogger.add_metrics(list(logs_loss_detail.keys()), add_position=1)
                     
                 # 添加metrics至log打印
                 for metric, func in self.metrics.items():
@@ -239,20 +235,23 @@ class BaseModel(nn.Module):
                     if perf is not None:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.global_step == resume_step:
-                                self.callbacks[0].add_metrics(list(perf.keys()))
+                                progbarlogger.add_metrics(list(perf.keys()))
                             logs.update(perf)
                         elif isinstance(metric, str):  # 直接传入回调函数(有key)
                             logs[metric] = perf
 
-                self.callback_fun('batch_end', logs)
+                self.callbacks.on_batch_end(self.global_step, self.local_step, logs)
 
                 self.bti += 1
-            self.callback_fun('epoch_end', logs)
+            self.callbacks.on_epoch_end(self.global_step, self.epoch, logs)
             # earlystop策略
-            callback_tmp = [callback_tmp for callback_tmp in self.callbacks if isinstance(callback_tmp, EarlyStopping)]
-            if callback_tmp and callback_tmp[0].stopped_epoch > 0:
+            # callback_tmp = [callback_tmp for callback_tmp in self.callbacks if isinstance(callback_tmp, EarlyStopping)]
+            # if callback_tmp and callback_tmp[0].stopped_epoch > 0:
+            #     break
+            if callback_model.stop_training:
                 break
-        self.callback_fun('train_end', logs)
+        self.callbacks.on_train_end(logs)
+        return history
 
     @torch.no_grad()
     def predict(self, train_X, return_all=None):

@@ -25,7 +25,7 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - 初衷：前期功能是作为[bert4torch](https://github.com/Tongjilibo/bert4torch)和[rec4torch](https://github.com/Tongjilibo/rec4torch)的Trainer
 - 训练：
 
-    ```shell
+    ```text
     2022-10-28 23:16:10 - Start Training
     2022-10-28 23:16:10 - Epoch: 1/5
     5000/5000 [==============================] - 13s 3ms/step - loss: 0.1351 - acc: 0.9601

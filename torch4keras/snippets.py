@@ -8,19 +8,11 @@ from datetime import datetime
 import warnings
 import os
 import random
+from collections import deque
+
 
 class Progbar(object):
-    """Displays a progress bar.
-
-    # Arguments
-        target: Total number of steps expected, None if unknown.
-        width: Progress bar width on screen.
-        verbose: Verbosity mode, 0 (silent), 1 (verbose), 2 (semi-verbose)
-        stateful_metrics: Iterable of string names of metrics that
-            should *not* be averaged over time. Metrics in this list
-            will be displayed as-is. All others will be averaged
-            by the progbar before display.
-        interval: Minimum visual progress update interval (in seconds).
+    """进度条，直接从keras引入
     """
 
     def __init__(self, target, width=30, verbose=1, interval=0.05, stateful_metrics=None):
@@ -33,9 +25,7 @@ class Progbar(object):
         else:
             self.stateful_metrics = set()
 
-        self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and
-                                  sys.stdout.isatty()) or
-                                 'ipykernel' in sys.modules)
+        self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
         self._total_width = 0
         self._seen_so_far = 0
         self._values = collections.OrderedDict()
@@ -44,14 +34,6 @@ class Progbar(object):
 
     def update(self, current, values=None):
         """Updates the progress bar.
-
-        # Arguments
-            current: Index of current step.
-            values: List of tuples:
-                `(name, value_for_last_step)`.
-                If `name` is in `stateful_metrics`,
-                `value_for_last_step` will be displayed as-is.
-                Else, an average of the metric over time will be displayed.
         """
         values = values or []
         for k, v in values:
@@ -169,11 +151,106 @@ class Progbar(object):
         self.update(self._seen_so_far + n, values)
 
 
+class CallbackList(object):
+    '''把原来在model.py中的callback_fun移植出来，参考Keras的CallbackList重构
+    '''
+    def __init__(self, callbacks=None, queue_length=10, master_rank=None):
+        callbacks = callbacks or []
+        self.callbacks = [c for c in callbacks]
+        self.queue_length = queue_length
+        if master_rank:
+            self.master_rank = master_rank
+
+    def append(self, callback):
+        self.callbacks.append(callback)
+
+    def set_params(self, params):
+        for callback in self.callbacks:
+            callback.set_params(params)
+
+    def set_model(self, model):
+        for callback in self.callbacks:
+            callback.set_model(model)
+
+    def return_distributed(self):
+        '''分布式训练中，控制只有master_rank才执行callbacks
+        '''
+        # 如果是分布式DDP训练，则仅masker_rank可以callback
+        if hasattr(self, 'master_rank') and self.master_rank!=torch.distributed.get_rank():
+            return
+
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_epoch_begin(global_step, epoch, logs)
+        self._delta_t_batch = 0.
+        self._delta_ts_batch_begin = deque([], maxlen=self.queue_length)
+        self._delta_ts_batch_end = deque([], maxlen=self.queue_length)
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_epoch_end(global_step, epoch, logs)
+
+    def on_batch_begin(self, global_step, local_step, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        t_before_callbacks = time.time()
+        for callback in self.callbacks:
+            callback.on_batch_begin(global_step, local_step, logs)
+        self._delta_ts_batch_begin.append(time.time() - t_before_callbacks)
+        delta_t_median = np.median(self._delta_ts_batch_begin)
+        if (self._delta_t_batch > 0. and delta_t_median > 0.95 * self._delta_t_batch and delta_t_median > 0.1):
+            warnings.warn(f'Method on_batch_begin() is slow compared to the batch update {delta_t_median}. Check your callbacks.')
+        self._t_enter_batch = time.time()
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        if not hasattr(self, '_t_enter_batch'):
+            self._t_enter_batch = time.time()
+        self._delta_t_batch = time.time() - self._t_enter_batch
+        t_before_callbacks = time.time()
+        for callback in self.callbacks:
+            callback.on_batch_end(global_step, local_step, logs)
+        self._delta_ts_batch_end.append(time.time() - t_before_callbacks)
+        delta_t_median = np.median(self._delta_ts_batch_end)
+        if (self._delta_t_batch > 0. and (delta_t_median > 0.95 * self._delta_t_batch and delta_t_median > 0.1)):
+            warnings.warn(f'Method on_batch_end() is slow compared to the batch update {delta_t_median}. Check your callbacks.')
+
+    def on_train_begin(self, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_train_begin(logs)
+
+    def on_train_end(self, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_train_end(logs)
+
+    def on_dataloader_end(self, logs=None):
+        self.return_distributed()
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_dataloader_end(logs)
+
+    def __iter__(self):
+        return iter(self.callbacks)
+
+
 class Callback(object):
     '''Callback基类
     '''
     def __init__(self):
-        pass
+        self.model = None
+    def set_params(self, params):
+        self.params = params
+    def set_model(self, model):
+        self.model = model
     def on_train_begin(self, logs=None):
         pass
     def on_train_end(self, logs=None):
@@ -190,31 +267,55 @@ class Callback(object):
         pass
 
 
-class ProgbarLogger(Callback):
-    """Callback that prints metrics to stdout.
-
-    # Arguments
-        count_mode: One of "steps" or "samples".
-            Whether the progress bar should
-            count samples seen or steps (batches) seen.
-        stateful_metrics: Iterable of string names of metrics that
-            should *not* be averaged over an epoch.
-            Metrics in this list will be logged as-is.
-            All others will be averaged over time (e.g. loss, etc).
-
-    # Raises
-        ValueError: In case of invalid `count_mode`.
+class BaseLogger(Callback):
+    """计算metrics的均值, 默认是callbacks中第一项
     """
 
-    def __init__(self, epochs, steps, metrics, stateful_metrics=None, verbose=1):
+    def __init__(self, stateful_metrics=None):
+        if stateful_metrics:
+            self.stateful_metrics = set(stateful_metrics)
+        else:
+            self.stateful_metrics = set()
+
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        self.seen = 0
+        self.totals = {}
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        logs = logs or {}
+        batch_size = logs.get('size', 0)
+        self.seen += batch_size
+
+        for k, v in logs.items():
+            if k in self.stateful_metrics:
+                self.totals[k] = v
+            else:
+                if k in self.totals:
+                    self.totals[k] += v * batch_size
+                else:
+                    self.totals[k] = v * batch_size
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if logs is not None:
+            for k in self.params['metrics']:
+                if k in self.totals:
+                    # Make value available to next callbacks.
+                    if k in self.stateful_metrics:
+                        logs[k] = self.totals[k]
+                    else:
+                        logs[k] = self.totals[k] / self.seen
+
+
+class ProgbarLogger(Callback):
+    """ keras进度条
+    """
+
+    def __init__(self, stateful_metrics=None):
         super(ProgbarLogger, self).__init__()
         if stateful_metrics:
             self.stateful_metrics = set(stateful_metrics)
         else:
             self.stateful_metrics = set()
-        self.params = {'epochs': epochs, 'steps': steps, 'verbose': verbose, 'metrics': metrics}
-        self.verbose = verbose
-        self.epochs = epochs
 
     def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
         if add_position is None:
@@ -232,6 +333,8 @@ class ProgbarLogger(Callback):
         self.params['metrics'] = self.params['metrics'][:add_position] + add_metrics + self.params['metrics'][add_position:]
 
     def on_train_begin(self, logs=None):
+        self.verbose = self.params['verbose']
+        self.epochs = self.params['epochs']
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Start Training' % (time_start))
@@ -274,10 +377,26 @@ class ProgbarLogger(Callback):
             print('%s - Finish Training' % (time_start))
 
 
+class History(Callback):
+    """指标历史，默认是fit的返回项
+    """
+
+    def on_train_begin(self, logs=None):
+        self.epoch = []
+        self.history = {}
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        logs = logs or {}
+        self.epoch.append(epoch)
+        for k, v in logs.items():
+            self.history.setdefault(k, []).append(v)
+
+
 class EarlyStopping(Callback):
     '''Stop training策略, 从keras中移植
+       使用时候需要保证monitor在logs中，因此如果以valid指标评估需要在EarlyStopping前进行评估并设置logs[monitor]
     '''
-    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', baseline=None):
+    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', baseline=None, restore_best_weights=False):
         super(EarlyStopping, self).__init__()
 
         self.monitor = monitor
@@ -287,6 +406,8 @@ class EarlyStopping(Callback):
         self.min_delta = min_delta
         self.wait = 0
         self.stopped_epoch = 0
+        self.restore_best_weights = restore_best_weights
+        self.best_weights = None
 
         if mode not in {'auto', 'min', 'max'}:
             warnings.warn('EarlyStopping mode %s is unknown, fallback to auto mode.' % mode, RuntimeWarning)
@@ -310,6 +431,7 @@ class EarlyStopping(Callback):
             self.best = np.Inf if self.monitor_op == np.less else -np.Inf
 
     def on_epoch_end(self, steps, epoch, logs=None):
+        logs =  logs or {}
         current = self.get_monitor_value(logs)
         if current is None:
             return
@@ -317,11 +439,18 @@ class EarlyStopping(Callback):
         if self.monitor_op(current - self.min_delta, self.best):
             self.best = current
             self.wait = 0
+            if self.restore_best_weights:
+                self.best_weights = self.model.state_dict().copy()
         else:
             self.wait += 1
             if self.wait >= self.patience:
                 self.stopped_epoch = epoch
-
+                self.model.stop_training = True
+                # 恢复最优权重
+                if self.restore_best_weights:
+                    if self.verbose > 0:
+                        print('Restoring model weights from the end of the best epoch')
+                    self.model.load_state_dict(self.best_weights, strict=True)
     def on_train_end(self, logs=None):
         if self.stopped_epoch > 0 and self.verbose > 0:
             print(f'Epoch {self.stopped_epoch+1}: early stopping\n')
@@ -338,34 +467,37 @@ class EarlyStopping(Callback):
 class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
     '''
-    def __init__(self, model, optimizer=None, save_dir='./', method='epoch', step_interval=100):
+    def __init__(self, filepath, optimizer=None, method='epoch', step_interval=100):
         super().__init__()
         assert method in {'step', 'epoch'}, 'Save checkpints only support step or epoch method'
-        self.model = model
         self.optimizer = optimizer
-        self.save_dir = save_dir
+        self.filepath = filepath
         self.method = method
         self.step_interval = step_interval
     
     def on_epoch_end(self, global_step, epoch, logs=None):
+        logs = logs or {}
         if self.method == 'epoch':
             self.process(epoch+1, logs)
 
     def on_batch_end(self, global_step, local_step, logs=None):
+        logs = logs or {}
         if (self.method == 'step') and ((global_step+1) % self.step_interval == 0):
             self.process(global_step+1, logs)
 
     def process(self, suffix, logs):
-        torch.save(self.model.state_dict(), os.path.join(self.save_dir, f'model{suffix}.pt'))
+        filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        torch.save(self.model.state_dict(), filepath)
         if self.optimizer is not None:
-            torch.save(self.optimizer.state_dict(), os.path.join(self.save_dir, f'optimizer{suffix}.pt'))
+            torch.save(self.optimizer.state_dict(), os.path.join(os.path.dirname(filepath), f'optimizer_{suffix}.pt'))
 
 
 class Evaluator(Checkpoint):
-    '''评估并保存Checkpoint, 可以只评估
+    '''评估并保存最优Checkpoint, 也可以只评估
     '''
-    def __init__(self, model, optimizer=None, save_dir='./', method='epoch', step_interval=100, monitor='perf', mode='max', save_ckpt=True):
-        super().__init__(model, optimizer, save_dir, method, step_interval)
+    def __init__(self, file_path, optimizer=None, method='epoch', step_interval=100, monitor='perf', mode='max', save_ckpt=True):
+        super().__init__(file_path, optimizer, method, step_interval)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support max/min mode'
         self.mode = mode
@@ -375,16 +507,18 @@ class Evaluator(Checkpoint):
     def process(self, suffix, logs):
         perf = self.evaluate()
         perf = perf if isinstance(perf, dict) else {'perf': perf}
-        logs.update(perf)
+        logs.update(perf)  # 评估的指标后续可能会用到
         
         # 满足条件
         if ((self.mode == 'max') and (perf[self.monitor] > self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] < self.best_perf)):
             self.best_perf = perf[self.monitor]
             # 保存ckpt
             if self.save_ckpt:
-                torch.save(self.model.state_dict(), os.path.join(self.save_dir, f'best_model.pt'))
+                filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                torch.save(self.model.state_dict(), filepath)
                 if self.optimizer is not None:
-                    torch.save(self.optimizer.state_dict(), os.path.join(self.save_dir, f'best_optimizer.pt'))
+                    torch.save(self.optimizer.state_dict(), os.path.join(self.filepath, f'best_optimizer.pt'))
         print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
         print(print_str + f'. best_{self.monitor}: {self.best_perf:.5f}\n')
         
@@ -400,16 +534,17 @@ class Logger(Callback):
     对于valid/dev和test的日志需要在evaluate之后对log进行赋值，如log['dev_f1']=f1，并在Evaluator之后调用
     若每隔一定steps对验证集评估，则Logger的interval设置成和Evaluater一致或者约数，保证日志能记录到
     '''
-    def __init__(self, filename, interval=10, verbosity=1, name=None):
+    def __init__(self, filename, interval=10, mode='a', separator='\t', verbosity=1, name=None):
         super(Logger, self).__init__()
-        self.interval = interval
-
         import logging
+
+        self.interval = interval
+        self.sep = separator
         level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING}
         formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level_dict[verbosity])
-        fh = logging.FileHandler(filename, "a")
+        fh = logging.FileHandler(filename, mode)
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
 
@@ -423,13 +558,13 @@ class Logger(Callback):
         self.logger.info(f'Epoch {epoch}'.center(40, '='))
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        log_str = '\t '.join([f'{k}={v:.5f}' for k, v in logs.items()])
-        self.logger.info(f'epoch={epoch+1}\t {log_str}')
+        log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in {'size'}])
+        self.logger.info(f'epoch={epoch+1}{self.sep}{log_str}')
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if (global_step+1) % self.interval == 0:
-            log_str = '\t '.join([f'{k}={v:.5f}' for k, v in logs.items()])
-            self.logger.info(f'step={global_step+1}\t {log_str}')
+            log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in {'size'}])
+            self.logger.info(f'step={global_step+1}{self.sep}{log_str}')
 
 
 class Tensorboard(Callback):
@@ -450,6 +585,8 @@ class Tensorboard(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         # 默认记录的是epoch
         for k, v in logs.items():
+            if k not in {'size'}:
+                continue
             index = k if '/' in k else f"{self.prefix}{k}"
             log_step = epoch+1 if self.on_epoch_end_scalar_epoch else global_step+1
             self.writer.add_scalar(index, v, log_step)
@@ -458,8 +595,54 @@ class Tensorboard(Callback):
         # 默认记录的是global_step
         if (global_step+1) % self.interval == 0:
             for k, v in logs.items():
+                if k not in {'size'}:
+                    continue
                 index = k if '/' in k else f"{self.prefix}{k}"
                 self.writer.add_scalar(index, v, global_step+1)
+
+
+class LambdaCallback(Callback):
+    """lambda表达式
+    """
+
+    def __init__(self, on_epoch_begin=None, on_epoch_end=None, on_batch_begin=None, on_batch_end=None, 
+                 on_train_begin=None, on_train_end=None, on_dataloader_end=None, **kwargs):
+        super(LambdaCallback, self).__init__()
+        self.__dict__.update(kwargs)
+        if on_epoch_begin is not None:
+            self.on_epoch_begin = on_epoch_begin
+        else:
+            self.on_epoch_begin = lambda global_step, epoch, logs: None
+
+        if on_epoch_end is not None:
+            self.on_epoch_end = on_epoch_end
+        else:
+            self.on_epoch_end = lambda global_step, epoch, logs: None
+
+        if on_batch_begin is not None:
+            self.on_batch_begin = on_batch_begin
+        else:
+            self.on_batch_begin = lambda global_step, local_step, logs: None
+
+        if on_batch_end is not None:
+            self.on_batch_end = on_batch_end
+        else:
+            self.on_batch_end = lambda global_step, local_step, logs: None
+
+        if on_train_begin is not None:
+            self.on_train_begin = on_train_begin
+        else:
+            self.on_train_begin = lambda logs: None
+
+        if on_train_end is not None:
+            self.on_train_end = on_train_end
+        else:
+            self.on_train_end = lambda logs: None
+        
+        if on_dataloader_end is not None:
+            self.on_dataloader_end = on_train_end
+        else:
+            self.on_dataloader_end = lambda logs: None
 
 
 def metric_mapping(metric, func, y_pred, y_true):
