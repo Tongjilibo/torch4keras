@@ -41,7 +41,7 @@ class BaseModel(nn.Module):
         else:
             return self.forward(*inputs, **kwargs)
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, grad_accumulation_steps=1):
+    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1):
         '''定义loss, optimizer, metrics, 是否在计算loss前reshape
         loss: loss
         optimizer: 优化器
@@ -49,6 +49,7 @@ class BaseModel(nn.Module):
         clip_grad_norm: 是否使用梯度裁剪, 默认不启用
         use_amp: 是否使用混合精度，默认不启用
         metrics: 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
+        stateful_metrics: 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         grad_accumulation_steps: 梯度累积
         '''
         self.criterion = loss
@@ -80,6 +81,7 @@ class BaseModel(nn.Module):
                 self.metrics.update({metric: metric})
             else:
                 raise ValueError('Args metrics only support "String, Dict, Callback, List[String, Dict, Callback]" format')
+        self.stateful_metrics = stateful_metrics
 
         # 梯度累积
         self.grad_accumulation_steps = grad_accumulation_steps
@@ -99,7 +101,6 @@ class BaseModel(nn.Module):
     def train_step(self, train_X, train_y):
         '''forward并返回loss
         '''
-
         if self.use_amp:
             with self.autocast():
                 output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
@@ -140,9 +141,9 @@ class BaseModel(nn.Module):
             callbacks = [callbacks]
         for callback in callbacks:
             assert isinstance(callback, Callback), "Args 'callbacks' only support Callback() inputs"
-        progbarlogger = ProgbarLogger()  # 进度条
+        progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)  # 进度条
         history = History()
-        self.callbacks = CallbackList([BaseLogger(), progbarlogger] + callbacks + [history])
+        self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history])
         callback_model = self.module if hasattr(self, 'module') else self
         self.callbacks.set_model(callback_model)
         self.callbacks.set_params({
@@ -244,10 +245,7 @@ class BaseModel(nn.Module):
 
                 self.bti += 1
             self.callbacks.on_epoch_end(self.global_step, self.epoch, logs)
-            # earlystop策略
-            # callback_tmp = [callback_tmp for callback_tmp in self.callbacks if isinstance(callback_tmp, EarlyStopping)]
-            # if callback_tmp and callback_tmp[0].stopped_epoch > 0:
-            #     break
+            # TerminateOnNaN、EarlyStopping等停止训练策略
             if callback_model.stop_training:
                 break
         self.callbacks.on_train_end(logs)

@@ -9,6 +9,11 @@ import warnings
 import os
 import random
 from collections import deque
+import json
+try:
+    import requests
+except ImportError:
+    requests = None
 
 
 class Progbar(object):
@@ -296,6 +301,8 @@ class BaseLogger(Callback):
                     self.totals[k] = v * batch_size
 
     def on_epoch_end(self, global_step, epoch, logs=None):
+        '''在epoch_end对指标计算epoch的均值
+        '''
         if logs is not None:
             for k in self.params['metrics']:
                 if k in self.totals:
@@ -306,10 +313,21 @@ class BaseLogger(Callback):
                         logs[k] = self.totals[k] / self.seen
 
 
+class TerminateOnNaN(Callback):
+    """Loss出现NAN停止训练
+    """
+    def on_batch_end(self, global_step, local_step, logs=None):
+        logs = logs or {}
+        loss = logs.get('loss')
+        if loss is not None:
+            if np.isnan(loss) or np.isinf(loss):
+                print('Step %d: Invalid loss, terminating training' % global_step)
+                self.model.stop_training = True
+
+
 class ProgbarLogger(Callback):
     """ keras进度条
     """
-
     def __init__(self, stateful_metrics=None):
         super(ProgbarLogger, self).__init__()
         if stateful_metrics:
@@ -318,6 +336,8 @@ class ProgbarLogger(Callback):
             self.stateful_metrics = set()
 
     def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
+        '''在指定位置插入metrics指标
+        '''
         if add_position is None:
             add_position = len(self.params['metrics'])
         metrics = [metrics] if isinstance(metrics, str) else metrics
@@ -342,7 +362,7 @@ class ProgbarLogger(Callback):
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('%s - Epoch: %d/%d' % (time_start, epoch + 1, self.epochs))
+            print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
             self.progbar = Progbar(target=self.target, verbose=self.verbose, stateful_metrics=self.stateful_metrics)
         self.seen = 0
@@ -378,16 +398,15 @@ class ProgbarLogger(Callback):
 
 
 class History(Callback):
-    """指标历史，默认是fit的返回项
+    """指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标
     """
-
     def on_train_begin(self, logs=None):
         self.epoch = []
         self.history = {}
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         logs = logs or {}
-        self.epoch.append(epoch)
+        self.epoch.append(epoch+1)  # 这里和keras相比+1了
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
 
@@ -396,16 +415,17 @@ class EarlyStopping(Callback):
     '''Stop training策略, 从keras中移植
        使用时候需要保证monitor在logs中，因此如果以valid指标评估需要在EarlyStopping前进行评估并设置logs[monitor]
     '''
-    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', baseline=None, restore_best_weights=False):
+    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', method='epoch', baseline=None, restore_best_weights=False):
         super(EarlyStopping, self).__init__()
-
+        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
+        self.method = method  # 默认的epoch和原版一样
         self.monitor = monitor
         self.baseline = baseline
-        self.patience = patience
+        self.patience = patience  # method=step时候表示最多wait的训练步数
         self.verbose = verbose
         self.min_delta = min_delta
         self.wait = 0
-        self.stopped_epoch = 0
+        self.stopped_iteration = 0
         self.restore_best_weights = restore_best_weights
         self.best_weights = None
 
@@ -424,13 +444,21 @@ class EarlyStopping(Callback):
     def on_train_begin(self, logs=None):
         # Allow instances to be re-used
         self.wait = 0
-        self.stopped_epoch = 0
+        self.stopped_iteration = 0
         if self.baseline is not None:
             self.best = self.baseline
         else:
             self.best = np.Inf if self.monitor_op == np.less else -np.Inf
 
-    def on_epoch_end(self, steps, epoch, logs=None):
+    def on_batch_end(self, global_step, local_step, logs=None):
+        if self.method == 'step':
+            return self.process(global_step)
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if self.method == 'epoch':
+            self.process(epoch)
+
+    def process(self, iteration):
         logs =  logs or {}
         current = self.get_monitor_value(logs)
         if current is None:
@@ -444,36 +472,154 @@ class EarlyStopping(Callback):
         else:
             self.wait += 1
             if self.wait >= self.patience:
-                self.stopped_epoch = epoch
+                self.stopped_iteration = iteration
                 self.model.stop_training = True
                 # 恢复最优权重
                 if self.restore_best_weights:
                     if self.verbose > 0:
-                        print('Restoring model weights from the end of the best epoch')
+                        print('Restoring model weights from the end of the best iteration')
                     self.model.load_state_dict(self.best_weights, strict=True)
+
     def on_train_end(self, logs=None):
-        if self.stopped_epoch > 0 and self.verbose > 0:
-            print(f'Epoch {self.stopped_epoch+1}: early stopping\n')
+        if self.stopped_iteration > 0 and self.verbose > 0:
+            print(f'Iteration {self.stopped_iteration+1}: early stopping\n')
 
     def get_monitor_value(self, logs):
         monitor_value = logs.get(self.monitor)
         if monitor_value is None:
-            warnings.warn('Early stopping conditioned on metric `%s` '
-                'which is not available. Available metrics are: %s' %
+            warnings.warn('Early stopping conditioned on metric `%s` which is not available. Available metrics are: %s' %
                 (self.monitor, ','.join(list(logs.keys()))), RuntimeWarning)
         return monitor_value
+
+
+class ReduceLROnPlateau(Callback):
+    """当monitor指标不下降时候，降低学习率
+    """
+    def __init__(self, monitor='loss', factor=0.1, patience=10, method='epoch', 
+                 verbose=0, mode='auto', min_delta=1e-4, cooldown=0, min_lr=0,
+                 **kwargs):
+        super(ReduceLROnPlateau, self).__init__()
+        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
+        self.method = method  # 默认的epoch和原版一样
+        self.monitor = monitor
+        if factor >= 1.0:
+            raise ValueError('ReduceLROnPlateau does not support a factor >= 1.0.')
+        if 'epsilon' in kwargs:
+            min_delta = kwargs.pop('epsilon')
+            warnings.warn('`epsilon` argument is deprecated and will be removed, use `min_delta` instead.')
+        self.factor = factor
+        self.min_lr = min_lr
+        self.min_delta = min_delta
+        self.patience = patience  # method=step时候表示最多wait的训练步数
+        self.verbose = verbose
+        self.cooldown = cooldown
+        self.cooldown_counter = 0  # Cooldown counter.
+        self.wait = 0
+        self.best = 0
+        self.mode = mode
+        self.monitor_op = None
+        self._reset()
+
+    def _reset(self):
+        """Resets wait counter and cooldown counter.
+        """
+        if self.mode not in ['auto', 'min', 'max']:
+            warnings.warn('Learning Rate Plateau Reducing mode %s is unknown, fallback to auto mode.' % (self.mode), RuntimeWarning)
+            self.mode = 'auto'
+        if (self.mode == 'min' or
+           (self.mode == 'auto' and 'acc' not in self.monitor)):
+            self.monitor_op = lambda a, b: np.less(a, b - self.min_delta)
+            self.best = np.Inf
+        else:
+            self.monitor_op = lambda a, b: np.greater(a, b + self.min_delta)
+            self.best = -np.Inf
+        self.cooldown_counter = 0
+        self.wait = 0
+
+    def on_train_begin(self, logs=None):
+        self._reset()
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        if self.method == 'step':
+            return self.process(global_step, logs)
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if self.method == 'epoch':
+            self.process(epoch, logs)
+
+    def process(self, iteration, logs=None):
+        logs = logs or {}
+        logs['lr'] = self.model.optimizer.param_groups[0]["lr"]
+        current = logs.get(self.monitor)
+        if current is None:
+            warnings.warn('Reduce LR on plateau conditioned on metric `%s` which is not available. Available metrics are: %s' %
+                (self.monitor, ','.join(list(logs.keys()))), RuntimeWarning)
+
+        else:
+            if self.in_cooldown():
+                self.cooldown_counter -= 1
+                self.wait = 0
+
+            if self.monitor_op(current, self.best):
+                self.best = current
+                self.wait = 0
+            elif not self.in_cooldown():
+                self.wait += 1
+                if self.wait >= self.patience:
+                    old_lr = float(self.model.optimizer.param_groups[0]["lr"])
+                    if old_lr > self.min_lr:
+                        new_lr = old_lr * self.factor
+                        new_lr = max(new_lr, self.min_lr)
+                        self.model.optimizer.param_groups[0]["lr"] = new_lr
+                        if self.verbose > 0:
+                            print('\nEpoch %05d: ReduceLROnPlateau reducing learning rate to %s.' % (iteration + 1, new_lr))
+                        self.cooldown_counter = self.cooldown
+                        self.wait = 0
+
+    def in_cooldown(self):
+        return self.cooldown_counter > 0
+
+        
+class RemoteMonitor(Callback):
+    """Callback used to stream events to a server.
+    """
+    def __init__(self, root='http://localhost:9000', path='/publish/epoch/end/', field='data',
+                 headers=None, send_as_json=False):
+        super(RemoteMonitor, self).__init__()
+        self.root = root
+        self.path = path
+        self.field = field
+        self.headers = headers
+        self.send_as_json = send_as_json
+
+    def on_epoch_end(self, epoch, logs=None):
+        if requests is None:
+            raise ImportError('RemoteMonitor requires the `requests` library.')
+        logs = logs or {}
+        send = {}
+        send['epoch'] = epoch
+        for k, v in logs.items():
+            send[k] = v.item() if isinstance(v, (np.ndarray, np.generic)) else k
+        try:
+            if self.send_as_json:
+                requests.post(self.root + self.path, json=send, headers=self.headers)
+            else:
+                requests.post(self.root + self.path, {self.field: json.dumps(send)}, headers=self.headers)
+        except requests.exceptions.RequestException:
+            warnings.warn('Warning: could not reach RemoteMonitor root server at ' + str(self.root))
 
 
 class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
     '''
-    def __init__(self, filepath, optimizer=None, method='epoch', step_interval=100):
+    def __init__(self, filepath, method='epoch', save_optimizer=False, save_steps_params=False, step_interval=100):
         super().__init__()
-        assert method in {'step', 'epoch'}, 'Save checkpints only support step or epoch method'
-        self.optimizer = optimizer
-        self.filepath = filepath
+        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
-        self.step_interval = step_interval
+        self.save_optimizer = save_optimizer  # 是否保存优化器
+        self.save_steps_params = save_steps_params  # 是否保存训练步数
+        self.filepath = filepath  # 保存路径，可设置{epoch}{step}{loss}等占位符
+        self.step_interval = step_interval  # method='step'时候生效
     
     def on_epoch_end(self, global_step, epoch, logs=None):
         logs = logs or {}
@@ -487,22 +633,25 @@ class Checkpoint(Callback):
 
     def process(self, suffix, logs):
         filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        save_dir = os.path.dirname(filepath)
+        os.makedirs(save_dir, exist_ok=True)
         torch.save(self.model.state_dict(), filepath)
-        if self.optimizer is not None:
-            torch.save(self.optimizer.state_dict(), os.path.join(os.path.dirname(filepath), f'optimizer_{suffix}.pt'))
+        if self.save_optimizer:
+            torch.save(self.model.optimizer.state_dict(), os.path.join(save_dir, f'optimizer_{suffix}.pt'))
+        if self.save_steps_params:
+            self.model.save_steps_params(os.path.join(save_dir, f'steps_params_{suffix}.pt'))
 
 
 class Evaluator(Checkpoint):
     '''评估并保存最优Checkpoint, 也可以只评估
     '''
-    def __init__(self, file_path, optimizer=None, method='epoch', step_interval=100, monitor='perf', mode='max', save_ckpt=True):
-        super().__init__(file_path, optimizer, method, step_interval)
+    def __init__(self, file_path, method='epoch', save_checkpoint=True, save_optimizer=False, save_steps_params=False, step_interval=100, monitor='perf', mode='max'):
+        super().__init__(file_path, method, save_optimizer, save_steps_params, step_interval)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support max/min mode'
         self.mode = mode
         self.best_perf = np.inf if mode == 'min' else -np.inf
-        self.save_ckpt = save_ckpt
+        self.save_checkpoint = save_checkpoint
 
     def process(self, suffix, logs):
         perf = self.evaluate()
@@ -510,15 +659,21 @@ class Evaluator(Checkpoint):
         logs.update(perf)  # 评估的指标后续可能会用到
         
         # 满足条件
-        if ((self.mode == 'max') and (perf[self.monitor] > self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] < self.best_perf)):
+        if ((self.mode == 'max') and (perf[self.monitor] >= self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] <= self.best_perf)):
             self.best_perf = perf[self.monitor]
+            filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
+            save_dir = os.path.dirname(filepath)
+
             # 保存ckpt
-            if self.save_ckpt:
-                filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            if self.save_checkpoint:
+                os.makedirs(save_dir, exist_ok=True)
                 torch.save(self.model.state_dict(), filepath)
-                if self.optimizer is not None:
-                    torch.save(self.optimizer.state_dict(), os.path.join(self.filepath, f'best_optimizer.pt'))
+            if self.save_optimizer:
+                os.makedirs(save_dir, exist_ok=True)
+                torch.save(self.model.optimizer.state_dict(), os.path.join(save_dir, f'best_optimizer.pt'))
+            if self.save_steps_params:
+                os.makedirs(save_dir, exist_ok=True)
+                self.model.save_steps_params(os.path.join(save_dir, f'best_steps_params.pt'))
         print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
         print(print_str + f'. best_{self.monitor}: {self.best_perf:.5f}\n')
         
