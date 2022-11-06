@@ -125,7 +125,7 @@ class BaseModel(nn.Module):
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
         return output, loss, loss_detail
 
-    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, verbose=1, callbacks=None):
+    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
         if not hasattr(train_dataloader, '__len__'):
             assert steps_per_epoch is not None, 'Either train_dataloader has attr "__len__" or steps_per_epoch is not None'
 
@@ -152,7 +152,8 @@ class BaseModel(nn.Module):
             'verbose': verbose,
             'metrics': [i for i in self.metrics.keys() if isinstance(i, str)],
         })
-        self.callbacks.on_train_begin()
+        logs = {}
+        self.callbacks.on_train_begin(logs)
         callback_model.stop_training = False  # 在EarlyStopping中会重新设置
 
         # epoch：当前epoch

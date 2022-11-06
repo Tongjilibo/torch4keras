@@ -10,6 +10,7 @@ import os
 import random
 from collections import deque
 import json
+import copy
 try:
     import requests
 except ImportError:
@@ -452,13 +453,13 @@ class EarlyStopping(Callback):
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if self.method == 'step':
-            return self.process(global_step)
+            return self.process(global_step, logs)
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
-            self.process(epoch)
+            self.process(epoch, logs)
 
-    def process(self, iteration):
+    def process(self, iteration, logs=None):
         logs =  logs or {}
         current = self.get_monitor_value(logs)
         if current is None:
@@ -468,7 +469,7 @@ class EarlyStopping(Callback):
             self.best = current
             self.wait = 0
             if self.restore_best_weights:
-                self.best_weights = self.model.state_dict().copy()
+                self.best_weights = copy.deepcopy(self.model.state_dict())
         else:
             self.wait += 1
             if self.wait >= self.patience:
@@ -549,7 +550,12 @@ class ReduceLROnPlateau(Callback):
 
     def process(self, iteration, logs=None):
         logs = logs or {}
-        logs['lr'] = self.model.optimizer.param_groups[0]["lr"]
+        for i, params in enumerate(self.model.optimizer.param_groups):
+            if i == 0:
+                logs['lr'] = params["lr"]  # 默认第一个param_group作为lr
+            else:
+                logs[f'lr_param_group{i}'] = params["lr"]
+
         current = logs.get(self.monitor)
         if current is None:
             warnings.warn('Reduce LR on plateau conditioned on metric `%s` which is not available. Available metrics are: %s' %
@@ -566,15 +572,18 @@ class ReduceLROnPlateau(Callback):
             elif not self.in_cooldown():
                 self.wait += 1
                 if self.wait >= self.patience:
-                    old_lr = float(self.model.optimizer.param_groups[0]["lr"])
-                    if old_lr > self.min_lr:
-                        new_lr = old_lr * self.factor
-                        new_lr = max(new_lr, self.min_lr)
-                        self.model.optimizer.param_groups[0]["lr"] = new_lr
-                        if self.verbose > 0:
-                            print('\nEpoch %05d: ReduceLROnPlateau reducing learning rate to %s.' % (iteration + 1, new_lr))
-                        self.cooldown_counter = self.cooldown
-                        self.wait = 0
+                    for params in self.model.optimizer.param_groups:
+                        if 'lr' not in params:
+                            continue
+                        old_lr = float(params["lr"])
+                        if old_lr > self.min_lr:
+                            new_lr = old_lr * self.factor
+                            new_lr = max(new_lr, self.min_lr)
+                            params["lr"] = new_lr
+                            if self.verbose > 0:
+                                print('\nEpoch %05d: ReduceLROnPlateau reducing learning rate to %s.' % (iteration + 1, new_lr))
+                            self.cooldown_counter = self.cooldown
+                            self.wait = 0
 
     def in_cooldown(self):
         return self.cooldown_counter > 0
@@ -592,7 +601,7 @@ class RemoteMonitor(Callback):
         self.headers = headers
         self.send_as_json = send_as_json
 
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_end(self, global_step, epoch, logs=None):
         if requests is None:
             raise ImportError('RemoteMonitor requires the `requests` library.')
         logs = logs or {}
@@ -612,13 +621,13 @@ class RemoteMonitor(Callback):
 class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
     '''
-    def __init__(self, filepath, method='epoch', save_optimizer=False, save_steps_params=False, step_interval=100):
+    def __init__(self, checkpoint_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
         super().__init__()
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
-        self.save_optimizer = save_optimizer  # 是否保存优化器
-        self.save_steps_params = save_steps_params  # 是否保存训练步数
-        self.filepath = filepath  # 保存路径，可设置{epoch}{step}{loss}等占位符
+        self.checkpoint_path = checkpoint_path  # 保存路径，可设置{epoch}{step}{loss}等占位符
+        self.optimizer_path = optimizer_path  # 是否保存优化器
+        self.steps_params_path = steps_params_path  # 是否保存训练步数
         self.step_interval = step_interval  # method='step'时候生效
     
     def on_epoch_end(self, global_step, epoch, logs=None):
@@ -632,26 +641,33 @@ class Checkpoint(Callback):
             self.process(global_step+1, logs)
 
     def process(self, suffix, logs):
-        filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
-        save_dir = os.path.dirname(filepath)
-        os.makedirs(save_dir, exist_ok=True)
-        torch.save(self.model.state_dict(), filepath)
-        if self.save_optimizer:
-            torch.save(self.model.optimizer.state_dict(), os.path.join(save_dir, f'optimizer_{suffix}.pt'))
-        if self.save_steps_params:
-            self.model.save_steps_params(os.path.join(save_dir, f'steps_params_{suffix}.pt'))
+        if self.checkpoint_path:
+            filepath = self.checkpoint_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.checkpoint_path.format(step=suffix, **logs)
+            save_dir = os.path.dirname(filepath)
+            os.makedirs(save_dir, exist_ok=True)
+            torch.save(self.model.state_dict(), filepath)
+        if self.optimizer_path:
+            filepath = self.optimizer_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.optimizer_path.format(step=suffix, **logs)
+            save_dir = os.path.dirname(filepath)
+            os.makedirs(save_dir, exist_ok=True)
+            torch.save(self.model.optimizer.state_dict(), filepath)
+        if self.steps_params_path:
+            filepath = self.steps_params_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.steps_params_path.format(step=suffix, **logs)
+            save_dir = os.path.dirname(filepath)
+            os.makedirs(save_dir, exist_ok=True)
+            self.model.save_steps_params(filepath)
 
 
 class Evaluator(Checkpoint):
     '''评估并保存最优Checkpoint, 也可以只评估
     '''
-    def __init__(self, file_path, method='epoch', save_checkpoint=True, save_optimizer=False, save_steps_params=False, step_interval=100, monitor='perf', mode='max'):
-        super().__init__(file_path, method, save_optimizer, save_steps_params, step_interval)
+    def __init__(self, monitor='perf', mode='max', verbose=1, checkpoint_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
+        super().__init__(checkpoint_path, optimizer_path, steps_params_path, method, step_interval)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support max/min mode'
         self.mode = mode
+        self.verbose = verbose
         self.best_perf = np.inf if mode == 'min' else -np.inf
-        self.save_checkpoint = save_checkpoint
 
     def process(self, suffix, logs):
         perf = self.evaluate()
@@ -661,21 +677,12 @@ class Evaluator(Checkpoint):
         # 满足条件
         if ((self.mode == 'max') and (perf[self.monitor] >= self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] <= self.best_perf)):
             self.best_perf = perf[self.monitor]
-            filepath = self.filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else self.filepath.format(step=suffix, **logs)
-            save_dir = os.path.dirname(filepath)
-
             # 保存ckpt
-            if self.save_checkpoint:
-                os.makedirs(save_dir, exist_ok=True)
-                torch.save(self.model.state_dict(), filepath)
-            if self.save_optimizer:
-                os.makedirs(save_dir, exist_ok=True)
-                torch.save(self.model.optimizer.state_dict(), os.path.join(save_dir, f'best_optimizer.pt'))
-            if self.save_steps_params:
-                os.makedirs(save_dir, exist_ok=True)
-                self.model.save_steps_params(os.path.join(save_dir, f'best_steps_params.pt'))
-        print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
-        print(print_str + f'. best_{self.monitor}: {self.best_perf:.5f}\n')
+            super().process(suffix, logs)
+
+        if self.verbose > 0:
+            print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
+            print(print_str + f'. best_{self.monitor}: {self.best_perf:.5f}\n')
         
     # 定义评价函数
     def evaluate(self):
@@ -689,7 +696,7 @@ class Logger(Callback):
     对于valid/dev和test的日志需要在evaluate之后对log进行赋值，如log['dev_f1']=f1，并在Evaluator之后调用
     若每隔一定steps对验证集评估，则Logger的interval设置成和Evaluater一致或者约数，保证日志能记录到
     '''
-    def __init__(self, filename, interval=10, mode='a', separator='\t', verbosity=1, name=None):
+    def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None):
         super(Logger, self).__init__()
         import logging
 
@@ -699,7 +706,9 @@ class Logger(Callback):
         formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level_dict[verbosity])
-        fh = logging.FileHandler(filename, mode)
+        save_dir = os.path.dirname(log_path)
+        os.makedirs(save_dir, exist_ok=True)
+        fh = logging.FileHandler(log_path, mode)
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
 
@@ -710,7 +719,7 @@ class Logger(Callback):
         self.logger.info('Finish Training'.center(40, '='))
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
-        self.logger.info(f'Epoch {epoch}'.center(40, '='))
+        self.logger.info(f'Epoch {epoch+1}'.center(40, '='))
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in {'size'}])
@@ -728,38 +737,41 @@ class Tensorboard(Callback):
     赋值需要分栏目的用'/'进行分隔
     若每隔一定steps对验证集评估，则Tensorboard的interval设置成和Evaluater一致或者约数，保证Tensorboard能记录到
     '''
-    def __init__(self, dirname, interval=10, prefix='train', on_epoch_end_scalar_epoch=True):
+    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', on_epoch_end_scalar_epoch=True):
         super(Tensorboard, self).__init__()
+        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
+        self.method = method
         self.interval = interval
         self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
         self.on_epoch_end_scalar_epoch = on_epoch_end_scalar_epoch  # 控制on_epoch_end记录的是epoch还是global_step
 
         from tensorboardX import SummaryWriter
-        self.writer = SummaryWriter(log_dir=str(dirname))  # prepare summary writer
+        os.makedirs(log_dir, exist_ok=True)
+        self.writer = SummaryWriter(log_dir=str(log_dir))  # prepare summary writer
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        # 默认记录的是epoch
-        for k, v in logs.items():
-            if k not in {'size'}:
-                continue
-            index = k if '/' in k else f"{self.prefix}{k}"
+        if self.method == 'epoch':
+            # 默认记录的是epoch
             log_step = epoch+1 if self.on_epoch_end_scalar_epoch else global_step+1
-            self.writer.add_scalar(index, v, log_step)
+            self.process(log_step, logs)
 
     def on_batch_end(self, global_step, local_step, logs=None):
         # 默认记录的是global_step
-        if (global_step+1) % self.interval == 0:
-            for k, v in logs.items():
-                if k not in {'size'}:
-                    continue
-                index = k if '/' in k else f"{self.prefix}{k}"
-                self.writer.add_scalar(index, v, global_step+1)
+        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+            self.process(global_step+1, logs)
+
+    def process(self, iteration, logs):
+        logs = logs or {}
+        for k, v in logs.items():
+            if k in {'size'}:
+                continue
+            index = k if '/' in k else f"{self.prefix}{k}"
+            self.writer.add_scalar(index, v, iteration)
 
 
 class LambdaCallback(Callback):
     """lambda表达式
     """
-
     def __init__(self, on_epoch_begin=None, on_epoch_end=None, on_batch_begin=None, on_batch_end=None, 
                  on_train_begin=None, on_train_end=None, on_dataloader_end=None, **kwargs):
         super(LambdaCallback, self).__init__()

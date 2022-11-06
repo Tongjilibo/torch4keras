@@ -51,7 +51,7 @@ class MyEvaluator(Evaluator):
     # 重构评价函数
     def evaluate(self):
         total, hit = 1e-5, 0
-        for X, y in tqdm(test_dataloader, desc='Evaluate'):
+        for X, y in test_dataloader:
             pred_y = self.model.predict(X).argmax(dim=-1)
             hit += pred_y.eq(y).sum().item()
             total += y.shape[0]
@@ -59,6 +59,11 @@ class MyEvaluator(Evaluator):
 
 
 if __name__ == '__main__':
-    evaluator = MyEvaluator('./best_model.pt', monitor='test_acc')
-    ckpt = Checkpoint('./model_{epoch}_{test_acc:.5f}.pt')
+    evaluator = MyEvaluator(monitor='test_acc', 
+                            checkpoint_path='./ckpt/best_model.pt', 
+                            optimizer_path='./ckpt/best_optimizer.pt', 
+                            steps_params_path='./ckpt/best_step_params.pt')
+    ckpt = Checkpoint('./ckpt/model_{epoch}_{test_acc:.5f}.pt',
+                      optimizer_path='./ckpt/optimizer_{epoch}_{test_acc:.5f}.pt',
+                      steps_params_path='./ckpt/steps_params_{epoch}_{test_acc:.5f}.pt')
     model.fit(train_dataloader, steps_per_epoch=None, epochs=5, callbacks=[evaluator, ckpt])
