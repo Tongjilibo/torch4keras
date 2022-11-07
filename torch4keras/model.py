@@ -140,10 +140,11 @@ class BaseModel(nn.Module):
         if not isinstance(callbacks, (list, tuple)):
             callbacks = [callbacks]
         for callback in callbacks:
-            assert isinstance(callback, Callback), "Args 'callbacks' only support Callback() inputs"
+            assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
         progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)  # 进度条
         history = History()
-        self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history])
+        master_rank = self.master_rank if hasattr(self, 'master_rank') else None
+        self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=master_rank)
         callback_model = self.module if hasattr(self, 'module') else self
         self.callbacks.set_model(callback_model)
         self.callbacks.set_params({

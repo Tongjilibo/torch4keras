@@ -164,8 +164,7 @@ class CallbackList(object):
         callbacks = callbacks or []
         self.callbacks = [c for c in callbacks]
         self.queue_length = queue_length
-        if master_rank:
-            self.master_rank = master_rank
+        self.master_rank = master_rank
 
     def append(self, callback):
         self.callbacks.append(callback)
@@ -178,15 +177,10 @@ class CallbackList(object):
         for callback in self.callbacks:
             callback.set_model(model)
 
-    def return_distributed(self):
-        '''分布式训练中，控制只有master_rank才执行callbacks
-        '''
-        # 如果是分布式DDP训练，则仅masker_rank可以callback
-        if hasattr(self, 'master_rank') and self.master_rank!=torch.distributed.get_rank():
-            return
-
     def on_epoch_begin(self, global_step, epoch, logs=None):
-        self.return_distributed()
+        # 如果是分布式DDP训练，则仅masker_rank可以callback
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_epoch_begin(global_step, epoch, logs)
@@ -195,13 +189,15 @@ class CallbackList(object):
         self._delta_ts_batch_end = deque([], maxlen=self.queue_length)
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        self.return_distributed()
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_epoch_end(global_step, epoch, logs)
 
     def on_batch_begin(self, global_step, local_step, logs=None):
-        self.return_distributed()
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         t_before_callbacks = time.time()
         for callback in self.callbacks:
@@ -213,7 +209,8 @@ class CallbackList(object):
         self._t_enter_batch = time.time()
 
     def on_batch_end(self, global_step, local_step, logs=None):
-        self.return_distributed()
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         if not hasattr(self, '_t_enter_batch'):
             self._t_enter_batch = time.time()
@@ -227,19 +224,22 @@ class CallbackList(object):
             warnings.warn(f'Method on_batch_end() is slow compared to the batch update {delta_t_median}. Check your callbacks.')
 
     def on_train_begin(self, logs=None):
-        self.return_distributed()
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_train_begin(logs)
 
     def on_train_end(self, logs=None):
-        self.return_distributed()
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_train_end(logs)
 
     def on_dataloader_end(self, logs=None):
-        self.return_distributed()
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_dataloader_end(logs)
