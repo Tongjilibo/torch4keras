@@ -66,7 +66,7 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20221107**：修复DDP下打印的bug
+- **20221107**：修复DDP下打印的bug，metrics中加入detach
 - **20221106**：默认的Tensorboard的global_step+1, 参考Keras修改了callback的逻辑
 - **20221020**：增加Checkpoint, Evaluator等自带Callback, 修改BaseModel(net)方式，修复DP和DDP的__init__()
 - **20221019**：初版提交
