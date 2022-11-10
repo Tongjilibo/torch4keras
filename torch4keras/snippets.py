@@ -830,7 +830,7 @@ def metric_mapping(metric, func, y_pred, y_true):
         # 如果forward返回了list, tuple，则选取第一项
         y_pred_tmp = y_pred[0] if isinstance(y_pred, (list, tuple)) else y_pred
         y_true_tmp = y_true[0] if isinstance(y_true, (list, tuple)) else y_true
-        # y_pred_tmp = y_pred_tmp.detach()  # 训练过程中评估，detach不进入计算图
+        y_pred_tmp = y_pred_tmp.detach()  # 训练过程中评估，detach不进入计算图
 
         # 根据shape做预处理
         if len(y_pred_tmp.shape) == len(y_true_tmp.shape) + 1:
