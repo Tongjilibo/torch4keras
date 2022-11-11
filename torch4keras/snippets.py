@@ -12,6 +12,11 @@ from collections import deque
 import json
 import copy
 try:
+    from sklearn.metrics import roc_auc_score
+except ImportError:
+    roc_auc_score = None
+
+try:
     import requests
 except ImportError:
     requests = None
@@ -664,7 +669,7 @@ class Evaluator(Checkpoint):
     def __init__(self, monitor='perf', mode='max', verbose=1, checkpoint_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
         super().__init__(checkpoint_path, optimizer_path, steps_params_path, method, step_interval)
         self.monitor = monitor
-        assert mode in {'max', 'min'}, 'Compare performance only support max/min mode'
+        assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
         self.mode = mode
         self.verbose = verbose
         self.best_perf = np.inf if mode == 'min' else -np.inf
@@ -818,10 +823,10 @@ def metric_mapping(metric, func, y_pred, y_true):
         metric_res = func(y_pred, y_true)
         if inspect.isfunction(metric):
             # 如果直接传入回调函数（无key），要求回调函数返回Dict[String: Int/Float]类型
-            assert isinstance(metric_res, dict), 'Custom metrics callbacks should return "Dict[String: Int/Float]" value'
+            assert isinstance(metric_res, dict), 'Custom metrics callbacks should return `Dict[String: Int/Float]` value'
         elif isinstance(metric, str):
             # 如果直接传入回调函数（有key），要求回调函数返回Int/Float类型
-            assert isinstance(metric_res, (int, float)), 'Custom metrics callbacks should return "Int, Float" value'
+            assert isinstance(metric_res, (int, float)), 'Custom metrics callbacks should return `Int/Float value'
         return metric_res
     elif metric == 'loss':
         pass
@@ -843,6 +848,10 @@ def metric_mapping(metric, func, y_pred, y_true):
         # 执行内置的metric
         if metric in {'accuracy', 'acc'}:
             return torch.sum(y_pred_tmp.eq(y_true_tmp)).item() / y_true_tmp.numel()
+        elif metric in {'auc'}:
+            if roc_auc_score is None:
+                raise ImportError('roc_auc_score requires the `sklearn` library.')
+            return roc_auc_score(y_true.cpu().numpy(), y_pred_tmp.cpu().numpy())            
         elif metric in {'mae', 'MAE', 'mean_absolute_error'}:
             return torch.mean(torch.abs(y_pred_tmp - y_true_tmp)).item()
         elif metric in {'mse', 'MSE', 'mean_squared_error'}:

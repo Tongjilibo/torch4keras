@@ -80,7 +80,7 @@ class BaseModel(nn.Module):
             elif isfunction(metric):
                 self.metrics.update({metric: metric})
             else:
-                raise ValueError('Args metrics only support "String, Dict, Callback, List[String, Dict, Callback]" format')
+                raise ValueError('Args metrics only support `String, Dict, Callback, List[String, Dict, Callback]` format')
         self.stateful_metrics = stateful_metrics
 
         # 梯度累积
@@ -119,7 +119,7 @@ class BaseModel(nn.Module):
             loss = loss_detail[0]
             loss_detail = {f'loss{i}':v for i, v in enumerate(loss_detail[1:], start=1)}
         else:
-            raise ValueError('Return loss only support Tensor/dict/tuple/list format')
+            raise ValueError('Return loss only support `Tensor/dict/tuple/list` format')
 
         # 梯度累积
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
@@ -127,7 +127,7 @@ class BaseModel(nn.Module):
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
         if not hasattr(train_dataloader, '__len__'):
-            assert steps_per_epoch is not None, 'Either train_dataloader has attr "__len__" or steps_per_epoch is not None'
+            assert steps_per_epoch is not None, 'Either train_dataloader has attr `__len__` or steps_per_epoch is not None'
 
         self.steps_per_epoch = len(train_dataloader) if steps_per_epoch is None else steps_per_epoch
         self.total_steps = self.steps_per_epoch * epochs
@@ -190,7 +190,7 @@ class BaseModel(nn.Module):
                 elif isinstance(train_X, torch.Tensor):
                     btz = train_X.size(0)
                 else:
-                    raise ValueError('Input only support [list, tuple, tensor]')
+                    raise ValueError('Input only support `[list, tuple, tensor]`')
                 logs = {'size': btz}
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 

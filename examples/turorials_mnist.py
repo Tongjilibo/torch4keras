@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel
-from torch4keras.snippets import seed_everything, Checkpoint, Evaluator
+from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 
@@ -51,7 +51,7 @@ class MyEvaluator(Evaluator):
     # 重构评价函数
     def evaluate(self):
         total, hit = 1e-5, 0
-        for X, y in test_dataloader:
+        for X, y in tqdm(test_dataloader):
             pred_y = self.model.predict(X).argmax(dim=-1)
             hit += pred_y.eq(y).sum().item()
             total += y.shape[0]
@@ -66,4 +66,5 @@ if __name__ == '__main__':
     ckpt = Checkpoint('./ckpt/model_{epoch}_{test_acc:.5f}.pt',
                       optimizer_path='./ckpt/optimizer_{epoch}_{test_acc:.5f}.pt',
                       steps_params_path='./ckpt/steps_params_{epoch}_{test_acc:.5f}.pt')
-    model.fit(train_dataloader, steps_per_epoch=None, epochs=5, callbacks=[evaluator, ckpt])
+    early_stop = EarlyStopping(monitor='test_acc', verbose=1)
+    model.fit(train_dataloader, steps_per_epoch=100, epochs=5, callbacks=[evaluator, ckpt, early_stop])
