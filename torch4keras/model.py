@@ -13,6 +13,7 @@ class BaseModel(nn.Module):
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
+        self.retain_graph = False
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
@@ -123,6 +124,14 @@ class BaseModel(nn.Module):
 
         # 梯度累积
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
+
+        # backward
+        self.scale_before_step = 0
+        if self.use_amp:  # 混合精度
+            self.scale_before_step = self.scaler.get_scale()
+            self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
+        else:
+            loss.backward()
         return output, loss, loss_detail
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
@@ -176,7 +185,7 @@ class BaseModel(nn.Module):
                 try:
                     batch = next(train_dataloader_iter)
                 except StopIteration:
-                    self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成dataloader的情况，如预训练
+                    self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成self.train_dataloader的情况，如预训练
                     train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
                     self.bti = 0
                     batch = next(train_dataloader_iter)
@@ -196,11 +205,9 @@ class BaseModel(nn.Module):
 
                 self.train()  # 设置为train模式
                 # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
-                output, loss, loss_detail = self.train_step(train_X, train_y)
-                
-                # 主要是方便bert4torch中的对抗训练
-                scale_before_step, loss, loss_detail = self.after_train_step(train_X, train_y, output, loss, loss_detail)
-                
+                self.output, self.loss, self.loss_detail = self.train_step(train_X, train_y)
+                self.callbacks.on_train_step_end()
+                                
                 # 参数更新, 真实的参数更新次数要除以grad_accumulation_steps，注意调整总的训练步数
                 if (self.global_step+1) % self.grad_accumulation_steps == 0:
                     skip_scheduler = False
@@ -211,7 +218,7 @@ class BaseModel(nn.Module):
                             torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
-                        skip_scheduler = self.scaler.get_scale() != scale_before_step
+                        skip_scheduler = self.scaler.get_scale() != self.scale_before_step
                     else:
                         if self.clip_grad_norm is not None:  # 梯度裁剪
                             torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
@@ -226,15 +233,15 @@ class BaseModel(nn.Module):
                             self.scheduler.step()
 
                 # 添加loss至log打印
-                logs.update({'loss': loss.item()})
-                logs_loss_detail = {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in loss_detail.items()}
+                logs.update({'loss': self.loss.item()})
+                logs_loss_detail = {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in self.loss_detail.items()}
                 logs.update(logs_loss_detail)
                 if self.global_step == resume_step:
                     progbarlogger.add_metrics(list(logs_loss_detail.keys()), add_position=1)
                     
                 # 添加metrics至log打印
                 for metric, func in self.metrics.items():
-                    perf = metric_mapping(metric, func, output, train_y)  # 内置的一些accuracy指标
+                    perf = metric_mapping(metric, func, self.output, train_y)  # 内置的一些accuracy指标
                     if perf is not None:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.global_step == resume_step:
@@ -263,15 +270,19 @@ class BaseModel(nn.Module):
             return output[return_all]
         else:
             raise ValueError('Return format error')
-    
-    def after_train_step(self, train_X, train_y, output, loss, loss_detail):
-        scale_before_step = 0
-        if self.use_amp:  # 混合精度
-            scale_before_step = self.scaler.get_scale()
-            self.scaler.scale(loss).backward()
-        else:
-            loss.backward()
-        return scale_before_step, loss, loss_detail
+
+    def load_weights(self, load_path, strict=True):
+        '''加载模型权重
+           save_path: 权重加载路径
+        '''
+        state_dict = torch.load(load_path, map_location='cpu')
+        self.load_state_dict(state_dict, strict=strict)
+
+    def save_weights(self, save_path):
+        '''保存模型权重
+           save_path: 权重保存路径
+        '''
+        torch.save(self.state_dict(), save_path)
 
 
 class BaseModelDP(nn.DataParallel, BaseModel):
