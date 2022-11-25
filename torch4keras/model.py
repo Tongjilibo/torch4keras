@@ -189,15 +189,15 @@ class BaseModel(nn.Module):
                     train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
                     self.bti = 0
                     batch = next(train_dataloader_iter)
-                train_X, train_y = batch
+                self.train_X, self.train_y = batch
 
                 # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
-                if isinstance(train_X, (list, tuple)) and isinstance(train_X[0], (list, tuple)):
-                    btz = train_X[0][0].size(0)
-                elif isinstance(train_X, (list, tuple)) and (not isinstance(train_X[0], (list, tuple))):
-                    btz = train_X[0].size(0)
-                elif isinstance(train_X, torch.Tensor):
-                    btz = train_X.size(0)
+                if isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], (list, tuple)):
+                    btz = self.train_X[0][0].size(0)
+                elif isinstance(self.train_X, (list, tuple)) and (not isinstance(self.train_X[0], (list, tuple))):
+                    btz = self.train_X[0].size(0)
+                elif isinstance(self.train_X, torch.Tensor):
+                    btz = self.train_X.size(0)
                 else:
                     raise ValueError('Input only support `[list, tuple, tensor]`')
                 logs = {'size': btz}
@@ -205,7 +205,7 @@ class BaseModel(nn.Module):
 
                 self.train()  # 设置为train模式
                 # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
-                self.output, self.loss, self.loss_detail = self.train_step(train_X, train_y)
+                self.output, self.loss, self.loss_detail = self.train_step(self.train_X, self.train_y)
                 self.callbacks.on_train_step_end()
                                 
                 # 参数更新, 真实的参数更新次数要除以grad_accumulation_steps，注意调整总的训练步数
@@ -241,7 +241,7 @@ class BaseModel(nn.Module):
                     
                 # 添加metrics至log打印
                 for metric, func in self.metrics.items():
-                    perf = metric_mapping(metric, func, self.output, train_y)  # 内置的一些accuracy指标
+                    perf = metric_mapping(metric, func, self.output, self.train_y)  # 内置的一些accuracy指标
                     if perf is not None:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.global_step == resume_step:
