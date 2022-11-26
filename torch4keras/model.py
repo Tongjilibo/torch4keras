@@ -13,7 +13,7 @@ class BaseModel(nn.Module):
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
-        self.retain_graph = False
+        self.retain_graph = False  # loss.backward()是否保留计算图
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
@@ -131,7 +131,7 @@ class BaseModel(nn.Module):
             self.scale_before_step = self.scaler.get_scale()
             self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
         else:
-            loss.backward()
+            loss.backward(retain_graph=self.retain_graph)
         return output, loss, loss_detail
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
