@@ -154,7 +154,7 @@ class BaseModel(nn.Module):
         history = History()
         master_rank = self.master_rank if hasattr(self, 'master_rank') else None
         self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=master_rank)
-        callback_model = self.module if hasattr(self, 'module') else self
+        callback_model = self
         self.callbacks.set_model(callback_model)
         self.callbacks.set_params({
             'epochs': epochs,
