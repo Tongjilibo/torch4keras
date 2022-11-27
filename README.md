@@ -60,12 +60,14 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - 简单示例: [turorials_mnist](https://github.com/Tongjilibo/torch4keras/blob/master/examples/turorials_mnist.py)
 
 ## 4. 版本说明
-- **v0.0.3post2**：20221107 修复DDP下打印的bug
+- **v0.0.4**：20221127 为callback增加on_train_step_end方法, 修复BaseModel(net)方式的bug
+- **v0.0.3.post2**：20221107 修复DDP下打印的bug
 - **v0.0.3**：20221106 参考Keras修改了callback的逻辑
 - **v0.0.2**：20221023 增加Checkpoint, Evaluator等自带Callback, 修改BaseModel(net)方式，修复DP和DDP的__init__()
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
+- **20221127**：为callback增加on_train_step_end方法, 修复BaseModel(net)方式的bug
 - **20221107**：修复DDP下打印的bug，metrics中加入detach和auc
 - **20221106**：默认的Tensorboard的global_step+1, 参考Keras修改了callback的逻辑
 - **20221020**：增加Checkpoint, Evaluator等自带Callback, 修改BaseModel(net)方式，修复DP和DDP的__init__()
