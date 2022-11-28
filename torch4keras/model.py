@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from torch4keras.snippets import metric_mapping, ProgbarLogger, EarlyStopping, Callback, CallbackList, BaseLogger, History
+from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
 
@@ -271,18 +271,28 @@ class BaseModel(nn.Module):
         else:
             raise ValueError('Return format error')
 
-    def load_weights(self, load_path, strict=True):
+    def load_weights(self, load_path, strict=True, mapping={}):
         '''加载模型权重
            save_path: 权重加载路径
+           mapping：指定key的映射
         '''
         state_dict = torch.load(load_path, map_location='cpu')
-        self.load_state_dict(state_dict, strict=strict)
+        state_dict_raw = {}
+        for k, v in state_dict.items():
+            k = mapping.get(k, k)
+            state_dict_raw[k] = v
+        self.load_state_dict(state_dict_raw, strict=strict)
 
-    def save_weights(self, save_path):
+    def save_weights(self, save_path, mapping={}):
         '''保存模型权重
            save_path: 权重保存路径
+           mapping：指定key的映射
         '''
-        torch.save(self.state_dict(), save_path)
+        state_dict_raw = {}
+        for k, v in self.state_dict().items():
+            k = mapping.get(k, k)
+            state_dict_raw[k] = v
+        torch.save(state_dict_raw, save_path)
 
 
 class BaseModelDP(nn.DataParallel, BaseModel):
