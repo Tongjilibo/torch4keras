@@ -5,10 +5,20 @@ from collections import OrderedDict
 from inspect import isfunction
 
 
+def trainer(cls: nn.Module):
+    '''通过装饰器的来为nn.Module的模型结构增加Trainer
+    '''
+    class cls_trainer(Trainer):
+        def __init__(self, *args, **kwargs):
+            module = cls(*args, **kwargs)
+            super().__init__(module)
+    return cls_trainer
+
+
 class Trainer(object):
     """Trainer
     """
-    def __init__(self, module):
+    def __init__(self, module: nn.Module):
         super(Trainer, self).__init__()
         self.module = module
         # 这里主要是为了外面调用用到
@@ -20,6 +30,15 @@ class Trainer(object):
     def to(self, device):
         self.module.to(device)
         return self
+    
+    def parameters(self):
+        return self.module.parameters()
+
+    def named_parameters(self):
+        return self.module.named_parameters
+    
+    def eval(self):
+        self.module.eval()
 
     def save_steps_params(self, save_path):
         '''保存训练过程参数
@@ -295,7 +314,7 @@ class TrainerDP(nn.DataParallel, Trainer):
     '''DataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
     '''
     def __init__(self, *args, **kwargs):
-        Trainer.__init__(self)
+        Trainer.__init__(self, *args, **kwargs)
         nn.DataParallel.__init__(self, *args, **kwargs)
 
 
@@ -304,5 +323,5 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
         self.master_rank = master_rank  # 用于记录打印条的rank
-        Trainer.__init__(self)
+        Trainer.__init__(self, *args, **kwargs)
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
