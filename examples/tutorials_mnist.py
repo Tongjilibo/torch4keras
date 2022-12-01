@@ -46,7 +46,6 @@ net = torch.nn.Sequential(
             nn.Linear(7744, 10)
         )
 model = Trainer(net).to(device)
-
 model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 

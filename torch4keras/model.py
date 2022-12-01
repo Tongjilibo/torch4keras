@@ -15,11 +15,11 @@ def trainer(cls: nn.Module):
     return cls_trainer
 
 
-class Trainer(object):
-    """Trainer
+class Trainer:
+    """Trainer：参考keras实现的模型的训练过程
+    支持梯度累积，混合精度，梯度裁剪等功能，也包装了下nn.Module的主要函数方便调用，仍可通过实例trainer.module.*来调用
     """
     def __init__(self, module: nn.Module):
-        super(Trainer, self).__init__()
         self.module = module
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
@@ -27,18 +27,47 @@ class Trainer(object):
         self.retain_graph = False  # loss.backward()是否保留计算图
         self.callbacks = []
     
-    def to(self, device):
-        self.module.to(device)
+    def to(self, *args, **kwargs):
+        self.module.to(*args, **kwargs)
         return self
-    
-    def parameters(self):
-        return self.module.parameters()
 
-    def named_parameters(self):
-        return self.module.named_parameters
+    def cpu(self, *args, **kwargs):
+        self.module = self.module.cpu(*args, **kwargs)
+        return self
+
+    def cuda(self, *args, **kwargs):
+        self.module = self.module.cuda(*args, **kwargs)
+        return self
+
+    def parameters(self, *args, **kwargs):
+        return self.module.parameters(*args, **kwargs)
+
+    def named_parameters(self, *args, **kwargs):
+        return self.module.named_parameters(*args, **kwargs)
     
-    def eval(self):
-        self.module.eval()
+    def named_buffers(self, *args, **kwargs):
+        return self.module.named_buffers(*args, **kwargs)
+
+    def named_children(self, *args, **kwargs):
+        return self.module.named_children(*args, **kwargs)
+
+    def named_modules(self, *args, **kwargs):
+        return self.module.named_modules(*args, **kwargs)
+
+    def train(self, *args, **kwargs):
+        self.module.train(*args, **kwargs)
+
+    def eval(self, *args, **kwargs):
+        self.module.eval(*args, **kwargs)
+    
+    def zero_grad(self, *args, **kwargs):
+        self.module.zero_grad(*args, **kwargs)
+    
+    def state_dict(self):
+        return self.module.state_dict()
+    
+    def load_state_dict(self, *args, **kwargs):
+        self.module.load_state_dict(*args, **kwargs)
 
     def save_steps_params(self, save_path):
         '''保存训练过程参数
