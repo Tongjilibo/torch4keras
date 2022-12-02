@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
-from torch4keras.model import Trainer, trainer
+from torch4keras.trainer import Trainer, trainer
 from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
@@ -46,6 +46,7 @@ net = torch.nn.Sequential(
             nn.Linear(7744, 10)
         )
 model = Trainer(net).to(device)
+
 model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 
