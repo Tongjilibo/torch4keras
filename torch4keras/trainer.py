@@ -350,7 +350,7 @@ class TrainerDP(nn.DataParallel, Trainer):
     '''
     def __init__(self, *args, **kwargs):
         nn.DataParallel.__init__(self, *args, **kwargs)
-        Trainer.__init__(self, *args, **kwargs)
+        Trainer.__init__(self, args[0])
 
 
 class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
@@ -359,4 +359,4 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     def __init__(self, *args, master_rank=0, **kwargs):
         self.master_rank = master_rank  # 用于记录打印条的rank
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
-        Trainer.__init__(self, *args, **kwargs)
+        Trainer.__init__(self, args[0])
