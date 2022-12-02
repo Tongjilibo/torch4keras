@@ -1,3 +1,4 @@
+import pstats
 import torch.nn as nn
 import torch
 from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History
@@ -337,6 +338,11 @@ class Trainer:
             k = mapping.get(k, k)
             state_dict_raw[k] = v
         torch.save(state_dict_raw, save_path)
+
+
+class BaseModel:
+    def __init__(self):
+        raise DeprecationWarning('The BaseModel module has been deprecated from v0.0.5, you can use new module `Trainer(net)` or `@trainer class Model(nn.Module)`')
 
 
 class TrainerDP(nn.DataParallel, Trainer):
