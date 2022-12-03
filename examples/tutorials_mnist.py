@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel
-from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping
+from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping, Summary
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 
@@ -21,29 +21,29 @@ x_test, y_test = x[40000:], y[40000:]
 test_dataloader = DataLoader(TensorDataset(x_test, y_test), batch_size=8)
 
 # 方式1
-class MyModel(BaseModel):
-    def __init__(self):
-        super().__init__()
-        self.model = torch.nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3), nn.ReLU(),
-            nn.MaxPool2d(2, 2), 
-            nn.Conv2d(32, 64, kernel_size=3), nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(7744, 10)
-        )
-    def forward(self, inputs):
-        return self.model(inputs)
-model = MyModel().to(device)
-
-# 方式2
-# net = torch.nn.Sequential(
+# class MyModel(BaseModel):
+#     def __init__(self):
+#         super().__init__()
+#         self.model = torch.nn.Sequential(
 #             nn.Conv2d(1, 32, kernel_size=3), nn.ReLU(),
 #             nn.MaxPool2d(2, 2), 
 #             nn.Conv2d(32, 64, kernel_size=3), nn.ReLU(),
 #             nn.Flatten(),
 #             nn.Linear(7744, 10)
 #         )
-# model = BaseModel(net).to(device)
+#     def forward(self, inputs):
+#         return self.model(inputs)
+# model = MyModel().to(device)
+
+# 方式2
+net = torch.nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3), nn.ReLU(),
+            nn.MaxPool2d(2, 2), 
+            nn.Conv2d(32, 64, kernel_size=3), nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(7744, 10)
+        )
+model = BaseModel(net).to(device)
 model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 
@@ -67,4 +67,4 @@ if __name__ == '__main__':
                       optimizer_path='./ckpt/optimizer_{epoch}_{test_acc:.5f}.pt',
                       steps_params_path='./ckpt/steps_params_{epoch}_{test_acc:.5f}.pt')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
-    model.fit(train_dataloader, steps_per_epoch=100, epochs=5, callbacks=[evaluator, ckpt, early_stop])
+    model.fit(train_dataloader, steps_per_epoch=100, epochs=5, callbacks=[Summary(), evaluator, ckpt, early_stop])

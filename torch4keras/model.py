@@ -156,6 +156,7 @@ class BaseModel(nn.Module):
         self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=master_rank)
         callback_model = self
         self.callbacks.set_model(callback_model)
+        self.callbacks.set_optimizer(self.optimizer)
         self.callbacks.set_params({
             'epochs': epochs,
             'steps': self.steps_per_epoch,
