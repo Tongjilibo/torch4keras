@@ -68,7 +68,7 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20221203**：把BaseModel修改为Trainer, 且不从nn.Module继承(trainer和网络结构无关)，对应的调用方式也发生修改
+- **20221203**：把BaseModel修改为Trainer, 且不从nn.Module继承(trainer和网络结构无关)，对应的调用方式也发生修改，增加Summary的Callback
 - **20221127**：为callback增加on_train_step_end方法, 修复BaseModel(net)方式的bug
 - **20221107**：修复DDP下打印的bug，metrics中加入detach和auc
 - **20221106**：默认的Tensorboard的global_step+1, 参考Keras修改了callback的逻辑

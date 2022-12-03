@@ -840,6 +840,16 @@ class LambdaCallback(Callback):
             self.on_dataloader_end = lambda logs: None
 
 
+class Summary(Callback):
+    '''调用torchinfo的summary
+    '''
+    def on_train_begin(self, logs=None):
+        from torchinfo import summary
+        print()
+        summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
+        print()
+
+
 def metric_mapping(metric, func, y_pred, y_true):
     # 自定义metrics
     if inspect.isfunction(func):

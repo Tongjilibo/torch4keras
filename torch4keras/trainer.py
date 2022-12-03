@@ -21,6 +21,9 @@ class Trainer:
     支持梯度累积，混合精度，梯度裁剪等功能，也包装了下nn.Module的主要函数方便调用，仍可通过实例trainer.module.*来调用
     """
     def __init__(self, module: nn.Module):
+        '''module: 传递给trainer的nn.Module
+           functions: 传递给trainer的module的方法, 用于在外部直接直接调用trainer.func()相当于调用trainer.module.func()
+        '''
         self.module = module
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
@@ -28,8 +31,9 @@ class Trainer:
         self.retain_graph = False  # loss.backward()是否保留计算图
         self.callbacks = []
     
+    # nn.Module的一些常用方法，在外部可直接调用来调用self.module的方法
     def to(self, *args, **kwargs):
-        self.module.to(*args, **kwargs)
+        self.module = self.module.to(*args, **kwargs)
         return self
 
     def cpu(self, *args, **kwargs):
@@ -54,21 +58,24 @@ class Trainer:
 
     def named_modules(self, *args, **kwargs):
         return self.module.named_modules(*args, **kwargs)
-
+    
     def train(self, *args, **kwargs):
-        self.module.train(*args, **kwargs)
+        self.module = self.module.train(*args, **kwargs)
+        return self
 
     def eval(self, *args, **kwargs):
-        self.module.eval(*args, **kwargs)
-    
+        self.module = self.module.eval(*args, **kwargs)
+        return self
+
     def zero_grad(self, *args, **kwargs):
         self.module.zero_grad(*args, **kwargs)
-    
-    def state_dict(self):
-        return self.module.state_dict()
-    
+        return self
+    def state_dict(self, *args, **kwargs):
+        return self.module.state_dict(*args, **kwargs)
+        
     def load_state_dict(self, *args, **kwargs):
         self.module.load_state_dict(*args, **kwargs)
+        return self
 
     def save_steps_params(self, save_path):
         '''保存训练过程参数
