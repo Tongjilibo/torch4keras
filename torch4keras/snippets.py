@@ -5,6 +5,7 @@ import sys
 import collections
 import inspect
 from datetime import datetime
+from tqdm import tqdm
 import warnings
 import os
 import random
@@ -387,6 +388,87 @@ class ProgbarLogger(Callback):
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
             self.progbar = Progbar(target=self.target, verbose=self.verbose, stateful_metrics=self.stateful_metrics)
+        self.seen = 0
+
+    def on_batch_begin(self, global_step=None, local_step=None, logs=None):
+        if self.seen < self.target:
+            self.log_values = []
+
+    def on_batch_end(self, global_step=None, local_step=None, logs=None):
+        logs = logs or {}
+        self.seen += 1
+        for k in self.params['metrics']:
+            if k in logs:
+                self.log_values.append((k, logs[k]))
+
+        # Skip progbar update for the last batch;
+        # will be handled by on_epoch_end.
+        if self.verbose and self.seen < self.target:
+            self.progbar.update(self.seen, self.log_values)
+
+    def on_epoch_end(self, global_step=None, epoch=None, logs=None):
+        logs = logs or {}
+        for k in self.params['metrics']:
+            if k in logs:
+                self.log_values.append((k, logs[k]))
+        if self.verbose:
+            self.progbar.update(self.seen, self.log_values)
+    
+    def on_train_end(self, logs=None):
+        if self.verbose:
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Finish Training' % (time_start))
+
+
+class TqdmProgressBar(Callback):
+    """ Tqdm进度条
+    """
+    def __init__(self, stateful_metrics=None):
+        super(TqdmProgressBar, self).__init__()
+        if stateful_metrics:
+            self.stateful_metrics = set(stateful_metrics)
+        else:
+            self.stateful_metrics = set()
+
+    def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
+        '''在指定位置插入metrics指标
+        '''
+        if add_position is None:
+            add_position = len(self.params['metrics'])
+        metrics = [metrics] if isinstance(metrics, str) else metrics
+        if stateful_metrics:
+            stateful_metrics = [stateful_metrics] if isinstance(stateful_metrics, str) else stateful_metrics
+            self.stateful_metrics.update(set(stateful_metrics))
+            self.progbar.stateful_metrics.update(set(stateful_metrics))
+
+        add_metrics = []
+        for metric in metrics:
+            if metric not in self.params['metrics']:
+                add_metrics.append(metric)
+        self.params['metrics'] = self.params['metrics'][:add_position] + add_metrics + self.params['metrics'][add_position:]
+
+    def on_train_begin(self, logs=None):
+        self.verbose = self.params['verbose']
+        self.epochs = self.params['epochs']
+        if self.verbose:
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Start Training' % (time_start))
+
+    def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
+        if self.verbose:
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
+            self.target = self.params['steps']
+            self.progbar = tqdm(
+            desc=self.train_description,
+            initial=self.train_batch_idx,
+            position=(2 * self.process_position),
+            disable=self.is_disabled,
+            leave=True,
+            dynamic_ncols=True,
+            file=sys.stdout,
+            smoothing=0,
+        )
         self.seen = 0
 
     def on_batch_begin(self, global_step=None, local_step=None, logs=None):
