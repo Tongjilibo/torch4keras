@@ -44,7 +44,7 @@ net = torch.nn.Sequential(
             nn.Linear(7744, 10)
         )
 model = BaseModel(net).to(device)
-model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
+model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'], tqdmbar=True)
 
 
 class MyEvaluator(Evaluator):

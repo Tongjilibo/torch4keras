@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History
+from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
 from collections import OrderedDict
 from inspect import isfunction
 
@@ -42,7 +42,7 @@ class BaseModel(nn.Module):
         else:
             return self.forward(*inputs, **kwargs)
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1):
+    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
         '''定义loss, optimizer, metrics, 是否在计算loss前reshape
         loss: loss
         optimizer: 优化器
@@ -52,6 +52,8 @@ class BaseModel(nn.Module):
         metrics: 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
         stateful_metrics: 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         grad_accumulation_steps: 梯度累积
+
+        tqdmbar: 是否使用tqdm进度条，从kwargs中解析
         '''
         self.criterion = loss
         self.optimizer = optimizer
@@ -86,6 +88,9 @@ class BaseModel(nn.Module):
 
         # 梯度累积
         self.grad_accumulation_steps = grad_accumulation_steps
+
+        # 进度条参数
+        self.tqdmbar = kwargs.get('tqdmbar', False)
 
     def args_segmentate(self, train_X):
         '''参数是否展开
@@ -150,7 +155,13 @@ class BaseModel(nn.Module):
             callbacks = [callbacks]
         for callback in callbacks:
             assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
-        progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)  # 进度条
+        
+        # 进度条
+        if self.tqdmbar:
+            progbarlogger = TqdmProgressBar(stateful_metrics=self.stateful_metrics)
+        else:
+            progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)
+            
         history = History()
         master_rank = self.master_rank if hasattr(self, 'master_rank') else None
         self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=master_rank)

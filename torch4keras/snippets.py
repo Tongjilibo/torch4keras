@@ -459,11 +459,13 @@ class TqdmProgressBar(Callback):
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
+
             self.progbar = tqdm(
-            desc=self.train_description,
-            initial=self.train_batch_idx,
-            position=(2 * self.process_position),
-            disable=self.is_disabled,
+            total=range(self.params['steps']),
+            desc='hh',
+            initial=10,
+            position=(2 * 10),
+            disable=True,
             leave=True,
             dynamic_ncols=True,
             file=sys.stdout,
@@ -485,7 +487,7 @@ class TqdmProgressBar(Callback):
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose and self.seen < self.target:
-            self.progbar.update(self.seen, self.log_values)
+            self.progbar.update(1)
 
     def on_epoch_end(self, global_step=None, epoch=None, logs=None):
         logs = logs or {}
@@ -493,7 +495,7 @@ class TqdmProgressBar(Callback):
             if k in logs:
                 self.log_values.append((k, logs[k]))
         if self.verbose:
-            self.progbar.update(self.seen, self.log_values)
+            self.progbar.update(1)
     
     def on_train_end(self, logs=None):
         if self.verbose:
