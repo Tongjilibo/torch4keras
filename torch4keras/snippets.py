@@ -61,6 +61,7 @@ class Progbar(object):
                 # means "take an average from a single value" but keeps the
                 # numeric formatting.
                 self._values[k] = [v, 1]
+        
         self._seen_so_far = current
 
         now = time.time()
@@ -420,66 +421,26 @@ class ProgbarLogger(Callback):
             print('%s - Finish Training' % (time_start))
 
 
-class TqdmProgressBar(Callback):
+class TqdmProgressBar(ProgbarLogger):
     """ Tqdm进度条
     """
-    def __init__(self, stateful_metrics=None):
-        super(TqdmProgressBar, self).__init__()
-        if stateful_metrics:
-            self.stateful_metrics = set(stateful_metrics)
-        else:
-            self.stateful_metrics = set()
-
-    def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
-        '''在指定位置插入metrics指标
-        '''
-        if add_position is None:
-            add_position = len(self.params['metrics'])
-        metrics = [metrics] if isinstance(metrics, str) else metrics
-        if stateful_metrics:
-            stateful_metrics = [stateful_metrics] if isinstance(stateful_metrics, str) else stateful_metrics
-            self.stateful_metrics.update(set(stateful_metrics))
-            self.progbar.stateful_metrics.update(set(stateful_metrics))
-
-        add_metrics = []
-        for metric in metrics:
-            if metric not in self.params['metrics']:
-                add_metrics.append(metric)
-        self.params['metrics'] = self.params['metrics'][:add_position] + add_metrics + self.params['metrics'][add_position:]
-
-    def on_train_begin(self, logs=None):
-        self.verbose = self.params['verbose']
-        self.epochs = self.params['epochs']
-        if self.verbose:
-            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('%s - Start Training' % (time_start))
-
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
-
-            self.progbar = tqdm(
-            total=range(self.params['steps']),
-            desc='hh',
-            initial=10,
-            position=(2 * 10),
-            disable=True,
-            leave=True,
-            dynamic_ncols=True,
-            file=sys.stdout,
-            smoothing=0,
-        )
+            self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0)
         self.seen = 0
+        self._values = collections.OrderedDict()
+        self._seen_so_far = 0
 
     def on_batch_begin(self, global_step=None, local_step=None, logs=None):
         if self.seen < self.target:
             self.log_values = []
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
-        logs = logs or {}
         self.seen += 1
+        logs = self.smooth_values(self.seen, logs or {})
         for k in self.params['metrics']:
             if k in logs:
                 self.log_values.append((k, logs[k]))
@@ -487,20 +448,49 @@ class TqdmProgressBar(Callback):
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose and self.seen < self.target:
-            self.progbar.update(1)
+            self.progbar.n = self.seen
+            self.progbar.refresh()
+            self.progbar.set_postfix(self.log_values)
 
     def on_epoch_end(self, global_step=None, epoch=None, logs=None):
-        logs = logs or {}
+        logs = self.smooth_values(self.seen, logs or {})
         for k in self.params['metrics']:
             if k in logs:
                 self.log_values.append((k, logs[k]))
         if self.verbose:
-            self.progbar.update(1)
+            self.progbar.n = self.seen
+            self.progbar.refresh()
+            self.progbar.set_postfix(self.log_values)
+            self.progbar.close()
     
-    def on_train_end(self, logs=None):
-        if self.verbose:
-            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('%s - Finish Training' % (time_start))
+    def smooth_values(self, current, values=None):
+        '''从Progbar迁移过来
+        '''
+        values = values or []
+        for k, v in values.items():
+            if k not in self.stateful_metrics:
+                if k not in self._values:
+                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+                else:
+                    self._values[k][0] += v * (current - self._seen_so_far)
+                    self._values[k][1] += (current - self._seen_so_far)
+            else:
+                self._values[k] = [v, 1]
+        self._seen_so_far = current
+
+        logs = collections.OrderedDict()
+        for k in self._values:
+            if isinstance(self._values[k], list):
+                avg = np.mean(
+                    self._values[k][0] / max(1, self._values[k][1]))
+                if abs(avg) > 1e-3:
+                    logs[k] = ' %.4f' % avg
+                else:
+                    logs[k] = ' %.4e' % avg
+            else:
+                logs[k] = ' %s' % self._values[k]
+
+        return logs
 
 
 class History(Callback):
