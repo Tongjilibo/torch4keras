@@ -1,3 +1,4 @@
+from calendar import c
 import torch.nn as nn
 import torch
 from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
@@ -5,11 +6,11 @@ from collections import OrderedDict
 from inspect import isfunction
 
 
-class BaseModel(nn.Module):
-    """Trainer, 支持继承、传入Module实例两种方式
+class Trainer:
+    """Trainer, 传入Module实例
     """
     def __init__(self, module=None):
-        super(BaseModel, self).__init__()
+        super(Trainer, self).__init__()
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
@@ -36,11 +37,8 @@ class BaseModel(nn.Module):
 
     def forward(self, *inputs, **kwargs):
         # 如果传入了网络结构module，则调用module的forward
-        if hasattr(self, 'module'):
-            return self.module.forward(*inputs, **kwargs)
         # 如果是继承方式，则调用自身的forward
-        else:
-            return self.forward(*inputs, **kwargs)
+        return self.get_module().forward(*inputs, **kwargs)
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
         '''定义loss, optimizer, metrics, 是否在计算loss前reshape
@@ -97,10 +95,7 @@ class BaseModel(nn.Module):
         '''
         if isinstance(train_X, torch.Tensor):  # tensor不展开
             pass
-        elif hasattr(self, 'module'):
-            if self.module.forward.__code__.co_argcount >= 3:
-                return True
-        elif self.forward.__code__.co_argcount >= 3:
+        elif self.get_module().forward.__code__.co_argcount >= 3:
             return True
         return False
 
@@ -165,7 +160,9 @@ class BaseModel(nn.Module):
         history = History()
         master_rank = self.master_rank if hasattr(self, 'master_rank') else None
         self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=master_rank)
-        callback_model = self
+        callback_trainer = self
+        callback_model = self.get_module()
+        self.callbacks.set_trainer(callback_trainer)
         self.callbacks.set_model(callback_model)
         self.callbacks.set_optimizer(self.optimizer)
         self.callbacks.set_params({
@@ -176,7 +173,7 @@ class BaseModel(nn.Module):
         })
         logs = {}
         self.callbacks.on_train_begin(logs)
-        callback_model.stop_training = False  # 在EarlyStopping中会重新设置
+        callback_trainer.stop_training = False  # 在EarlyStopping中会重新设置
 
         # epoch：当前epoch
         # global_step：当前全局训练步数
@@ -215,7 +212,8 @@ class BaseModel(nn.Module):
                 logs = {'size': btz}
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
-                self.train()  # 设置为train模式
+                self.get_module().train()  # 设置为train模式
+
                 # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
                 self.output, self.loss, self.loss_detail = self.train_step(self.train_X, self.train_y)
                 self.callbacks.on_train_step_end()
@@ -267,14 +265,14 @@ class BaseModel(nn.Module):
                 self.bti += 1
             self.callbacks.on_epoch_end(self.global_step, self.epoch, logs)
             # TerminateOnNaN、EarlyStopping等停止训练策略
-            if callback_model.stop_training:
+            if callback_trainer.stop_training:
                 break
         self.callbacks.on_train_end(logs)
         return history
 
     @torch.no_grad()
     def predict(self, train_X, return_all=None):
-        self.eval()
+        self.get_module().eval()
         output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
         if return_all is None:
             return output
@@ -293,7 +291,7 @@ class BaseModel(nn.Module):
         for k, v in state_dict.items():
             k = mapping.get(k, k)
             state_dict_raw[k] = v
-        self.load_state_dict(state_dict_raw, strict=strict)
+        self.get_module().load_state_dict(state_dict_raw, strict=strict)
 
     def save_weights(self, save_path, mapping={}):
         '''保存模型权重
@@ -301,11 +299,25 @@ class BaseModel(nn.Module):
            mapping：指定key的映射
         '''
         state_dict_raw = {}
-        for k, v in self.state_dict().items():
+        state_dict = self.get_module().state_dict()
+        for k, v in state_dict.items():
             k = mapping.get(k, k)
             state_dict_raw[k] = v
         torch.save(state_dict_raw, save_path)
 
+    def get_module(self):
+        '''返回nn.Module模块
+        '''
+        return self.module if hasattr(self, 'module') else self
+        
+
+class BaseModel(Trainer, nn.Module):
+    """BaseModel, 支持继承、传入Module实例两种方式, 建议使用继承的方式来使用
+    """
+    def __init__(self, *args, **kwargs):
+        nn.Module.__init__(self)
+        Trainer.__init__(self, *args, **kwargs)
+        
 
 class BaseModelDP(nn.DataParallel, BaseModel):
     '''DataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
@@ -322,3 +334,7 @@ class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
         self.master_rank = master_rank  # 用于记录打印条的rank
         BaseModel.__init__(self)
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
+
+
+TrainerDP = BaseModelDP
+TrainerDDP = BaseModelDDP

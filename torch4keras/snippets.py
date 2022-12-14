@@ -180,6 +180,10 @@ class CallbackList(object):
         for callback in self.callbacks:
             callback.set_params(params)
 
+    def set_trainer(self, trainer):
+        for callback in self.callbacks:
+            callback.set_trainer(trainer)
+
     def set_model(self, model):
         for callback in self.callbacks:
             callback.set_model(model)
@@ -270,10 +274,13 @@ class Callback(object):
     '''Callback基类
     '''
     def __init__(self):
-        self.model = None  # nn.Module模型，也包含Trainer
+        self.trainer = None  # trainer
+        self.model = None  # nn.Module模型，或者包含Trainer的nn.Module
         self.optimizer = None  # 优化器
     def set_params(self, params):
         self.params = params
+    def set_trainer(self, trainer):
+        self.trainer = trainer
     def set_model(self, model):
         self.model = model
     def set_optimizer(self, optimizer):
@@ -346,7 +353,7 @@ class TerminateOnNaN(Callback):
         if loss is not None:
             if np.isnan(loss) or np.isinf(loss):
                 print('Step %d: Invalid loss, terminating training' % global_step)
-                self.model.stop_training = True
+                self.trainer.stop_training = True
 
 
 class ProgbarLogger(Callback):
@@ -569,7 +576,7 @@ class EarlyStopping(Callback):
             self.wait += 1
             if self.wait >= self.patience:
                 self.stopped_iteration = iteration
-                self.model.stop_training = True
+                self.trainer.stop_training = True
                 # 恢复最优权重
                 if self.restore_best_weights:
                     if self.verbose > 0:
@@ -750,7 +757,7 @@ class Checkpoint(Callback):
             filepath = self.steps_params_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.steps_params_path.format(step=suffix, **logs)
             save_dir = os.path.dirname(filepath)
             os.makedirs(save_dir, exist_ok=True)
-            self.model.save_steps_params(filepath)
+            self.trainer.save_steps_params(filepath)
 
 
 class Evaluator(Checkpoint):
@@ -913,7 +920,7 @@ class Summary(Callback):
     def on_train_begin(self, logs=None):
         from torchinfo import summary
         print()
-        summary(self.model, input_data=next(iter(self.model.train_dataloader))[0])
+        summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
         print()
 
 
