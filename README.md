@@ -9,6 +9,10 @@
 [![GitHub Issues](https://img.shields.io/github/issues/Tongjilibo/torch4keras.svg)](https://github.com/Tongjilibo/torch4keras/issues)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Tongjilibo/torch4keras/issues)
 
+[Documentation](https://torch4keras.readthedocs.io) |
+[Examples](https://github.com/Tongjilibo/torch4keras/blob/master/examples) |
+[Source code](https://github.com/Tongjilibo/torch4keras)
+
 ## 1. 下载安装
 安装稳定版
 ```shell
