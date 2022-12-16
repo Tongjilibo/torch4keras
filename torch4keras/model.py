@@ -1,4 +1,4 @@
-import torch.nn as nn
+from torch import nn
 import torch
 from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
 from collections import OrderedDict
