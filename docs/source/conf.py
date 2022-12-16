@@ -81,6 +81,6 @@ autodoc_mock_imports = [
 ]
 import mock
 
-MOCK_MODULES = ['numpy', 'torch']
+MOCK_MODULES = ['numpy', 'torch', 'tqdm']
 for mod_name in MOCK_MODULES:
    sys.modules[mod_name] = mock.Mock() 
