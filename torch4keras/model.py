@@ -336,7 +336,7 @@ class Trainer:
         '''返回nn.Module模块
         '''
         return self.module if hasattr(self, 'module') else self
-        
+
 
 class BaseModel(Trainer, nn.Module):
     """BaseModel, 支持继承、传入Module实例两种方式, 建议使用继承的方式来使用
