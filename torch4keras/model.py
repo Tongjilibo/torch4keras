@@ -110,9 +110,7 @@ class Trainer:
 
         :param train_X: List[torch.Tensor], 训练数据
         :param train_y: torch.Tensor/List[torch.Tensor], 标签信息
-        :return output: torch.Tensor/List[torch.Tensor], 模型输出
-        :return loss: nn.Tensor, 计算得到的loss
-        :return loss_detail: dict[nn.Tensor], 具体的各个loss
+        :return: [output, loss, loss_detail] output: torch.Tensor/List[torch.Tensor], 模型输出; loss: nn.Tensor, 计算得到的loss; loss_detail: dict[nn.Tensor], 具体的各个loss
         '''
         if self.use_amp:
             with self.autocast():
@@ -297,7 +295,7 @@ class Trainer:
 
         :param train_X: torch.Tensor, 预测用的数据集
         :param return_all: None/int, 若返回为多个时候指定仅返回第几个，默认为None表示否返回
-        :return output: Any, 预测输出
+        :return: Any, 预测输出
         '''
         self.get_module().eval()
         output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
