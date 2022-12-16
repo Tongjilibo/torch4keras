@@ -1,4 +1,3 @@
-from calendar import c
 import torch.nn as nn
 import torch
 from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
