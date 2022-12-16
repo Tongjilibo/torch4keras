@@ -8,6 +8,8 @@ from inspect import isfunction
 
 class Trainer:
     """Trainer, 传入Module实例
+
+    :param module: None/nn.Module，nn.Module()的模型实例
     """
     def __init__(self, module=None):
         super(Trainer, self).__init__()
@@ -22,6 +24,8 @@ class Trainer:
     
     def save_steps_params(self, save_path):
         '''保存训练过程参数
+
+        :param save_path: str, 训练过程参数保存路径
         '''
         step_params = {'resume_step': (self.local_step+1) % self.steps_per_epoch, 
                        'resume_epoch': self.epoch + (self.local_step+1) // self.steps_per_epoch}
@@ -29,6 +33,8 @@ class Trainer:
 
     def load_steps_params(self, save_path):
         '''导入训练过程参数
+        
+        :param save_path: str, 训练过程参数保存路径
         '''
         step_params = torch.load(save_path)
         self.resume_step = step_params['resume_step'] 
@@ -41,17 +47,18 @@ class Trainer:
         return self.get_module().forward(*inputs, **kwargs)
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
-        '''定义loss, optimizer, metrics, 是否在计算loss前reshape
-        loss: loss
-        optimizer: 优化器
-        scheduler: scheduler
-        clip_grad_norm: 是否使用梯度裁剪, 默认不启用
-        use_amp: 是否使用混合精度，默认不启用
-        metrics: 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
-        stateful_metrics: 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
-        grad_accumulation_steps: 梯度累积
-
-        tqdmbar: 是否使用tqdm进度条，从kwargs中解析
+        '''complile: 定义loss, optimizer, metrics等参数
+        
+        :param loss: loss
+        :param optimizer: 优化器
+        :param scheduler: scheduler
+        :param clip_grad_norm: bool, 是否使用梯度裁剪, 默认为False
+        :param use_amp: bool, 是否使用混合精度，默认为False
+        :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
+        :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
+        :param grad_accumulation_steps: int, 梯度累积步数，默认为1
+        :param tqdmbar: bool, 是否使用tqdm进度条，从kwargs中解析，默认为False
+        :return: None
         '''
         self.criterion = loss
         self.optimizer = optimizer
@@ -101,6 +108,12 @@ class Trainer:
 
     def train_step(self, train_X, train_y):
         '''forward并返回loss
+
+        :param train_X: List[torch.Tensor], 训练数据
+        :param train_y: torch.Tensor/List[torch.Tensor], 标签信息
+        :return output: torch.Tensor/List[torch.Tensor], 模型输出
+        :return loss: nn.Tensor, 计算得到的loss
+        :return loss_detail: dict[nn.Tensor], 具体的各个loss
         '''
         if self.use_amp:
             with self.autocast():
@@ -135,6 +148,15 @@ class Trainer:
         return output, loss, loss_detail
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
+        '''模型训练
+        
+        :param train_dataloader: Dataloader, 训练数据集
+        :param steps_per_epoch: int, 每个epoch训练的steps，默认为None表示自行计算 
+        :param epochs: int, 训练的轮次, 默认为1
+        :param callbacks: Callback/List[Callback], 回调函数，可调用预制的Callback或者自定义，默认为None 
+        :param verbose: int, 是否打印，默认为1表示打印
+        :return: None
+        '''
         if not hasattr(train_dataloader, '__len__'):
             assert steps_per_epoch is not None, 'Either train_dataloader has attr `__len__` or steps_per_epoch is not None'
 
@@ -272,6 +294,12 @@ class Trainer:
 
     @torch.no_grad()
     def predict(self, train_X, return_all=None):
+        '''模型预测，调用forward()
+
+        :param train_X: torch.Tensor, 预测用的数据集
+        :param return_all: None/int, 若返回为多个时候指定仅返回第几个，默认为None表示否返回
+        :return output: Any, 预测输出
+        '''
         self.get_module().eval()
         output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
         if return_all is None:
@@ -283,8 +311,9 @@ class Trainer:
 
     def load_weights(self, load_path, strict=True, mapping={}):
         '''加载模型权重
-           save_path: 权重加载路径
-           mapping：指定key的映射
+
+        :param save_path: str, 权重加载路径
+        :param mapping: dict, 指定key的映射
         '''
         state_dict = torch.load(load_path, map_location='cpu')
         state_dict_raw = {}
@@ -295,8 +324,9 @@ class Trainer:
 
     def save_weights(self, save_path, mapping={}):
         '''保存模型权重
-           save_path: 权重保存路径
-           mapping：指定key的映射
+
+        :param save_path: str, 权重保存路径
+        :param mapping: dict, 指定key的映射
         '''
         state_dict_raw = {}
         state_dict = self.get_module().state_dict()

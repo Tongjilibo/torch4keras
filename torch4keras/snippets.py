@@ -26,7 +26,6 @@ except ImportError:
 class Progbar(object):
     """进度条，直接从keras引入
     """
-
     def __init__(self, target, width=30, verbose=1, interval=0.05, stateful_metrics=None):
         self.target = target
         self.width = width
@@ -305,8 +304,9 @@ class Callback(object):
 
 class BaseLogger(Callback):
     """计算metrics的均值, 默认是callbacks中第一项
+    
+    :param stateful_metrics: List[str], 仅保留状态信息的指标
     """
-
     def __init__(self, stateful_metrics=None):
         if stateful_metrics:
             self.stateful_metrics = set(stateful_metrics)
@@ -517,6 +517,15 @@ class History(Callback):
 class EarlyStopping(Callback):
     '''Stop training策略, 从keras中移植
        使用时候需要保证monitor在logs中，因此如果以valid指标评估需要在EarlyStopping前进行评估并设置logs[monitor]
+
+       :param monitor: str, 监控指标，需要在logs中，默认为'loss', 
+       :param min_delta: float, 最小变动，默认为0 
+       :param patience: int, 最长等候的次数，默认为0
+       :param verbose: int, 是否打印，默认为0表示不打印
+       :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
+       :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
+       :param baseline: None/float, 基线, 默认为None 
+       :param restore_best_weights: bool, stopping时候是否恢复最优的权重，默认为False
     '''
     def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', method='epoch', baseline=None, restore_best_weights=False):
         super(EarlyStopping, self).__init__()
@@ -597,6 +606,16 @@ class EarlyStopping(Callback):
 
 class ReduceLROnPlateau(Callback):
     """当monitor指标不下降时候，降低学习率
+
+    :param monitor: str, 监控指标，需要在logs中，默认为'loss'
+    :param factor: float, 权重衰减系数，取值范围(0, 1)，默认为0.1
+    :param patience: int, 最长等候的次数，默认为0
+    :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
+    :param verbose: int, 是否打印，默认为0表示不打印
+    :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
+    :param min_delta: float, 最小变动，默认为0 
+    :param cooldown: float
+    :param min_lr: float, 最小学习率
     """
     def __init__(self, monitor='loss', factor=0.1, patience=10, method='epoch', 
                  verbose=0, mode='auto', min_delta=1e-4, cooldown=0, min_lr=0,
@@ -693,6 +712,12 @@ class ReduceLROnPlateau(Callback):
         
 class RemoteMonitor(Callback):
     """Callback used to stream events to a server.
+
+    :param root: str, url+port
+    :param path: str, router
+    :param field: str, 字段名
+    :param headers: header
+    :param send_as_json: bool, 是否以json形式请求，默认为False
     """
     def __init__(self, root='http://localhost:9000', path='/publish/epoch/end/', field='data',
                  headers=None, send_as_json=False):
@@ -722,6 +747,12 @@ class RemoteMonitor(Callback):
 
 class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
+
+    :param checkpoint_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
+    :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
+    :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
+    :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
+    :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
     def __init__(self, checkpoint_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
         super().__init__()
@@ -762,6 +793,16 @@ class Checkpoint(Callback):
 
 class Evaluator(Checkpoint):
     '''评估并保存最优Checkpoint, 也可以只评估
+
+    :param monitor: str, 监控指标，需要在logs中，默认为'perf'
+    :param verbose: int, 是否打印，默认为1表示打印
+    :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
+    :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
+    :param baseline: None/float, 基线, 默认为None 
+    :param checkpoint_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
+    :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
+    :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
+    :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor='perf', mode='max', verbose=1, checkpoint_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
         super().__init__(checkpoint_path, optimizer_path, steps_params_path, method, step_interval)
@@ -797,6 +838,13 @@ class Logger(Callback):
     '''默认logging
     对于valid/dev和test的日志需要在evaluate之后对log进行赋值，如log['dev_f1']=f1，并在Evaluator之后调用
     若每隔一定steps对验证集评估，则Logger的interval设置成和Evaluater一致或者约数，保证日志能记录到
+
+    :param log_path: str, log文件的保存路径
+    :param interval: int, 保存log的间隔
+    :param mode: str, log保存的模式, 默认为'a'表示追加
+    :param separator: str, 指标间分隔符
+    :param verbosity: int, 可选[0,1,2]，指定log的level
+    :param name: str, 默认为None
     '''
     def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None):
         super(Logger, self).__init__()
@@ -838,6 +886,12 @@ class Tensorboard(Callback):
     对于valid/dev和test的Tensorboard需要在evaluate之后对log进行赋值，如log['dev/f1']=f1，并在Evaluator之后调用
     赋值需要分栏目的用'/'进行分隔
     若每隔一定steps对验证集评估，则Tensorboard的interval设置成和Evaluater一致或者约数，保证Tensorboard能记录到
+
+    :param log_dir: str, tensorboard文件的保存路径
+    :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
+    :param interval: int, 保存tensorboard的间隔
+    :param prefix: str, tensorboard分栏的前缀，默认为'train'
+    :param on_epoch_end_scalar_epoch: bool, epoch结束后是横轴是按照epoch还是global_step来记录
     '''
     def __init__(self, log_dir, method='epoch', interval=10, prefix='train', on_epoch_end_scalar_epoch=True):
         super(Tensorboard, self).__init__()
@@ -925,6 +979,13 @@ class Summary(Callback):
 
 
 def metric_mapping(metric, func, y_pred, y_true):
+    '''metric的计算
+
+    :param metric: str, 自带metrics的名称
+    :param func: function, 透传的用户自定的计算指标的函数
+    :param y_pred: torch.Tensor, 样本的预测结果
+    :param y_true: torch.Tensor, 样本的真实结果
+    '''
     # 自定义metrics
     if inspect.isfunction(func):
         metric_res = func(y_pred, y_true)
@@ -976,6 +1037,8 @@ def metric_mapping(metric, func, y_pred, y_true):
 
 def seed_everything(seed=None):
     '''固定seed
+    
+    :param seed: int, 随机种子
     '''
     max_seed_value = np.iinfo(np.uint32).max
     min_seed_value = np.iinfo(np.uint32).min
