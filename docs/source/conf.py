@@ -78,8 +78,3 @@ source_parsers = {
 source_suffix = ['.rst', '.md']
 
 autodoc_mock_imports = ['numpy', 'torch', 'tqdm', 'sklearn']
-# import mock
-
-# MOCK_MODULES = ['numpy', 'torch', 'tqdm']
-# for mod_name in MOCK_MODULES:
-#    sys.modules[mod_name] = mock.Mock() 

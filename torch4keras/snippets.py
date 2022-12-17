@@ -5,6 +5,8 @@ import sys
 import collections
 import inspect
 from datetime import datetime
+from packaging import version
+from torch.utils.data import Dataset, IterableDataset
 from tqdm import tqdm
 import warnings
 import os
@@ -976,6 +978,132 @@ class Summary(Callback):
         print()
         summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
         print()
+
+
+def version_compare(first:str, cmp_str:str, second:str, mode='str'):
+    '''包版本比较
+
+    :param first: str, 第一个版本号
+    :param cmp_str: str, 比较符号如 >, <, <=, >=, ==
+    :param second: str, 第二个版本号
+    :param mode: str, 比较方式, 可选'str', 'version.parse', 'custom'
+    '''
+    if mode == 'str':
+        # 字符串直接比较
+        return eval(f"'{first}' {cmp_str} '{second}'")
+    elif mode == 'version.parse':
+        # 使用packaging.version.parse来解析
+        first = version.parse(first)
+        second = version.parse(second)
+        return eval(f'{first} {cmp_str} {second}')
+    elif mode == 'custom':
+        # 解析版本号并对比
+        raise NotImplementedError
+
+
+def take_along_dim(input_tensor, indices, dim=None):
+    '''兼容部分低版本pytorch没有torch.take_along_dim
+    '''
+    if version_compare(torch.__version__, '>', '1.8.1'):
+        return torch.take_along_dim(input_tensor, indices, dim)
+    else:
+        # 该逻辑仅在少量数据上测试，如有bug，欢迎反馈
+        if dim is None:
+            res = input_tensor.flatten()[indices]
+        else:
+            res = np.take_along_axis(input_tensor.cpu().numpy(), indices.cpu().numpy(), axis=dim)
+            res = torch.from_numpy(res).to(input_tensor.device)
+        # assert res.equal(torch.take_along_dim(input_tensor, indices, dim))
+        return res
+
+
+def torch_div(input, other, rounding_mode=None):
+    ''' torch.div兼容老版本
+    '''
+    if version_compare(torch.__version__, '<', '1.7.2'):
+        indices = input // other  # 兼容老版本
+    else:
+        indices = torch.div(input, other, rounding_mode=rounding_mode)  # 行索引
+    return indices
+
+
+def softmax(x, axis=-1):
+    """numpy版softmax
+    """
+    x = x - x.max(axis=axis, keepdims=True)
+    x = np.exp(x)
+    return x / x.sum(axis=axis, keepdims=True)
+
+
+def search_layer(model, layer_name, retrun_first=True):
+    '''根据layer_name搜索并返回参数/参数list
+    '''
+    return_list = []
+    for name, param in model.named_parameters():
+        if param.requires_grad and layer_name in name:
+            return_list.append(param)
+    if len(return_list) == 0:
+        return None
+    if retrun_first:
+        return return_list[0]
+    else:
+        return return_list
+
+
+class ListDataset(Dataset):
+    '''数据是List格式Dataset，支持传入file_path或者外部已读入的data(List格式)
+
+    :param file_path: str, 待读取的文件的路径，若无可以为None
+    :param data: List[Any], list格式的数据，和file_path至少有一个不为None
+    '''
+    def __init__(self, file_path=None, data=None, **kwargs):
+        self.kwargs = kwargs
+        if isinstance(file_path, (str, tuple, list)):
+            self.data = self.load_data(file_path)
+        elif isinstance(data, list):
+            self.data = data
+        else:
+            raise ValueError('The input args shall be str format file_path / list format dataset')
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    @staticmethod
+    def load_data(file_path):
+        return file_path
+
+
+class IterDataset(IterableDataset):
+    '''流式读取文件，用于大数据量、多小文件使用时候需要注意steps_per_epoch != None
+
+    :param file_path: str, 待读取的文件的路径，若无可以为None
+    '''
+    def __init__(self, file_path=None, **kwargs):
+        self.kwargs = kwargs
+        if isinstance(file_path, (str, tuple, list)):
+            self.file_path = file_path
+        else:
+            raise ValueError('The input args shall be str format file_path / list format dataset')
+    
+    def __iter__(self):
+        return self.load_data(self.file_path)
+
+    @staticmethod
+    def load_data(file_path, verbose=0):
+        if isinstance(file_path, (tuple, list)):
+            for file in file_path:
+                if verbose != 0:
+                    print("Load data: ", file)
+                with open(file, 'r') as file_obj:
+                    for line in file_obj:
+                        yield line
+        elif isinstance(file_path, str):
+            with open(file_path, 'r') as file_obj:
+                for line in file_obj:
+                    yield line
 
 
 def metric_mapping(metric, func, y_pred, y_true):
