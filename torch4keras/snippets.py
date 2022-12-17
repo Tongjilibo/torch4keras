@@ -980,31 +980,10 @@ class Summary(Callback):
         print()
 
 
-def version_compare(first:str, cmp_str:str, second:str, mode='str'):
-    '''包版本比较
-
-    :param first: str, 第一个版本号
-    :param cmp_str: str, 比较符号如 >, <, <=, >=, ==
-    :param second: str, 第二个版本号
-    :param mode: str, 比较方式, 可选'str', 'version.parse', 'custom'
-    '''
-    if mode == 'str':
-        # 字符串直接比较
-        return eval(f"'{first}' {cmp_str} '{second}'")
-    elif mode == 'version.parse':
-        # 使用packaging.version.parse来解析
-        first = version.parse(first)
-        second = version.parse(second)
-        return eval(f'{first} {cmp_str} {second}')
-    elif mode == 'custom':
-        # 解析版本号并对比
-        raise NotImplementedError
-
-
 def take_along_dim(input_tensor, indices, dim=None):
     '''兼容部分低版本pytorch没有torch.take_along_dim
     '''
-    if version_compare(torch.__version__, '>', '1.8.1'):
+    if version.parse(torch.__version__) > version.parse('1.8.1'):
         return torch.take_along_dim(input_tensor, indices, dim)
     else:
         # 该逻辑仅在少量数据上测试，如有bug，欢迎反馈
@@ -1020,7 +999,7 @@ def take_along_dim(input_tensor, indices, dim=None):
 def torch_div(input, other, rounding_mode=None):
     ''' torch.div兼容老版本
     '''
-    if version_compare(torch.__version__, '<', '1.7.2'):
+    if version.parse(torch.__version__) < version.parse('1.7.2'):
         indices = input // other  # 兼容老版本
     else:
         indices = torch.div(input, other, rounding_mode=rounding_mode)  # 行索引
