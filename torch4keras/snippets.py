@@ -1,4 +1,5 @@
 import numpy as np
+from pydantic import FilePath
 import torch
 import time
 import sys
@@ -750,17 +751,17 @@ class RemoteMonitor(Callback):
 class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
 
-    :param checkpoint_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
+    :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, checkpoint_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
+    def __init__(self, model_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
         super().__init__()
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
-        self.checkpoint_path = checkpoint_path  # 保存路径，可设置{epoch}{step}{loss}等占位符
+        self.model_path = model_path  # 保存路径，可设置{epoch}{step}{loss}等占位符
         self.optimizer_path = optimizer_path  # 是否保存优化器
         self.steps_params_path = steps_params_path  # 是否保存训练步数
         self.step_interval = step_interval  # method='step'时候生效
@@ -776,21 +777,13 @@ class Checkpoint(Callback):
             self.process(global_step+1, logs)
 
     def process(self, suffix, logs):
-        if self.checkpoint_path:
-            filepath = self.checkpoint_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.checkpoint_path.format(step=suffix, **logs)
-            save_dir = os.path.dirname(filepath)
-            os.makedirs(save_dir, exist_ok=True)
-            torch.save(self.model.state_dict(), filepath)
-        if self.optimizer_path:
-            filepath = self.optimizer_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.optimizer_path.format(step=suffix, **logs)
-            save_dir = os.path.dirname(filepath)
-            os.makedirs(save_dir, exist_ok=True)
-            torch.save(self.optimizer.state_dict(), filepath)
-        if self.steps_params_path:
-            filepath = self.steps_params_path.format(epoch=suffix, **logs) if self.method == 'epoch' else self.steps_params_path.format(step=suffix, **logs)
-            save_dir = os.path.dirname(filepath)
-            os.makedirs(save_dir, exist_ok=True)
-            self.trainer.save_steps_params(filepath)
+        file_paths = []
+        for filepath in [self.model_path, self.optimizer_path, self.steps_params_path]:
+            if filepath:
+                filepath = filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else filepath.format(step=suffix, **logs)
+            file_paths.append(filepath)
+
+        self.trainer.save_to_checkpoint(model_path=file_paths[0], optimizer_path=file_paths[1], step_params_path=file_paths[2])
 
 
 class Evaluator(Checkpoint):
@@ -801,13 +794,13 @@ class Evaluator(Checkpoint):
     :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
     :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
     :param baseline: None/float, 基线, 默认为None 
-    :param checkpoint_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
+    :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, monitor='perf', mode='max', verbose=1, checkpoint_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
-        super().__init__(checkpoint_path, optimizer_path, steps_params_path, method, step_interval)
+    def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
+        super().__init__(model_path, optimizer_path, steps_params_path, method, step_interval)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
         self.mode = mode

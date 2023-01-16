@@ -72,6 +72,7 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
+- **20230116**：增加resume_from_checkpoint和save_to_checkpoint，可使用hf的accelerator(开发中)
 - **20221217**：保留原有BaseModel的同时，增加Trainer(不从nn.Module继承), 从bert4torch的snippets迁移部分通用函数
 - **20221203**：增加Summary的Callback, 增加Tqdm的进度条展示
 - **20221127**：为callback增加on_train_step_end方法, 修复BaseModel(net)方式的bug

@@ -3,6 +3,7 @@ import torch
 from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
 from collections import OrderedDict
 from inspect import isfunction
+import os
 
 
 class Trainer:
@@ -20,32 +21,13 @@ class Trainer:
         # 传入Module实例方式
         if module is not None:
             self.module = module
-    
-    def save_steps_params(self, save_path):
-        '''保存训练过程参数
-
-        :param save_path: str, 训练过程参数保存路径
-        '''
-        step_params = {'resume_step': (self.local_step+1) % self.steps_per_epoch, 
-                       'resume_epoch': self.epoch + (self.local_step+1) // self.steps_per_epoch}
-        torch.save(step_params, save_path)
-
-    def load_steps_params(self, save_path):
-        '''导入训练过程参数
-        
-        :param save_path: str, 训练过程参数保存路径
-        '''
-        step_params = torch.load(save_path)
-        self.resume_step = step_params['resume_step'] 
-        self.resume_epoch = step_params['resume_epoch']
-        return step_params
 
     def forward(self, *inputs, **kwargs):
         # 如果传入了网络结构module，则调用module的forward
         # 如果是继承方式，则调用自身的forward
         return self.get_module().forward(*inputs, **kwargs)
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
+    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, accelerator=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -57,6 +39,7 @@ class Trainer:
         :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
         :param tqdmbar: bool, 是否使用tqdm进度条，从kwargs中解析，默认为False
+        :param accelerator: Accelerator, huggingface的Accelerator，默认为None
         :return: None
         '''
         self.criterion = loss
@@ -92,6 +75,9 @@ class Trainer:
 
         # 梯度累积
         self.grad_accumulation_steps = grad_accumulation_steps
+
+        # hf的accelerator
+        self.accelerator = accelerator
 
         # 进度条参数
         self.tqdmbar = kwargs.get('tqdmbar', False)
@@ -140,6 +126,8 @@ class Trainer:
         if self.use_amp:  # 混合精度
             self.scale_before_step = self.scaler.get_scale()
             self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
+        elif self.accelerator:  # hf的accelerator
+            self.accelerator.backward(loss)
         else:
             loss.backward(retain_graph=self.retain_graph)
         return output, loss, loss_detail
@@ -306,6 +294,25 @@ class Trainer:
         else:
             raise ValueError('Return format error')
 
+    def load_steps_params(self, save_path):
+        '''导入训练过程参数
+        
+        :param save_path: str, 训练过程参数保存路径
+        '''
+        step_params = torch.load(save_path)
+        self.resume_step = step_params['resume_step'] 
+        self.resume_epoch = step_params['resume_epoch']
+        return step_params
+
+    def save_steps_params(self, save_path):
+        '''保存训练过程参数
+
+        :param save_path: str, 训练过程参数保存路径
+        '''
+        step_params = {'resume_step': (self.local_step+1) % self.steps_per_epoch, 
+                       'resume_epoch': self.epoch + (self.local_step+1) // self.steps_per_epoch}
+        torch.save(step_params, save_path)
+
     def load_weights(self, load_path, strict=True, mapping={}):
         '''加载模型权重
 
@@ -331,6 +338,43 @@ class Trainer:
             k = mapping.get(k, k)
             state_dict_raw[k] = v
         torch.save(state_dict_raw, save_path)
+
+    def resume_from_checkpoint(self, model_path=None, optimizer_path=None, step_params_path=None):
+        '''同时加载模型、优化器、训练过程参数
+
+        :param model_path: str, 模型文件路径
+        :param optimizer_path: str, 优化器文件路径
+        :param step_params_path: str, 训练过程参数保存路径
+        '''
+        # 加载模型权重
+        if model_path:
+            self.load_weights(model_path)
+        # 加载优化器，断点续训使用
+        if optimizer_path:
+            state_dict = torch.load(optimizer_path, map_location='cpu')
+            self.optimizer.load_state_dict(state_dict)
+        # 加载训练进度参数，断点续训使用
+        self.load_steps_params(step_params_path)
+
+    def save_to_checkpoint(self, model_path=None, optimizer_path=None, step_params_path=None):
+        '''同时保存模型、优化器、训练过程参数
+
+        :param model_path: str, 模型文件路径
+        :param optimizer_path: str, 优化器文件路径
+        :param step_params_path: str, 训练过程参数保存路径
+        '''
+        if model_path:
+            save_dir = os.path.dirname(model_path)
+            os.makedirs(save_dir, exist_ok=True)
+            self.save_weights(model_path)
+        if optimizer_path:
+            save_dir = os.path.dirname(optimizer_path)
+            os.makedirs(save_dir, exist_ok=True)
+            torch.save(self.optimizer.state_dict(), optimizer_path)
+        if step_params_path:
+            save_dir = os.path.dirname(step_params_path)
+            os.makedirs(save_dir, exist_ok=True)
+            self.save_steps_params(step_params_path)
 
     def get_module(self):
         '''返回nn.Module模块
