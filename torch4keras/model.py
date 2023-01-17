@@ -379,6 +379,9 @@ class Trainer:
     def get_module(self):
         '''返回nn.Module模块
         '''
+        if self.accelerator is not None:
+            unwrap_model = self.accelerator.unwrap_model(self)
+            return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
         return self.module if hasattr(self, 'module') else self
 
 
