@@ -13,6 +13,9 @@ class Trainer:
     """
     def __init__(self, module=None):
         super(Trainer, self).__init__()
+        self.initialize(module)
+    
+    def initialize(self, module=None):
         # 这里主要是为了外面调用用到
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
@@ -20,6 +23,7 @@ class Trainer:
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
+            assert isinstance(module, nn.Module), 'Args `module` only support nn.Module format'
             self.module = module
 
     def forward(self, *inputs, **kwargs):
@@ -27,14 +31,14 @@ class Trainer:
         # 如果是继承方式，则调用自身的forward
         return self.get_module().forward(*inputs, **kwargs)
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, use_amp=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, accelerator=None, **kwargs):
+    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, accelerator=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
         :param optimizer: 优化器
         :param scheduler: scheduler
         :param clip_grad_norm: bool, 是否使用梯度裁剪, 默认为False
-        :param use_amp: bool, 是否使用混合精度，默认为False
+        :param mixed_precision: bool, 是否使用混合精度，默认为False
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
         :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
@@ -46,10 +50,9 @@ class Trainer:
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.clip_grad_norm = clip_grad_norm
-        self.use_amp = use_amp
-        if use_amp:
-            from torch.cuda.amp import autocast
-            self.autocast = autocast
+        self.mixed_precision = mixed_precision
+        if mixed_precision:
+            self.autocast = torch.cuda.amp.autocast
             self.scaler = torch.cuda.amp.GradScaler()
 
         # 训练过程观测的指标
@@ -98,7 +101,7 @@ class Trainer:
         :param train_y: torch.Tensor/List[torch.Tensor], 标签信息
         :return: [output, loss, loss_detail] output: torch.Tensor/List[torch.Tensor], 模型输出; loss: nn.Tensor, 计算得到的loss; loss_detail: dict[nn.Tensor], 具体的各个loss
         '''
-        if self.use_amp:
+        if self.mixed_precision:
             with self.autocast():
                 output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
                 loss_detail = self.criterion(output, train_y)
@@ -123,7 +126,7 @@ class Trainer:
 
         # backward
         self.scale_before_step = 0
-        if self.use_amp:  # 混合精度
+        if self.mixed_precision:  # 混合精度
             self.scale_before_step = self.scaler.get_scale()
             self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
         elif self.accelerator:  # hf的accelerator
@@ -229,7 +232,7 @@ class Trainer:
                 if (self.global_step+1) % self.grad_accumulation_steps == 0:
                     skip_scheduler = False
                     # 混合精度
-                    if self.use_amp:
+                    if self.mixed_precision:
                         self.scaler.unscale_(self.optimizer)
                         if self.clip_grad_norm is not None:  # 梯度裁剪
                             torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
@@ -412,3 +415,21 @@ class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
 
 TrainerDP = BaseModelDP
 TrainerDDP = BaseModelDDP
+
+
+def add_trainer(obj):
+    '''为对象添加Triner对应的方法
+    '''
+    if isinstance(obj, (Trainer, TrainerDP, TrainerDDP, BaseModel, BaseModelDP, BaseModelDDP)):
+        return obj
+    
+    if isinstance(obj, nn.Module):
+        import types
+        for k in dir(Trainer):
+            if k.startswith('__') and k.endswith('__'):
+                continue
+            elif k == 'forward':
+                continue
+            exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
+        obj.initialize()
+    return obj
