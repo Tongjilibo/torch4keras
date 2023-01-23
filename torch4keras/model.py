@@ -20,16 +20,14 @@ class Trainer:
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
+        self.accelerator = None  # 是否使用hf的accelerate
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
             assert isinstance(module, nn.Module), 'Args `module` only support nn.Module format'
             self.module = module
-
-    def forward(self, *inputs, **kwargs):
-        # 如果传入了网络结构module，则调用module的forward
-        # 如果是继承方式，则调用自身的forward
-        return self.get_module().forward(*inputs, **kwargs)
+        # 模型的forward是否多个参数
+        self.args_segmentate = self.get_module().forward.__code__.co_argcount >= 3
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, accelerator=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
@@ -85,14 +83,20 @@ class Trainer:
         # 进度条参数
         self.tqdmbar = kwargs.get('tqdmbar', False)
 
-    def args_segmentate(self, train_X):
-        '''参数是否展开
-        '''
+    def forward_(self, train_X):
+        # 参数是否展开
+        args_segmentate = False
         if isinstance(train_X, torch.Tensor):  # tensor不展开
-            pass
-        elif self.get_module().forward.__code__.co_argcount >= 3:
-            return True
-        return False
+            args_segmentate = False
+        elif self.args_segmentate:
+            args_segmentate = True
+
+        # 如果传入了网络结构module，则调用module的forward
+        # 如果是继承方式，则调用自身的forward
+        if args_segmentate:
+            return self.get_module().forward(*train_X)
+        else:
+            return self.get_module().forward(train_X)
 
     def train_step(self, train_X, train_y):
         '''forward并返回loss
@@ -103,10 +107,10 @@ class Trainer:
         '''
         if self.mixed_precision:
             with self.autocast():
-                output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
+                output = self.forward_(train_X)
                 loss_detail = self.criterion(output, train_y)
         else:
-            output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
+            output = self.forward_(train_X)
             loss_detail = self.criterion(output, train_y)
 
         if isinstance(loss_detail, torch.Tensor):
@@ -285,11 +289,11 @@ class Trainer:
         '''模型预测，调用forward()
 
         :param train_X: torch.Tensor, 预测用的数据集
-        :param return_all: None/int, 若返回为多个时候指定仅返回第几个，默认为None表示否返回
+        :param return_all: None/int, 若返回为多个时候指定仅返回第几个，默认为None表示全部返回
         :return: Any, 预测输出
         '''
         self.get_module().eval()
-        output = self.forward(*train_X) if self.args_segmentate(train_X) else self.forward(train_X)
+        output = self.forward_(train_X)
         if return_all is None:
             return output
         elif isinstance(output, (tuple, list)) and isinstance(return_all, int) and return_all < len(output):
@@ -428,7 +432,7 @@ def add_trainer(obj):
         for k in dir(Trainer):
             if k.startswith('__') and k.endswith('__'):
                 continue
-            elif k == 'forward':
+            elif (k == 'forward') and hasattr(obj, 'forward'):
                 continue
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
         obj.initialize()
