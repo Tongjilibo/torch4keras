@@ -29,7 +29,8 @@ class Trainer:
         # 模型的forward是否多个参数
         self.args_segmentate = self.get_module().forward.__code__.co_argcount >= 3
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, accelerator=None, **kwargs):
+    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, 
+                accelerator=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -79,6 +80,10 @@ class Trainer:
 
         # hf的accelerator
         self.accelerator = accelerator
+
+        # DDP时候指定masker_rank，仅在masker_rank中执行callback
+        if not hasattr(self, 'master_rank'):
+            self.master_rank = kwargs.get('master_rank', None)
 
         # 进度条参数
         self.tqdmbar = kwargs.get('tqdmbar', False)
@@ -172,8 +177,7 @@ class Trainer:
             progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)
             
         history = History()
-        master_rank = self.master_rank if hasattr(self, 'master_rank') else None
-        self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=master_rank)
+        self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=self.master_rank)
         callback_trainer = self
         callback_model = self.get_module()
         self.callbacks.set_trainer(callback_trainer)
