@@ -177,7 +177,8 @@ class Trainer:
             progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)
             
         history = History()
-        self.callbacks = CallbackList([BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history], master_rank=self.master_rank)
+        callbacks_ = [BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history]
+        self.callbacks = CallbackList(callbacks_, master_rank=self.master_rank, accelerator=self.accelerator)
         callback_trainer = self
         callback_model = self.get_module()
         self.callbacks.set_trainer(callback_trainer)
