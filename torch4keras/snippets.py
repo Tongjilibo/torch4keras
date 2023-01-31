@@ -198,10 +198,12 @@ class CallbackList(object):
         '''判断该callbacks是否执行, True表示跳过，False表示run
         '''
         if (self.accelerator is not None) and self.accelerator.is_local_main_process:
-            print('===============')
+            print('11111111111111111111')
             return True
         elif (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+            print('222222222222222222222')
             return True
+        print('3333333333333333')
         return False
             
     def on_epoch_begin(self, global_step, epoch, logs=None):
