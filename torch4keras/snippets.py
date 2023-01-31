@@ -168,12 +168,11 @@ class Progbar(object):
 class CallbackList(object):
     '''把原来在model.py中的callback_fun移植出来，参考Keras的CallbackList重构
     '''
-    def __init__(self, callbacks=None, queue_length=10, master_rank=None, accelerator=None):
+    def __init__(self, callbacks=None, queue_length=10, master_rank=None):
         callbacks = callbacks or []
         self.callbacks = [c for c in callbacks]
         self.queue_length = queue_length
         self.master_rank = master_rank
-        self.accelerator = accelerator
 
     def append(self, callback):
         self.callbacks.append(callback)
@@ -197,9 +196,7 @@ class CallbackList(object):
     def skip_run(self):
         '''判断该callbacks是否执行, True表示跳过，False表示run
         '''
-        if (self.accelerator is not None) and self.accelerator.is_local_main_process:
-            return True
-        elif (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
+        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
             return True
         return False
             
