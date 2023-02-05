@@ -110,6 +110,7 @@ class Trainer:
         :param train_y: torch.Tensor/List[torch.Tensor], 标签信息
         :return: [output, loss, loss_detail] output: torch.Tensor/List[torch.Tensor], 模型输出; loss: nn.Tensor, 计算得到的loss; loss_detail: dict[nn.Tensor], 具体的各个loss
         '''
+        # 计算loss
         if self.mixed_precision:
             with self.autocast():
                 output = self.forward_(train_X)
@@ -118,6 +119,7 @@ class Trainer:
             output = self.forward_(train_X)
             loss_detail = self.criterion(output, train_y)
 
+        # 整理loss
         if isinstance(loss_detail, torch.Tensor):
             loss = loss_detail
             loss_detail = {}
@@ -133,7 +135,7 @@ class Trainer:
         # 梯度累积
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
 
-        # backward
+        # loss.backward
         self.scale_before_step = 0
         if self.mixed_precision:  # 混合精度
             self.scale_before_step = self.scaler.get_scale()
