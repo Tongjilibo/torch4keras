@@ -20,17 +20,16 @@ class Trainer:
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
-        self.accelerator = None  # 是否使用hf的accelerate
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
             assert isinstance(module, nn.Module), 'Args `module` only support nn.Module format'
             self.module = module
-        # 模型的forward是否多个参数
-        self.args_segmentate = self.get_module().forward.__code__.co_argcount >= 3
+        # 是否运行Callbacks，目前主要是在DDP模式下运用
+        self.run_callbacks = True
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, stateful_metrics=None, grad_accumulation_steps=1, 
-                accelerator=None, **kwargs):
+    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
+                stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -42,7 +41,6 @@ class Trainer:
         :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
         :param tqdmbar: bool, 是否使用tqdm进度条，从kwargs中解析，默认为False
-        :param accelerator: Accelerator, huggingface的Accelerator，默认为None
         :return: None
         '''
         self.criterion = loss
@@ -78,13 +76,6 @@ class Trainer:
         # 梯度累积
         self.grad_accumulation_steps = grad_accumulation_steps
 
-        # hf的accelerator
-        self.accelerator = accelerator
-
-        # DDP时候指定masker_rank，仅在masker_rank中执行callback
-        if not hasattr(self, 'master_rank'):
-            self.master_rank = kwargs.get('master_rank', None)
-
         # 进度条参数
         self.tqdmbar = kwargs.get('tqdmbar', False)
 
@@ -93,7 +84,8 @@ class Trainer:
         args_segmentate = False
         if isinstance(train_X, torch.Tensor):  # tensor不展开
             args_segmentate = False
-        elif self.args_segmentate:
+        elif self.get_module().forward.__code__.co_argcount >= 3:
+            # 模型的forward是否多个参数
             args_segmentate = True
 
         # 如果传入了网络结构module，则调用module的forward
@@ -140,8 +132,6 @@ class Trainer:
         if self.mixed_precision:  # 混合精度
             self.scale_before_step = self.scaler.get_scale()
             self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
-        elif self.accelerator:  # hf的accelerator
-            self.accelerator.backward(loss)
         else:
             loss.backward(retain_graph=self.retain_graph)
         return output, loss, loss_detail
@@ -180,7 +170,7 @@ class Trainer:
             
         history = History()
         callbacks_ = [BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history]
-        self.callbacks = CallbackList(callbacks_, master_rank=self.master_rank)
+        self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
         callback_trainer = self
         callback_model = self.get_module()
         self.callbacks.set_trainer(callback_trainer)
@@ -393,9 +383,6 @@ class Trainer:
     def get_module(self):
         '''返回nn.Module模块
         '''
-        if self.accelerator is not None:
-            unwrap_model = self.accelerator.unwrap_model(self)
-            return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
         return self.module if hasattr(self, 'module') else self
 
 
@@ -419,9 +406,9 @@ class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
     '''DistributedDataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
-        self.master_rank = master_rank  # 用于记录打印条的rank
         BaseModel.__init__(self)
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
+        self.run_callbacks = (master_rank==torch.distributed.get_rank())  # 用于记录打印条的rank
 
 
 TrainerDP = BaseModelDP

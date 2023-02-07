@@ -168,11 +168,11 @@ class Progbar(object):
 class CallbackList(object):
     '''把原来在model.py中的callback_fun移植出来，参考Keras的CallbackList重构
     '''
-    def __init__(self, callbacks=None, queue_length=10, master_rank=None):
+    def __init__(self, callbacks=None, queue_length=10, run_callbacks=True):
         callbacks = callbacks or []
         self.callbacks = [c for c in callbacks]
         self.queue_length = queue_length
-        self.master_rank = master_rank
+        self.run_callbacks = run_callbacks
 
     def append(self, callback):
         self.callbacks.append(callback)
@@ -193,16 +193,9 @@ class CallbackList(object):
         for callback in self.callbacks:
             callback.set_optimizer(optimizer)
 
-    def skip_run(self):
-        '''判断该callbacks是否执行, True表示跳过，False表示run
-        '''
-        if (self.master_rank is not None) and (self.master_rank!=torch.distributed.get_rank()):
-            return True
-        return False
-            
     def on_epoch_begin(self, global_step, epoch, logs=None):
         # 如果是分布式DDP训练，则仅masker_rank可以callback
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_epoch_begin(global_step, epoch, logs)
@@ -211,13 +204,13 @@ class CallbackList(object):
         self._delta_ts_batch_end = deque([], maxlen=self.queue_length)
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_epoch_end(global_step, epoch, logs)
 
     def on_batch_begin(self, global_step, local_step, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         t_before_callbacks = time.time()
         for callback in self.callbacks:
@@ -229,7 +222,7 @@ class CallbackList(object):
         self._t_enter_batch = time.time()
 
     def on_batch_end(self, global_step, local_step, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         if not hasattr(self, '_t_enter_batch'):
             self._t_enter_batch = time.time()
@@ -243,25 +236,25 @@ class CallbackList(object):
             warnings.warn(f'Method on_batch_end() is slow compared to the batch update {delta_t_median}. Check your callbacks.')
 
     def on_train_begin(self, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_train_begin(logs)
 
     def on_train_end(self, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_train_end(logs)
 
     def on_dataloader_end(self, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_dataloader_end(logs)
 
     def on_train_step_end(self, logs=None):
-        if self.skip_run(): return
+        if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             callback.on_train_step_end(logs)

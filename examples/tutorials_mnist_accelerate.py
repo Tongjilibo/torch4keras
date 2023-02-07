@@ -8,6 +8,7 @@ from torch4keras.model import BaseModel, Trainer
 from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping, Summary
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
+from torch4keras.model import add_trainer
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 
@@ -42,7 +43,7 @@ model = MyModel().to(accelerator.device)
 
 # initialize accelerator and auto move data/model to accelerator.device
 model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optim.Adam(model.parameters()), train_dataloader, test_dataloader)
-
+model = add_trainer(model)
 model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'], accelerator=accelerator)
 
 
