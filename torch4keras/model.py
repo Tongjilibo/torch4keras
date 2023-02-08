@@ -27,6 +27,8 @@ class Trainer:
             self.module = module
         # 是否运行Callbacks，目前主要是在DDP模式下运用
         self.run_callbacks = True
+        # loss是否立即backward
+        self.loss_backward = True
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
@@ -126,12 +128,14 @@ class Trainer:
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
 
         # loss.backward
-        self.scale_before_step = 0
-        if self.mixed_precision:  # 混合精度
-            self.scale_before_step = self.scaler.get_scale()
-            self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
-        else:
-            loss.backward(retain_graph=self.retain_graph)
+        if self.loss_backward:
+            self.scale_before_step = 0
+            if self.mixed_precision:  # 混合精度
+                self.scale_before_step = self.scaler.get_scale()
+                self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
+            else:
+                loss.backward(retain_graph=self.retain_graph)
+                
         return output, loss, loss_detail
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
