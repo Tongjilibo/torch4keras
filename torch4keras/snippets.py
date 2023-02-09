@@ -172,7 +172,7 @@ class CallbackList(object):
         callbacks = callbacks or []
         self.callbacks = [c for c in callbacks]
         self.queue_length = queue_length
-        self.run_callbacks = run_callbacks
+        self.run_callbacks = run_callbacks  # 控制全部开启/关闭
 
     def append(self, callback):
         self.callbacks.append(callback)
@@ -198,6 +198,7 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_epoch_begin(global_step, epoch, logs)
         self._delta_t_batch = 0.
         self._delta_ts_batch_begin = deque([], maxlen=self.queue_length)
@@ -207,6 +208,7 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_epoch_end(global_step, epoch, logs)
 
     def on_batch_begin(self, global_step, local_step, logs=None):
@@ -214,6 +216,7 @@ class CallbackList(object):
         logs = logs or {}
         t_before_callbacks = time.time()
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_batch_begin(global_step, local_step, logs)
         self._delta_ts_batch_begin.append(time.time() - t_before_callbacks)
         delta_t_median = np.median(self._delta_ts_batch_begin)
@@ -229,6 +232,7 @@ class CallbackList(object):
         self._delta_t_batch = time.time() - self._t_enter_batch
         t_before_callbacks = time.time()
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_batch_end(global_step, local_step, logs)
         self._delta_ts_batch_end.append(time.time() - t_before_callbacks)
         delta_t_median = np.median(self._delta_ts_batch_end)
@@ -239,24 +243,28 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_train_begin(logs)
 
     def on_train_end(self, logs=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_train_end(logs)
 
     def on_dataloader_end(self, logs=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_dataloader_end(logs)
 
     def on_train_step_end(self, logs=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
+            if not callback.run_callback: return
             callback.on_train_step_end(logs)
 
     def __iter__(self):
@@ -266,10 +274,11 @@ class CallbackList(object):
 class Callback(object):
     '''Callback基类
     '''
-    def __init__(self):
+    def __init__(self, run_callback=True, **kwargs):
         self.trainer = None  # trainer
         self.model = None  # nn.Module模型，或者包含Trainer的nn.Module
         self.optimizer = None  # 优化器
+        self.run_callback = run_callback  # 是否运行该callback
     def set_params(self, params):
         self.params = params
     def set_trainer(self, trainer):
@@ -301,7 +310,8 @@ class BaseLogger(Callback):
     
     :param stateful_metrics: List[str], 仅保留状态信息的指标
     """
-    def __init__(self, stateful_metrics=None):
+    def __init__(self, stateful_metrics=None, **kwargs):
+        super(BaseLogger, self).__init__(**kwargs)
         if stateful_metrics:
             self.stateful_metrics = set(stateful_metrics)
         else:
@@ -353,8 +363,8 @@ class TerminateOnNaN(Callback):
 class ProgbarLogger(Callback):
     """ keras进度条
     """
-    def __init__(self, stateful_metrics=None):
-        super(ProgbarLogger, self).__init__()
+    def __init__(self, stateful_metrics=None, **kwargs):
+        super(ProgbarLogger, self).__init__(**kwargs)
         if stateful_metrics:
             self.stateful_metrics = set(stateful_metrics)
         else:
@@ -521,8 +531,8 @@ class EarlyStopping(Callback):
        :param baseline: None/float, 基线, 默认为None 
        :param restore_best_weights: bool, stopping时候是否恢复最优的权重，默认为False
     '''
-    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', method='epoch', baseline=None, restore_best_weights=False):
-        super(EarlyStopping, self).__init__()
+    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', method='epoch', baseline=None, restore_best_weights=False, **kwargs):
+        super(EarlyStopping, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method  # 默认的epoch和原版一样
         self.monitor = monitor
@@ -614,7 +624,7 @@ class ReduceLROnPlateau(Callback):
     def __init__(self, monitor='loss', factor=0.1, patience=10, method='epoch', 
                  verbose=0, mode='auto', min_delta=1e-4, cooldown=0, min_lr=0,
                  **kwargs):
-        super(ReduceLROnPlateau, self).__init__()
+        super(ReduceLROnPlateau, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method  # 默认的epoch和原版一样
         self.monitor = monitor
@@ -714,8 +724,8 @@ class RemoteMonitor(Callback):
     :param send_as_json: bool, 是否以json形式请求，默认为False
     """
     def __init__(self, root='http://localhost:9000', path='/publish/epoch/end/', field='data',
-                 headers=None, send_as_json=False):
-        super(RemoteMonitor, self).__init__()
+                 headers=None, send_as_json=False, **kwargs):
+        super(RemoteMonitor, self).__init__(**kwargs)
         self.root = root
         self.path = path
         self.field = field
@@ -748,8 +758,8 @@ class Checkpoint(Callback):
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, model_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
-        super().__init__()
+    def __init__(self, model_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100, **kwargs):
+        super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
         self.model_path = model_path  # 保存路径，可设置{epoch}{step}{loss}等占位符
@@ -790,8 +800,8 @@ class Evaluator(Checkpoint):
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100):
-        super().__init__(model_path, optimizer_path, steps_params_path, method, step_interval)
+    def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100, **kwargs):
+        super().__init__(model_path, optimizer_path, steps_params_path, method, step_interval, **kwargs)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
         self.mode = mode
@@ -832,8 +842,8 @@ class Logger(Callback):
     :param verbosity: int, 可选[0,1,2]，指定log的level
     :param name: str, 默认为None
     '''
-    def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None):
-        super(Logger, self).__init__()
+    def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
+        super(Logger, self).__init__(**kwargs)
         import logging
 
         self.interval = interval
@@ -879,8 +889,8 @@ class Tensorboard(Callback):
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     :param on_epoch_end_scalar_epoch: bool, epoch结束后是横轴是按照epoch还是global_step来记录
     '''
-    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', on_epoch_end_scalar_epoch=True):
-        super(Tensorboard, self).__init__()
+    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', on_epoch_end_scalar_epoch=True, **kwargs):
+        super(Tensorboard, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
         self.interval = interval
@@ -916,7 +926,7 @@ class LambdaCallback(Callback):
     """
     def __init__(self, on_epoch_begin=None, on_epoch_end=None, on_batch_begin=None, on_batch_end=None, 
                  on_train_begin=None, on_train_end=None, on_dataloader_end=None, **kwargs):
-        super(LambdaCallback, self).__init__()
+        super(LambdaCallback, self).__init__(**kwargs)
         self.__dict__.update(kwargs)
         if on_epoch_begin is not None:
             self.on_epoch_begin = on_epoch_begin

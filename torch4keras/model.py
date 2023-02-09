@@ -92,7 +92,7 @@ class Trainer:
         # 参数是否展开, tensor不展开
         if isinstance(train_X, torch.Tensor):
             self.args_segmentate = False
-            
+
         # 如果传入了网络结构module，则调用module的forward
         # 如果是继承方式，则调用自身的forward
         return self.forward(*train_X) if self.args_segmentate else self.forward(train_X)
@@ -412,7 +412,13 @@ class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
     def __init__(self, *args, master_rank=0, **kwargs):
         BaseModel.__init__(self)
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
-        self.run_callbacks = (master_rank==torch.distributed.get_rank())  # 用于记录打印条的rank
+        
+        # 默认仅master_rank打印进度条,
+        # 其他使用到的Callback如果只想在master_rank使用，则手动设置run_callback参数
+        run_callback = (master_rank==torch.distributed.get_rank())
+        for callback in self.callbacks:
+            if isinstance(callback, (ProgbarLogger, TqdmProgressBar)):
+                callback.run_callback = run_callback
 
 
 TrainerDP = BaseModelDP
