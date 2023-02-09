@@ -964,6 +964,26 @@ class Summary(Callback):
         print()
 
 
+class AccelerateCallback(Callback):
+    """Accelerate的Callback
+    """
+    def __init__(self, accelerator):
+        self.accelerator = accelerator
+
+    def get_module(self):
+        '''返回nn.Module模块
+        '''
+        unwrap_model = self.accelerator.unwrap_model(self.model)
+        return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
+
+    def on_train_begin(self, logs=None):
+        self.trainer.loss_backward = False
+        self.trainer.get_module = self.get_module
+
+    def on_train_step_end(self, logs=None):
+        self.accelerator.backward(self.trainer.loss)
+
+        
 def take_along_dim(input_tensor, indices, dim=None):
     '''兼容部分低版本pytorch没有torch.take_along_dim
     '''
