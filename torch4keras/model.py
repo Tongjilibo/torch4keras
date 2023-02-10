@@ -146,7 +146,8 @@ class Trainer:
         self.total_steps = self.steps_per_epoch * epochs
         self.train_dataloader = train_dataloader  # 设置为成员变量，可由外部的callbacks进行修改
         train_dataloader_iter = iter(self.train_dataloader)  # 循环epoch时不重生成
-        
+        verbose = self.verbose if hasattr(self, 'verbose') else verbose
+
         # callbacks设置
         if callbacks is None:
             callbacks = []
@@ -401,13 +402,12 @@ class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
     def __init__(self, *args, master_rank=0, **kwargs):
         BaseModel.__init__(self)
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
-        
-        # 默认仅master_rank打印进度条,
-        # 其他使用到的Callback如果只想在master_rank使用，则手动设置run_callback参数
-        run_callback = (master_rank==torch.distributed.get_rank())
-        for callback in self.callbacks:
-            if isinstance(callback, (ProgbarLogger, TqdmProgressBar)):
-                callback.run_callback = run_callback
+
+        # 默认仅对master_rank=0打印信息
+        assert isinstance(master_rank, (int, list, tuple)), 'Args `master_rank` only supoorts int, list, tuple'
+        if isinstance(master_rank, int):
+            master_rank = [master_rank]
+        self.verbose = (torch.distributed.get_rank() in master_rank)
 
 
 TrainerDP = BaseModelDP
