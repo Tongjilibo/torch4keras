@@ -988,9 +988,14 @@ class AccelerateCallback(Callback):
 
     def on_train_begin(self, logs=None):
         self.trainer.loss_backward = False
-        if self.accelerator.is_local_main_process:
-            self.trainer.verbose = 0
-        # self.trainer.get_module = self.get_module
+        
+        # 仅保留一个进程打印
+        run_callback = self.accelerator.is_local_main_process
+        for callback in self.trainer.callbacks:
+            if isinstance(callback, (ProgbarLogger, TqdmProgressBar)):
+                callback.run_callback = run_callback
+
+        self.trainer.get_module = self.get_module
 
     def on_train_step_end(self, logs=None):
         self.accelerator.backward(self.trainer.loss)
