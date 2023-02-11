@@ -157,15 +157,18 @@ class Trainer:
             callbacks = [callbacks]
         for callback in callbacks:
             assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
-        
-        # 进度条
-        if self.tqdmbar:
-            progbarlogger = TqdmProgressBar(stateful_metrics=self.stateful_metrics)
-        else:
-            progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)
-            
+
         history = History()
-        callbacks_ = [BaseLogger(self.stateful_metrics), progbarlogger] + callbacks + [history]
+        callbacks_ = [BaseLogger(self.stateful_metrics)]
+
+        # 进度条
+        if verbose:
+            if self.tqdmbar:
+                progbarlogger = TqdmProgressBar(stateful_metrics=self.stateful_metrics)
+            else:
+                progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)
+            callbacks_.append(progbarlogger)
+        callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
         callback_trainer = self
         callback_model = self.get_module()
@@ -192,7 +195,8 @@ class Trainer:
             # resume_step：判断local_step的起点，以及进度条的起始位置
             resume_step = self.resume_step if epoch==self.resume_epoch else 0
             self.callbacks.on_epoch_begin(self.global_step, self.epoch)
-            progbarlogger.seen = resume_step  # 这里设置进度条的seen，在callbacks中也会修改
+            if verbose:
+                progbarlogger.seen = resume_step  # 这里设置进度条的seen，在callbacks中也会修改
             
             for local_step in range(resume_step, self.steps_per_epoch):
                 self.local_step = local_step
@@ -253,7 +257,7 @@ class Trainer:
                 logs.update({'loss': self.loss.item()})
                 logs_loss_detail = {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in self.loss_detail.items()}
                 logs.update(logs_loss_detail)
-                if self.global_step == resume_step:
+                if verbose and (self.global_step == resume_step):
                     progbarlogger.add_metrics(list(logs_loss_detail.keys()), add_position=1)
                     
                 # 添加metrics至log打印
@@ -261,7 +265,7 @@ class Trainer:
                     perf = metric_mapping(metric, func, self.output, self.train_y)  # 内置的一些accuracy指标
                     if perf is not None:
                         if isfunction(metric):  # 直接传入回调函数(无key)
-                            if self.global_step == resume_step:
+                            if verbose and (self.global_step == resume_step):
                                 progbarlogger.add_metrics(list(perf.keys()))
                             logs.update(perf)
                         elif isinstance(metric, str):  # 直接传入回调函数(有key)
@@ -379,6 +383,7 @@ class Trainer:
     def get_module(self):
         '''返回nn.Module模块
         '''
+        if isinstance(self, nn.Module): return self
         return self.module if hasattr(self, 'module') else self
 
 
@@ -396,7 +401,12 @@ class BaseModelDP(nn.DataParallel, BaseModel):
     def __init__(self, *args, **kwargs):
         BaseModel.__init__(self)
         nn.DataParallel.__init__(self, *args, **kwargs)
-
+    
+    # # 使用dp自身的forward()而不是module.forward()
+    # def _forward(self, train_X):
+    #     if isinstance(train_X, torch.Tensor):
+    #         return self.forward(train_X)
+    #     return self.forward(*train_X)
 
 class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
     '''DistributedDataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
