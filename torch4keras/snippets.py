@@ -988,7 +988,9 @@ class AccelerateCallback(Callback):
 
     def on_train_begin(self, logs=None):
         self.trainer.loss_backward = False
-        self.trainer.get_module = self.get_module
+        if self.accelerator.is_local_main_process:
+            self.trainer.verbose = 0
+        # self.trainer.get_module = self.get_module
 
     def on_train_step_end(self, logs=None):
         self.accelerator.backward(self.trainer.loss)
