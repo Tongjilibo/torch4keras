@@ -81,10 +81,12 @@ class Trainer:
         # 进度条参数
         self.tqdmbar = kwargs.get('tqdmbar', False)
     
-    def forward(self, *inputs, **kwargs):
+    def _forward(self, train_X):
         # 如果传入了网络结构module，则调用module的forward
         # 如果是继承方式，则调用自身的forward
-        return self.get_module().forward(*inputs, **kwargs)
+        if isinstance(train_X, torch.Tensor):  # tensor不展开
+            return self.get_module().forward(train_X)
+        return self.get_module().forward(*train_X)
 
     def train_step(self, train_X, train_y):
         '''forward并返回loss
@@ -96,10 +98,10 @@ class Trainer:
         # 计算loss
         if self.mixed_precision:
             with self.autocast():
-                output = self.forward(train_X)
+                output = self._forward(train_X)
                 loss_detail = self.criterion(output, train_y)
         else:
-            output = self.forward(train_X)
+            output = self._forward(train_X)
             loss_detail = self.criterion(output, train_y)
 
         # 整理loss
@@ -284,7 +286,7 @@ class Trainer:
         :return: Any, 预测输出
         '''
         self.get_module().eval()
-        output = self.forward(train_X)
+        output = self._forward(train_X)
         if return_all is None:
             return output
         elif isinstance(output, (tuple, list)) and isinstance(return_all, int) and return_all < len(output):

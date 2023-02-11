@@ -37,7 +37,7 @@ class MyModel(BaseModel):
             nn.Flatten(),
             nn.Linear(7744, 10)
         )
-    def forward(self, inputs):
+    def _forward(self, inputs):
         return self.model(inputs)
 model = MyModel().to(accelerator.device)
 

@@ -198,7 +198,7 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_epoch_begin(global_step, epoch, logs)
         self._delta_t_batch = 0.
         self._delta_ts_batch_begin = deque([], maxlen=self.queue_length)
@@ -208,7 +208,7 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_epoch_end(global_step, epoch, logs)
 
     def on_batch_begin(self, global_step, local_step, logs=None):
@@ -216,7 +216,7 @@ class CallbackList(object):
         logs = logs or {}
         t_before_callbacks = time.time()
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_batch_begin(global_step, local_step, logs)
         self._delta_ts_batch_begin.append(time.time() - t_before_callbacks)
         delta_t_median = np.median(self._delta_ts_batch_begin)
@@ -232,7 +232,7 @@ class CallbackList(object):
         self._delta_t_batch = time.time() - self._t_enter_batch
         t_before_callbacks = time.time()
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_batch_end(global_step, local_step, logs)
         self._delta_ts_batch_end.append(time.time() - t_before_callbacks)
         delta_t_median = np.median(self._delta_ts_batch_end)
@@ -243,28 +243,28 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_train_begin(logs)
 
     def on_train_end(self, logs=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_train_end(logs)
 
     def on_dataloader_end(self, logs=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_dataloader_end(logs)
 
     def on_train_step_end(self, logs=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if not callback.run_callback: return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_train_step_end(logs)
 
     def __iter__(self):
