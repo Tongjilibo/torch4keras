@@ -49,8 +49,9 @@ class Trainer:
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.clip_grad_norm = clip_grad_norm
-        self.mixed_precision = mixed_precision
-        if mixed_precision:
+        assert mixed_precision in {True, False, 'fp16', 'bf16'}
+        self.mixed_precision = 'fp16' if mixed_precision is True else mixed_precision
+        if self.mixed_precision:
             self.autocast = torch.cuda.amp.autocast
             self.scaler = torch.cuda.amp.GradScaler()
 
@@ -97,7 +98,7 @@ class Trainer:
         '''
         # 计算loss
         if self.mixed_precision:
-            with self.autocast():
+            with self.autocast(dtype=torch.float16 if self.mixed_precision=='fp16' else torch.bfloat16):
                 output = self._forward(train_X)
                 loss_detail = self.criterion(output, train_y)
         else:
