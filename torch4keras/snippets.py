@@ -1176,3 +1176,18 @@ def seed_everything(seed=None):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     return seed
+
+
+def spend_time(func):
+    '''装饰器，计算函数消耗的时间
+    '''
+    start = time.time()
+    def warpper(*args, **kwargs):
+        res = func(*args, **kwargs)
+        end = time.time()
+        consume = end - start
+        start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
+        end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end))
+        print(f'{start1} ~ {end1}  spent {consume:.2f}s')
+        return res
+    return warpper
