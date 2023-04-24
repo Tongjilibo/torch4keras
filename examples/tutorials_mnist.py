@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel, Trainer
-from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping, Summary
+from torch4keras.snippets import seed_everything
+from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 
@@ -20,7 +21,7 @@ train_dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=8)
 x_test, y_test = x[40000:], y[40000:]
 test_dataloader = DataLoader(TensorDataset(x_test, y_test), batch_size=8)
 
-# 方式1: 继承BaseModel（推荐）
+# 方式1: 继承BaseModel
 # class MyModel(BaseModel):
 #     def __init__(self):
 #         super().__init__()
@@ -37,19 +38,7 @@ test_dataloader = DataLoader(TensorDataset(x_test, y_test), batch_size=8)
 # model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 
-# 方式2：把nn.Module传入BaseModel
-# net = torch.nn.Sequential(
-#             nn.Conv2d(1, 32, kernel_size=3), nn.ReLU(),
-#             nn.MaxPool2d(2, 2), 
-#             nn.Conv2d(32, 64, kernel_size=3), nn.ReLU(),
-#             nn.Flatten(),
-#             nn.Linear(7744, 10)
-#         )
-# model = BaseModel(net).to(device)
-# model.compile(optimizer=optim.Adam(model.parameters()), loss=nn.CrossEntropyLoss(), metrics=['acc'])
-
-
-# 方式3：把nn.Module传入Trainer（推荐）
+# 方式2：把nn.Module传入Trainer
 net = torch.nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3), nn.ReLU(),
             nn.MaxPool2d(2, 2), 

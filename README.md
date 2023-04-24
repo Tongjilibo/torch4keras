@@ -20,7 +20,7 @@ pip install torch4keras
 ```
 安装最新版
 ```shell
-pip install git+https://www.github.com/Tongjilibo/torch4keras.git
+pip install git+https://github.com/Tongjilibo/torch4keras.git
 ```
 
 ## 2. 功能
@@ -73,6 +73,7 @@ pip install git+https://www.github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
+- **20230424**：独立出callbacks.py文件, 允许输入形式为字典
 - **20230212**：增加hf的accelerator测试用例, ddp需要外部控制执行callback, 混合精度支持bf16
 - **20230116**：增加resume_from_checkpoint和save_to_checkpoint，动态为nn.Module增加Trainer的方法add_trainer
 - **20221217**：保留原有BaseModel的同时，增加Trainer(不从nn.Module继承), 从bert4torch的snippets迁移部分通用函数

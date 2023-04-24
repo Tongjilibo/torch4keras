@@ -1,6 +1,7 @@
 from torch import nn
 import torch
-from torch4keras.snippets import metric_mapping, ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
+from torch4keras.snippets import metric_mapping
+from torch4keras.callbacks import ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
 from collections import OrderedDict
 from inspect import isfunction
 import os
@@ -87,7 +88,12 @@ class Trainer:
         # 如果是继承方式，则调用自身的forward
         if isinstance(train_X, torch.Tensor):  # tensor不展开
             return self.get_module().forward(train_X)
-        return self.get_module().forward(*train_X)
+        elif isinstance(train_X, (tuple, list)):
+            return self.get_module().forward(*train_X)
+        elif isinstance(train_X, dict):
+            return self.get_module().forward(**train_X)
+        else:
+            return self.get_module().forward(train_X)
 
     def train_step(self, train_X, train_y):
         '''forward并返回loss
@@ -212,16 +218,7 @@ class Trainer:
                     batch = next(train_dataloader_iter)
                 self.train_X, self.train_y = batch
 
-                # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
-                if isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], (list, tuple)):
-                    btz = self.train_X[0][0].size(0)
-                elif isinstance(self.train_X, (list, tuple)) and (not isinstance(self.train_X[0], (list, tuple))):
-                    btz = self.train_X[0].size(0)
-                elif isinstance(self.train_X, torch.Tensor):
-                    btz = self.train_X.size(0)
-                else:
-                    raise ValueError('Input only support `[list, tuple, tensor]`')
-                logs = {'size': btz}
+                logs = self.get_batch_size()
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
                 self.get_module().train()  # 设置为train模式
@@ -281,6 +278,24 @@ class Trainer:
                 break
         self.callbacks.on_train_end(logs)
         return history
+
+    def get_batch_size(self):
+        '''获取batch_size，主要是用于callback中的BaseLogger和Callback
+        '''
+        # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
+        if isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], (list, tuple)):
+            btz = self.train_X[0][0].size(0)
+        elif isinstance(self.train_X, (list, tuple)) and (not isinstance(self.train_X[0], (list, tuple))):
+            btz = self.train_X[0].size(0)
+        elif isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], dict):
+            btz = self.train_X[0].get('batch_size', 0)
+        elif isinstance(self.train_X, dict):
+            btz = self.train_X.get('batch_size', 0)
+        elif isinstance(self.train_X, torch.Tensor):
+            btz = self.train_X.size(0)
+        else:
+            raise ValueError('Input only support `[list, tuple, tensor]`')
+        return {'size': btz}
 
     @torch.no_grad()
     def predict(self, train_X, return_all=None):
@@ -389,7 +404,7 @@ class Trainer:
 
 
 class BaseModel(Trainer, nn.Module):
-    """BaseModel, 支持继承、传入Module实例两种方式, 建议使用继承的方式来使用
+    """BaseModel, 使用继承的方式来使用
     """
     def __init__(self, *args, **kwargs):
         nn.Module.__init__(self)
@@ -402,12 +417,7 @@ class BaseModelDP(nn.DataParallel, BaseModel):
     def __init__(self, *args, **kwargs):
         BaseModel.__init__(self)
         nn.DataParallel.__init__(self, *args, **kwargs)
-    
-    # # 使用dp自身的forward()而不是module.forward()
-    # def _forward(self, train_X):
-    #     if isinstance(train_X, torch.Tensor):
-    #         return self.forward(train_X)
-    #     return self.forward(*train_X)
+
 
 class BaseModelDDP(nn.parallel.DistributedDataParallel, BaseModel):
     '''DistributedDataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
