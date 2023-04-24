@@ -336,15 +336,23 @@ class Trainer:
     def load_weights(self, load_path, strict=True, mapping={}):
         '''加载模型权重
 
-        :param save_path: str, 权重加载路径
+        :param save_path: str/tuple/list, 权重加载路径
         :param mapping: dict, 指定key的映射
         '''
-        state_dict = torch.load(load_path, map_location='cpu')
         state_dict_raw = {}
-        for k, v in state_dict.items():
-            k = mapping.get(k, k)
-            state_dict_raw[k] = v
-        self.get_module().load_state_dict(state_dict_raw, strict=strict)
+        if isinstance(load_path, (tuple, list)):
+            strict = False
+        elif isinstance(load_path, str):
+            load_path = [load_path]
+        else:
+            raise ValueError('Args `load_path` only support str/tuple/list format')
+        
+        for load_path_i in load_path:
+            state_dict = torch.load(load_path_i, map_location='cpu')
+            for k, v in state_dict.items():
+                k = mapping.get(k, k)
+                state_dict_raw[k] = v
+            self.get_module().load_state_dict(state_dict_raw, strict=strict)
 
     def save_weights(self, save_path, mapping={}):
         '''保存模型权重
