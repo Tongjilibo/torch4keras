@@ -334,14 +334,15 @@ class Trainer:
         torch.save(step_params, save_path)
 
     def load_weights(self, load_path, strict=True, mapping={}):
-        '''加载模型权重
+        '''加载模型权重, 支持加载权重文件list
 
         :param save_path: str/tuple/list, 权重加载路径
+        :param strict: bool, torch.load()是否严格加载
         :param mapping: dict, 指定key的映射
         '''
         state_dict_raw = {}
         if isinstance(load_path, (tuple, list)):
-            strict = False
+            strict = False  # 加载多个权重文件时候，strict设置为False
         elif isinstance(load_path, str):
             load_path = [load_path]
         else:
@@ -354,18 +355,27 @@ class Trainer:
                 state_dict_raw[k] = v
             self.get_module().load_state_dict(state_dict_raw, strict=strict)
 
-    def save_weights(self, save_path, mapping={}):
+    def save_weights(self, save_path, mapping={}, trainable_only=False):
         '''保存模型权重
 
         :param save_path: str, 权重保存路径
         :param mapping: dict, 指定key的映射
+        :param trainable_only: bool, 指定仅保存可训练参数
         '''
         state_dict_raw = {}
         state_dict = self.get_module().state_dict()
+        trainable_parameters = set(p for p,v in self.get_module().named_parameters() if v.requires_grad)
         for k, v in state_dict.items():
+            # 只保存可训练的模型部分
+            if trainable_only and (k not in trainable_parameters):
+                continue
             k = mapping.get(k, k)
             state_dict_raw[k] = v
         torch.save(state_dict_raw, save_path)
+        if trainable_only:
+            params_all = sum(p.numel() for p in self.get_module().parameters())
+            params_trainable = sum(p.numel() for p in self.get_module().parameters() if p.requires_grad)
+            print(f"[INFO] Only trainable parameters saved and occupy {params_trainable}/{params_all} {params_trainable/params_all:.2f}%")
 
     def resume_from_checkpoint(self, model_path=None, optimizer_path=None, step_params_path=None):
         '''同时加载模型、优化器、训练过程参数
