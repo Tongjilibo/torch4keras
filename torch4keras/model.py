@@ -355,7 +355,7 @@ class Trainer:
                 state_dict_raw[k] = v
             self.get_module().load_state_dict(state_dict_raw, strict=strict)
 
-    def save_weights(self, save_path, mapping={}, trainable_only=False):
+    def save_weights(self, save_path, mapping={}, trainable_only=False, verbose=1):
         '''保存模型权重
 
         :param save_path: str, 权重保存路径
@@ -372,7 +372,7 @@ class Trainer:
             k = mapping.get(k, k)
             state_dict_raw[k] = v
         torch.save(state_dict_raw, save_path)
-        if trainable_only:
+        if trainable_only and (verbose > 0):
             params_all = sum(p.numel() for p in self.get_module().parameters())
             params_trainable = sum(p.numel() for p in self.get_module().parameters() if p.requires_grad)
             print(f"[INFO] Only trainable parameters saved and occupy {params_trainable}/{params_all} {params_trainable/params_all:.2f}%")
