@@ -160,7 +160,7 @@ class Trainer:
         # callbacks设置
         if callbacks is None:
             callbacks = []
-        if not isinstance(callbacks, (list, tuple)):
+        elif isinstance(callbacks, Callback):
             callbacks = [callbacks]
         for callback in callbacks:
             assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
@@ -285,7 +285,7 @@ class Trainer:
         # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
         if isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], (list, tuple)):
             btz = self.train_X[0][0].size(0)
-        elif isinstance(self.train_X, (list, tuple)) and (not isinstance(self.train_X[0], (list, tuple))):
+        elif isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], torch.Tensor):
             btz = self.train_X[0].size(0)
         elif isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], dict):
             btz = self.train_X[0].get('batch_size', 0)
