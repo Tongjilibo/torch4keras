@@ -218,7 +218,7 @@ class Trainer:
                     batch = next(train_dataloader_iter)
                 self.train_X, self.train_y = batch
 
-                logs = self.get_batch_size()
+                logs = self.log_init()
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
                 self.get_module().train()  # 设置为train模式
@@ -279,7 +279,7 @@ class Trainer:
         self.callbacks.on_train_end(logs)
         return history
 
-    def get_batch_size(self):
+    def log_init(self):
         '''获取batch_size，主要是用于callback中的BaseLogger和Callback
         '''
         # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
@@ -295,7 +295,14 @@ class Trainer:
             btz = self.train_X.size(0)
         else:
             raise ValueError('Input only support `[list, tuple, tensor]`')
-        return {'size': btz}
+        logs ={'size': btz}
+
+        # 添加lr
+        try:
+            logs['lr'] = self.optimizer.param_groups[0]["lr"]
+        except:
+            pass
+        return logs
 
     @torch.no_grad()
     def predict(self, train_X, return_all=None):
@@ -331,6 +338,8 @@ class Trainer:
         '''
         step_params = {'resume_step': (self.local_step+1) % self.steps_per_epoch, 
                        'resume_epoch': self.epoch + (self.local_step+1) // self.steps_per_epoch}
+        save_dir = os.path.dirname(save_path)
+        os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
 
     def load_weights(self, load_path, strict=True, mapping={}):
@@ -371,6 +380,9 @@ class Trainer:
                 continue
             k = mapping.get(k, k)
             state_dict_raw[k] = v
+        
+        save_dir = os.path.dirname(save_path)
+        os.makedirs(save_dir, exist_ok=True)
         torch.save(state_dict_raw, save_path)
         if trainable_only and (verbose > 0):
             params_all = sum(p.numel() for p in self.get_module().parameters())
@@ -394,25 +406,33 @@ class Trainer:
         # 加载训练进度参数，断点续训使用
         self.load_steps_params(step_params_path)
 
-    def save_to_checkpoint(self, model_path=None, optimizer_path=None, step_params_path=None):
-        '''同时保存模型、优化器、训练过程参数
+    def save_to_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None, verbose=0):
+        '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
+        :param scheduler_path: str, scheduler文件路径
         :param step_params_path: str, 训练过程参数保存路径
         '''
+        verbose_str = ''
         if model_path:
-            save_dir = os.path.dirname(model_path)
-            os.makedirs(save_dir, exist_ok=True)
             self.save_weights(model_path)
+            verbose_str += f'Model weights successfuly saved to {model_path}.\n'
         if optimizer_path:
             save_dir = os.path.dirname(optimizer_path)
             os.makedirs(save_dir, exist_ok=True)
             torch.save(self.optimizer.state_dict(), optimizer_path)
-        if step_params_path:
-            save_dir = os.path.dirname(step_params_path)
+            verbose_str += f'Optimizer successfuly saved to {optimizer_path}.\n'
+        if scheduler_path and (self.scheduler is not None):
+            save_dir = os.path.dirname(scheduler_path)
             os.makedirs(save_dir, exist_ok=True)
+            torch.save(self.scheduler.state_dict(), scheduler_path)
+            verbose_str += f'Scheduler successfuly saved to {scheduler_path}.\n'
+        if step_params_path:
             self.save_steps_params(step_params_path)
+            verbose_str += f'Steps_params successfuly saved to {step_params_path}.\n'
+        if verbose != 0:
+            print(verbose_str)
 
     def get_module(self):
         '''返回nn.Module模块
