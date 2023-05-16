@@ -83,17 +83,17 @@ class Trainer:
         # 进度条参数
         self.tqdmbar = kwargs.get('tqdmbar', False)
     
-    def _forward(self, train_X):
+    def _forward(self, *inputs, **input_kwargs):
         # 如果传入了网络结构module，则调用module的forward
         # 如果是继承方式，则调用自身的forward
-        if isinstance(train_X, torch.Tensor):  # tensor不展开
-            return self.get_module().forward(train_X)
-        elif isinstance(train_X, (tuple, list)):
-            return self.get_module().forward(*train_X)
-        elif isinstance(train_X, dict):
-            return self.get_module().forward(**train_X)
+        if (len(inputs)==1) and isinstance(inputs[0], (tuple,list)):
+            inputs = inputs[0]
+        if isinstance(inputs, torch.Tensor):  # tensor不展开
+            return self.get_module().forward(inputs, **input_kwargs)
+        elif isinstance(inputs, (tuple, list)):
+            return self.get_module().forward(*inputs, **input_kwargs)
         else:
-            return self.get_module().forward(train_X)
+            return self.get_module().forward(inputs, **input_kwargs)
 
     def train_step(self, train_X, train_y):
         '''forward并返回loss
@@ -305,22 +305,11 @@ class Trainer:
         return logs
 
     @torch.no_grad()
-    def predict(self, train_X, return_all=None):
-        '''模型预测，调用forward()
-
-        :param train_X: torch.Tensor, 预测用的数据集
-        :param return_all: None/int, 若返回为多个时候指定仅返回第几个，默认为None表示全部返回
-        :return: Any, 预测输出
-        '''
+    def predict(self, *inputs, **input_kwargs):
+        '''模型预测，调用forward()'''
         self.get_module().eval()
-        output = self._forward(train_X)
-        if return_all is None:
-            return output
-        elif isinstance(output, (tuple, list)) and isinstance(return_all, int) and return_all < len(output):
-            return output[return_all]
-        else:
-            raise ValueError('Return format error')
-
+        return self._forward(*inputs, **input_kwargs)
+        
     def load_steps_params(self, save_path):
         '''导入训练过程参数
         
@@ -475,18 +464,24 @@ TrainerDP = BaseModelDP
 TrainerDDP = BaseModelDDP
 
 
-def add_trainer(obj):
+def add_trainer(obj, include=None, exclude=None):
     '''为对象添加Triner对应的方法
     '''
+    include = include or []
+    exclude = exclude or []
     if isinstance(obj, (Trainer, TrainerDP, TrainerDDP, BaseModel, BaseModelDP, BaseModelDDP)):
         return obj
     
     if isinstance(obj, nn.Module):
         import types
         for k in dir(Trainer):
-            if k.startswith('__') and k.endswith('__'):
+            if k in include:  # 必须包含的
+                pass
+            elif k in exclude:  # 必须屏蔽的
                 continue
-            elif (k == 'forward') and hasattr(obj, 'forward'):
+            elif k.startswith('__') and k.endswith('__'):
+                continue
+            elif hasattr(obj, k):  # 如果下游重新定义，则不继承
                 continue
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
         obj.initialize()
