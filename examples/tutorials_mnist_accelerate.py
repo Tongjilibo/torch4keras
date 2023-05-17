@@ -5,7 +5,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel, Trainer
-from torch4keras.snippets import seed_everything, Checkpoint, Evaluator, EarlyStopping, Summary
+from torch4keras.snippets import seed_everything
+from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 from torch4keras.model import add_trainer
@@ -67,4 +68,4 @@ if __name__ == '__main__':
                       optimizer_path='./ckpt/optimizer_{epoch}_{test_acc:.5f}.pt',
                       steps_params_path='./ckpt/steps_params_{epoch}_{test_acc:.5f}.pt')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
-    model.fit(train_dataloader, steps_per_epoch=100, epochs=5, callbacks=[Summary(), evaluator, ckpt, early_stop])
+    model.fit(train_dataloader, steps_per_epoch=100, epochs=5, callbacks=[evaluator, ckpt, early_stop])
