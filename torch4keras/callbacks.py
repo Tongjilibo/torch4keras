@@ -183,6 +183,18 @@ class CallbackList(object):
         for callback in self.callbacks:
             callback.set_optimizer(optimizer)
 
+    def set_scheduler(self, scheduler):
+        for callback in self.callbacks:
+            callback.set_scheduler(scheduler)
+
+    def set_all(self, trainer=None, model=None, optimizer=None, scheduler=None, params=None):
+        for callback in self.callbacks:
+            callback.set_trainer(trainer)
+            callback.set_model(model)
+            callback.set_optimizer(optimizer)
+            callback.set_scheduler(scheduler)
+            callback.set_params(params)
+
     def on_epoch_begin(self, global_step, epoch, logs=None):
         # 如果是分布式DDP训练，则仅masker_rank可以callback
         if not self.run_callbacks: return
@@ -277,6 +289,8 @@ class Callback(object):
         self.model = model
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer
+    def set_scheduler(self, scheduler):
+        self.scheduler = scheduler
     def on_train_begin(self, logs=None):
         pass
     def on_train_end(self, logs=None):
@@ -744,18 +758,21 @@ class Checkpoint(Callback):
 
     :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
+    :param scheduler_path: str, scheduler保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, model_path, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100, **kwargs):
+    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', step_interval=100, verbose=0, **kwargs):
         super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
         self.model_path = model_path  # 保存路径，可设置{epoch}{step}{loss}等占位符
         self.optimizer_path = optimizer_path  # 是否保存优化器
+        self.scheduler_path = scheduler_path  # 是否保存scheduler
         self.steps_params_path = steps_params_path  # 是否保存训练步数
         self.step_interval = step_interval  # method='step'时候生效
+        self.verbose = verbose
     
     def on_epoch_end(self, global_step, epoch, logs=None):
         logs = logs or {}
@@ -769,12 +786,13 @@ class Checkpoint(Callback):
 
     def process(self, suffix, logs):
         file_paths = []
-        for filepath in [self.model_path, self.optimizer_path, self.steps_params_path]:
+        for filepath in [self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
             if filepath:
                 filepath = filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else filepath.format(step=suffix, **logs)
             file_paths.append(filepath)
 
-        self.trainer.save_to_checkpoint(model_path=file_paths[0], optimizer_path=file_paths[1], step_params_path=file_paths[2])
+        self.trainer.save_to_checkpoint(model_path=file_paths[0], optimizer_path=file_paths[1], scheduler_path=file_paths[2], 
+                                        step_params_path=file_paths[3], verbose=self.verbose)
 
 
 class Evaluator(Checkpoint):
@@ -787,11 +805,13 @@ class Evaluator(Checkpoint):
     :param baseline: None/float, 基线, 默认为None 
     :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
+    :param scheduler_path: str, scheduler保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, steps_params_path=None, method='epoch', step_interval=100, **kwargs):
-        super().__init__(model_path, optimizer_path, steps_params_path, method, step_interval, **kwargs)
+    def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, scheduler_path=None,
+                 steps_params_path=None, method='epoch', step_interval=100, **kwargs):
+        super().__init__(model_path, optimizer_path, scheduler_path, steps_params_path, method, step_interval, **kwargs)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
         self.mode = mode

@@ -179,15 +179,13 @@ class Trainer:
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
         callback_trainer = self
         callback_model = self.get_module()
-        self.callbacks.set_trainer(callback_trainer)
-        self.callbacks.set_model(callback_model)
-        self.callbacks.set_optimizer(self.optimizer)
-        self.callbacks.set_params({
+        params = {
             'epochs': epochs,
             'steps': self.steps_per_epoch,
             'verbose': verbose,
             'metrics': [i for i in self.metrics.keys() if isinstance(i, str)],
-        })
+        }
+        self.callbacks.set_all(trainer=callback_trainer, model=callback_model, optimizer=self.optimizer, scheduler=self.scheduler, params=params)
         logs = {}
         self.callbacks.on_train_begin(logs)
         callback_trainer.stop_training = False  # 在EarlyStopping中会重新设置
@@ -378,11 +376,12 @@ class Trainer:
             params_trainable = sum(p.numel() for p in self.get_module().parameters() if p.requires_grad)
             print(f"[INFO] Only trainable parameters saved and occupy {params_trainable}/{params_all} {params_trainable/params_all:.2f}%")
 
-    def resume_from_checkpoint(self, model_path=None, optimizer_path=None, step_params_path=None):
+    def resume_from_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None):
         '''同时加载模型、优化器、训练过程参数
 
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
+        :param scheduler_path: str, scheduler文件路径
         :param step_params_path: str, 训练过程参数保存路径
         '''
         # 加载模型权重
@@ -392,6 +391,10 @@ class Trainer:
         if optimizer_path:
             state_dict = torch.load(optimizer_path, map_location='cpu')
             self.optimizer.load_state_dict(state_dict)
+        # 加载优化器，断点续训使用
+        if scheduler_path:
+            state_dict = torch.load(scheduler_path, map_location='cpu')
+            self.scheduler.load_state_dict(state_dict)
         # 加载训练进度参数，断点续训使用
         self.load_steps_params(step_params_path)
 
