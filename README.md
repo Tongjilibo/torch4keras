@@ -10,6 +10,7 @@
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Tongjilibo/torch4keras/issues)
 
 [Documentation](https://torch4keras.readthedocs.io) |
+[Bert4torch](https://github.com/Tongjilibo/bert4torch) |
 [Examples](https://github.com/Tongjilibo/torch4keras/blob/master/examples) |
 [Source code](https://github.com/Tongjilibo/torch4keras)
 
