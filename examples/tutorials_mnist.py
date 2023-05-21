@@ -4,7 +4,7 @@ import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel, Trainer
 from torch4keras.snippets import seed_everything
-from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary, Logger
+from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary, Logger, EmailCallback, WandbCallback
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
@@ -80,4 +80,6 @@ if __name__ == '__main__':
                       steps_params_path='./ckpt/steps_params_{epoch}_{test_acc:.5f}.pt')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
     logger = Logger('./ckpt/log.log')
+    email = EmailCallback(receivers='tongjilibo@163.com')
+    wandb = WandbCallback(save_code=True)
     model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=[Summary(), logger, evaluator, ckpt, early_stop])

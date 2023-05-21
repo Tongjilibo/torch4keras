@@ -209,3 +209,79 @@ def spend_time(func):
         print(f'{start1} ~ {end1}  spent {consume:.2f}s')
         return res
     return warpper
+
+
+def send_email(receivers, subject, msg=""):
+    """ 发送邮件
+    Examples:
+    ---------
+    >> subject = "info@train_model.py" #邮件主题
+    >> msg = "auc=0.98" #邮件内容
+    >> receivers = ["265011xxxx@qq.com"] #收件人
+    >> send_msg(receivers,subject,msg)
+    """
+    import smtplib
+    from email.mime.text import MIMEText
+    #设置服务器所需信息
+    mail_host = 'smtp.yeah.net'
+    mail_user = 'bugrobot'
+    mail_pass = 'NPWPJBSIVXRTYUOB'   #密码(部分邮箱为授权码) 
+    sender = 'bugrobot@yeah.net'  
+
+    #构造邮件内容
+    message = MIMEText(msg,'plain','utf-8')  
+    message['Subject'] = subject
+    message['From'] = sender     
+    message['To'] = receivers[0]  
+
+    #登录并发送邮件
+    try:
+        smtpObj = smtplib.SMTP() 
+        #连接到服务器
+        smtpObj.connect(mail_host,25)
+        #登录到服务器
+        smtpObj.login(mail_user, mail_pass) 
+        #发送
+        smtpObj.sendmail(sender, receivers,message.as_string()) 
+        #退出
+        smtpObj.quit() 
+        return 'send_msg success'
+    except smtplib.SMTPException as e:
+        error = 'send_msg error : '+str(e)
+        print(error)
+        return error
+
+
+def colorful(obj,color="red", display_type="plain"):
+    '''
+    # 彩色输出格式：
+    # 设置颜色开始 ：\033[显示方式;前景色;背景色m
+    # 说明：
+    # 前景色            背景色           颜色
+    # ---------------------------------------
+    # 30                40              黑色
+    # 31                41              红色
+    # 32                42              绿色
+    # 33                43              黃色
+    # 34                44              蓝色
+    # 35                45              紫红色
+    # 36                46              青蓝色
+    # 37                47              白色
+    # 显示方式           意义
+    # -------------------------
+    # 0                终端默认设置
+    # 1                高亮显示
+    # 4                使用下划线
+    # 5                闪烁
+    # 7                反白显示
+    # 8                不可见
+    '''
+    color_dict = {"black":"30", "red":"31", "green":"32", "yellow":"33",
+                    "blue":"34", "purple":"35","cyan":"36",  "white":"37"}
+    display_type_dict = {"plain":"0","highlight":"1","underline":"4",
+                "shine":"5","inverse":"7","invisible":"8"}
+    s = str(obj)
+    color_code = color_dict.get(color,"")
+    display  = display_type_dict.get(display_type,"")
+    out = '\033[{};{}m'.format(display,color_code)+s+'\033[0m'
+    return out 

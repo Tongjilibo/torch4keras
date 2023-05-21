@@ -9,11 +9,8 @@ from collections import deque
 import json
 import copy
 import os
+from torch4keras.snippets import send_email
 
-try:
-    import requests
-except ImportError:
-    requests = None
 
 class Progbar(object):
     """进度条，直接从keras引入
@@ -735,10 +732,10 @@ class RemoteMonitor(Callback):
         self.field = field
         self.headers = headers
         self.send_as_json = send_as_json
+        import requests
+        self.requests = requests
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        if requests is None:
-            raise ImportError('RemoteMonitor requires the `requests` library.')
         logs = logs or {}
         send = {}
         send['epoch'] = epoch
@@ -746,10 +743,10 @@ class RemoteMonitor(Callback):
             send[k] = v.item() if isinstance(v, (np.ndarray, np.generic)) else k
         try:
             if self.send_as_json:
-                requests.post(self.root + self.path, json=send, headers=self.headers)
+                self.requests.post(self.root + self.path, json=send, headers=self.headers)
             else:
-                requests.post(self.root + self.path, {self.field: json.dumps(send)}, headers=self.headers)
-        except requests.exceptions.RequestException:
+                self.requests.post(self.root + self.path, {self.field: json.dumps(send)}, headers=self.headers)
+        except self.requests.exceptions.RequestException:
             warnings.warn('Warning: could not reach RemoteMonitor root server at ' + str(self.root))
 
 
@@ -982,6 +979,141 @@ class Summary(Callback):
         print()
         summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
         print()
+
+
+class EmailCallback(Callback):
+    '''发送Email
+
+    :param receivers: str/list, 收件人邮箱
+    :param method: str, 控制是按照epoch还是step来发送邮件，默认为'epoch', 可选{'step', 'epoch'}
+    :param interval: int, 发送邮件的的step间隔
+    '''
+    def __init__(self, receivers, subject='', method='epoch', interval=10, **kwargs):
+        super(EmailCallback, self).__init__(**kwargs)
+        self.method = method
+        self.interval = interval
+        self.receivers = receivers
+        self.subject = subject
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if self.method == 'epoch':
+            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
+            subject = f'[Epoch {epoch+1}] performance'
+            if self.subject != '':
+                subject = self.subject + ' | ' + subject
+            send_email(self.receivers, subject=subject, msg=msg)
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
+            subject = f'[Step {global_step}] performance'
+            if self.subject != '':
+                subject = self.subject + ' | ' + subject
+            send_email(self.receivers, subject=subject, msg=msg)
+
+    def on_train_end(self, logs=None):
+        msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
+        subject = f'Finish training'
+        if self.subject != '':
+            subject = self.subject + ' | ' + subject
+        send_email(self.receivers, subject=subject, msg=msg)
+
+
+class WandbCallback(Callback):
+    """从transformers迁移过来
+    A :class:`~transformers.TrainerCallback` that sends the logs to `Weight and Biases <https://www.wandb.com/>`__.
+
+    :param method: str, 控制是按照epoch还是step来log，默认为'epoch', 可选{'step', 'epoch'}
+    :param interval: int, log的的step间隔
+    :param watch (:obj:`str`, `optional` defaults to :obj:`"gradients"`):
+        Can be :obj:`"gradients"`, :obj:`"all"` or :obj:`"false"`. Set to :obj:`"false"` to disable gradient
+        logging or :obj:`"all"` to log gradients and parameters.
+    :param project: str，wandb的project name, 默认为bert4torch
+    :param 
+    """
+    def __init__(self, method='epoch', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
+                 interval=100, save_code=False, config=None):
+        try:
+            import wandb
+            self._wandb = wandb
+        except:
+            print("[WARNING] WandbCallback requires wandb to be installed. Run `pip install wandb`.")
+            self._wandb = None
+
+        self.method = method
+        self._initialized = False
+        # log outputs
+        self.project = project
+        if trial_name is None:
+            self.trial_name = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if run_name is None:
+            self.run_name = self.trial_name
+        self.watch = watch
+        self.interval = interval
+        self.save_code = save_code
+        self.config = config or {}
+        self.run_id = None
+        self.metrics = set()
+        self.hidden_metrics = {'size'}
+
+    def define_metric(self, logs=None):
+        if getattr(self._wandb, "define_metric", None):
+            for m in logs.keys():
+                if m not in self.metrics:
+                    self._wandb.define_metric(name=m, step_metric=self.method, hidden=True if m in self.hidden_metrics else False)
+                    self.metrics.add(m)
+    def adjust_logs(self, logs, **kwargs):
+        logs_new = {**logs, **kwargs}
+        return {k:v for k,v in logs_new.items() if k not in self.hidden_metrics}
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if self._wandb is None:
+            return
+        if self.method == 'epoch':
+            self.define_metric(logs)
+            self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        if self._wandb is None:
+            return
+        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+            self.define_metric(logs)
+            self._wandb.log(self.adjust_logs(logs, step=global_step))
+        
+    def on_train_begin(self, logs=None):
+        if self._wandb is None:
+            return
+
+        self._initialized = True
+        combined_dict = {**self.trainer.__dict__, **self.config}
+
+        if hasattr(self.model, "config") and self.model.config is not None:
+            combined_dict = {**self.model.config, **combined_dict}
+        init_args = {}
+        if self.trial_name is not None:
+            run_name = self.trial_name
+            init_args["group"] = self.run_name
+        else:
+            run_name = self.run_name
+
+        if self._wandb.run is None:
+            run = self._wandb.init(project=self.project, name=run_name, save_code=self.save_code, **init_args)
+            self.run_id = run.id
+
+        # add config parameters (run may have been created manually)
+        self._wandb.config.update(combined_dict, allow_val_change=True)
+
+        # keep track of model topology and gradients, unsupported on TPU
+        if self.watch != "false":
+            self._wandb.watch(self.model, log=self.watch, log_freq=max(100, self.interval))
+ 
+    def on_train_end(self, logs=None):
+        if self._wandb is None:
+            return
+
+        # transformer中的on_log
+        self._wandb.finish()
+        self._initialized = False
 
 
 class AccelerateCallback(Callback):
