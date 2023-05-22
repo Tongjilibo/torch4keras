@@ -6,6 +6,7 @@ from packaging import version
 from torch.utils.data import Dataset, IterableDataset
 import os
 import random
+import traceback 
 
 try:
     from sklearn.metrics import roc_auc_score
@@ -211,22 +212,16 @@ def spend_time(func):
     return warpper
 
 
-def send_email(receivers, subject, msg=""):
-    """ 发送邮件
-    Examples:
-    ---------
-    >> subject = "info@train_model.py" #邮件主题
-    >> msg = "auc=0.98" #邮件内容
-    >> receivers = ["265011xxxx@qq.com"] #收件人
-    >> send_msg(receivers,subject,msg)
+def send_email(receivers, subject, msg="", mail_host='smtp.163.com', mail_user='bert4torch',
+               mail_pass='VDSGQEHFXDZOCVEH', sender='bert4torch@163.com'):
+    """ 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)
+
+    :param subject: str, 邮件主题
+    :param msg: str, 邮件正文
+    :param receivers: str/list收件人
     """
     import smtplib
     from email.mime.text import MIMEText
-    #设置服务器所需信息
-    mail_host = 'smtp.yeah.net'
-    mail_user = 'bugrobot'
-    mail_pass = 'NPWPJBSIVXRTYUOB'   #密码(部分邮箱为授权码) 
-    sender = 'bugrobot@yeah.net'  
 
     #构造邮件内容
     message = MIMEText(msg,'plain','utf-8')  
@@ -237,22 +232,40 @@ def send_email(receivers, subject, msg=""):
     #登录并发送邮件
     try:
         smtpObj = smtplib.SMTP() 
-        #连接到服务器
-        smtpObj.connect(mail_host,25)
-        #登录到服务器
-        smtpObj.login(mail_user, mail_pass) 
-        #发送
-        smtpObj.sendmail(sender, receivers,message.as_string()) 
-        #退出
-        smtpObj.quit() 
-        return 'send_msg success'
+        smtpObj.connect(mail_host, 25)  # 连接到服务器
+        smtpObj.login(mail_user, mail_pass)  # 登录到服务器
+        smtpObj.sendmail(sender, receivers, message.as_string())  # 发送
+        smtpObj.quit()  # 退出
+        print('[INFO] Send email success')
     except smtplib.SMTPException as e:
-        error = 'send_msg error : '+str(e)
+        error = colorful('[Error] Send email error : '+str(e), color='red')
         print(error)
         return error
 
 
-def colorful(obj,color="red", display_type="plain"):
+def email_when_error(receivers, **configs):
+    """装饰器，异常则发邮件
+    Example:
+    --------
+    @email_when_error(receivers='tongjilibo@163.com')
+    def test():
+        return 1/0
+    test()  # 调用
+    """
+    def actual_decorator(func):
+        def new_func(*args, **kwargs):
+            try:
+                res = func(*args, **kwargs)
+            except Exception as e:
+                error_msg = traceback.format_exc()
+                send_email(receivers, func.__name__, error_msg, **configs)
+                raise e
+            return res
+        return new_func
+    return actual_decorator
+    
+
+def colorful(obj, color="yellow", display_type="plain"):
     '''
     # 彩色输出格式：
     # 设置颜色开始 ：\033[显示方式;前景色;背景色m

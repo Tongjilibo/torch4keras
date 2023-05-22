@@ -998,7 +998,7 @@ class EmailCallback(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
             msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
-            subject = f'[Epoch {epoch+1}] performance'
+            subject = f'[INFO] Epoch {epoch+1} performance'
             if self.subject != '':
                 subject = self.subject + ' | ' + subject
             send_email(self.receivers, subject=subject, msg=msg)
@@ -1006,14 +1006,14 @@ class EmailCallback(Callback):
     def on_batch_end(self, global_step, local_step, logs=None):
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
             msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
-            subject = f'[Step {global_step}] performance'
+            subject = f'[INFO] Step {global_step} performance'
             if self.subject != '':
                 subject = self.subject + ' | ' + subject
             send_email(self.receivers, subject=subject, msg=msg)
 
     def on_train_end(self, logs=None):
         msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
-        subject = f'Finish training'
+        subject = f'[INFO] Finish training'
         if self.subject != '':
             subject = self.subject + ' | ' + subject
         send_email(self.receivers, subject=subject, msg=msg)
