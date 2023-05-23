@@ -987,13 +987,21 @@ class EmailCallback(Callback):
     :param receivers: str/list, 收件人邮箱
     :param method: str, 控制是按照epoch还是step来发送邮件，默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 发送邮件的的step间隔
+    :param mail_host: str, 发件服务器host
+    :param mail_user: str, 发件人
+    :param mail_pwd: str, smtp的第三方密码
+    :param sender: str, 发件人邮箱
     '''
-    def __init__(self, receivers, subject='', method='epoch', interval=10, **kwargs):
+    def __init__(self, receivers, subject='', method='epoch', interval=10, mail_host=None, mail_user=None, mail_pwd=None, sender=None, **kwargs):
         super(EmailCallback, self).__init__(**kwargs)
         self.method = method
         self.interval = interval
         self.receivers = receivers
         self.subject = subject
+        self.mail_host = mail_host
+        self.mail_user = mail_user
+        self.mail_pwd = mail_pwd
+        self.sender = sender
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
@@ -1001,7 +1009,7 @@ class EmailCallback(Callback):
             subject = f'[INFO] Epoch {epoch+1} performance'
             if self.subject != '':
                 subject = self.subject + ' | ' + subject
-            send_email(self.receivers, subject=subject, msg=msg)
+            self._email(subject, msg)
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
@@ -1009,14 +1017,18 @@ class EmailCallback(Callback):
             subject = f'[INFO] Step {global_step} performance'
             if self.subject != '':
                 subject = self.subject + ' | ' + subject
-            send_email(self.receivers, subject=subject, msg=msg)
+            self._email(subject, msg)
 
     def on_train_end(self, logs=None):
         msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
         subject = f'[INFO] Finish training'
         if self.subject != '':
             subject = self.subject + ' | ' + subject
-        send_email(self.receivers, subject=subject, msg=msg)
+        self._email(subject, msg)
+
+    def _email(self, subject, msg):
+        send_email(self.receivers, subject=subject, msg=msg, mail_host=self.mail_host,
+                   mail_user=self.mail_user, mail_pwd=self.mail_pwd, sender=self.sender)
 
 
 class WandbCallback(Callback):

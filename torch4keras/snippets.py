@@ -212,16 +212,24 @@ def spend_time(func):
     return warpper
 
 
-def send_email(receivers, subject, msg="", mail_host='smtp.163.com', mail_user='bert4torch',
-               mail_pass='VDSGQEHFXDZOCVEH', sender='bert4torch@163.com'):
+def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_pwd=None, sender=None):
     """ 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)
 
     :param subject: str, 邮件主题
     :param msg: str, 邮件正文
-    :param receivers: str/list收件人
+    :param receivers: str/list, 收件人邮箱
+    :param mail_host: str, 发件服务器host
+    :param mail_user: str, 发件人
+    :param mail_pwd: str, smtp的第三方密码
+    :param sender: str, 发件人邮箱
     """
     import smtplib
     from email.mime.text import MIMEText
+
+    mail_host = mail_host or 'smtp.163.com'
+    mail_user = mail_user or 'bert4torch'
+    mail_pwd = mail_pwd or 'VDSGQEHFXDZOCVEH'
+    sender = sender or 'bert4torch@163.com'
 
     #构造邮件内容
     message = MIMEText(msg,'plain','utf-8')  
@@ -233,7 +241,7 @@ def send_email(receivers, subject, msg="", mail_host='smtp.163.com', mail_user='
     try:
         smtpObj = smtplib.SMTP() 
         smtpObj.connect(mail_host, 25)  # 连接到服务器
-        smtpObj.login(mail_user, mail_pass)  # 登录到服务器
+        smtpObj.login(mail_user, mail_pwd)  # 登录到服务器
         smtpObj.sendmail(sender, receivers, message.as_string())  # 发送
         smtpObj.quit()  # 退出
         print('[INFO] Send email success')
