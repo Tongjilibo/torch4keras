@@ -9,6 +9,7 @@ from collections import deque
 import json
 import copy
 import os
+from torch import nn
 from torch4keras.snippets import send_email
 
 
@@ -1134,15 +1135,16 @@ class AccelerateCallback(Callback):
     def __init__(self, accelerator):
         self.accelerator = accelerator
 
-    def get_module(self):
+    def wrap_model(self):
         '''返回nn.Module模块
         '''
         unwrap_model = self.accelerator.unwrap_model(self.model)
+        if isinstance(unwrap_model, nn.Module): return unwrap_model
         return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
 
     def on_train_begin(self, logs=None):
         self.trainer.loss_backward = False
-        self.trainer.get_module = self.get_module
+        self.trainer.wrap_model = self.wrap_model
 
     def on_train_step_end(self, logs=None):
         self.accelerator.backward(self.trainer.loss)

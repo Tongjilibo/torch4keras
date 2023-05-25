@@ -89,11 +89,11 @@ class Trainer:
         if (len(inputs)==1) and isinstance(inputs[0], (tuple,list)):
             inputs = inputs[0]
         if isinstance(inputs, torch.Tensor):  # tensor不展开
-            return self.get_module().forward(inputs, **input_kwargs)
+            return self.wrap_model().forward(inputs, **input_kwargs)
         elif isinstance(inputs, (tuple, list)):
-            return self.get_module().forward(*inputs, **input_kwargs)
+            return self.wrap_model().forward(*inputs, **input_kwargs)
         else:
-            return self.get_module().forward(inputs, **input_kwargs)
+            return self.wrap_model().forward(inputs, **input_kwargs)
 
     def train_step(self, train_X, train_y):
         '''forward并返回loss
@@ -178,7 +178,7 @@ class Trainer:
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
         callback_trainer = self
-        callback_model = self.get_module()
+        callback_model = self.wrap_model()
         params = {
             'epochs': epochs,
             'steps': self.steps_per_epoch,
@@ -219,7 +219,7 @@ class Trainer:
                 logs = self.log_init()
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
-                self.get_module().train()  # 设置为train模式
+                self.wrap_model().train()  # 设置为train模式
 
                 # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
                 self.output, self.loss, self.loss_detail = self.train_step(self.train_X, self.train_y)
@@ -305,7 +305,7 @@ class Trainer:
     @torch.no_grad()
     def predict(self, *inputs, **input_kwargs):
         '''模型预测，调用forward()'''
-        self.get_module().eval()
+        self.wrap_model().eval()
         return self._forward(*inputs, **input_kwargs)
         
     def load_steps_params(self, save_path):
@@ -349,7 +349,7 @@ class Trainer:
             for k, v in state_dict.items():
                 k = mapping.get(k, k)
                 state_dict_raw[k] = v
-            self.get_module().load_state_dict(state_dict_raw, strict=strict)
+            self.wrap_model().load_state_dict(state_dict_raw, strict=strict)
 
     def save_weights(self, save_path, mapping={}, trainable_only=False, verbose=1):
         '''保存模型权重
@@ -359,8 +359,8 @@ class Trainer:
         :param trainable_only: bool, 指定仅保存可训练参数
         '''
         state_dict_raw = {}
-        state_dict = self.get_module().state_dict()
-        trainable_parameters = set(p for p,v in self.get_module().named_parameters() if v.requires_grad)
+        state_dict = self.wrap_model().state_dict()
+        trainable_parameters = set(p for p,v in self.wrap_model().named_parameters() if v.requires_grad)
         for k, v in state_dict.items():
             # 只保存可训练的模型部分
             if trainable_only and (k not in trainable_parameters):
@@ -372,8 +372,8 @@ class Trainer:
         os.makedirs(save_dir, exist_ok=True)
         torch.save(state_dict_raw, save_path)
         if trainable_only and (verbose > 0):
-            params_all = sum(p.numel() for p in self.get_module().parameters())
-            params_trainable = sum(p.numel() for p in self.get_module().parameters() if p.requires_grad)
+            params_all = sum(p.numel() for p in self.wrap_model().parameters())
+            params_trainable = sum(p.numel() for p in self.wrap_model().parameters() if p.requires_grad)
             print(f"[INFO] Only trainable parameters saved and occupy {params_trainable}/{params_all} {params_trainable/params_all:.2f}%")
 
     def resume_from_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None):
@@ -426,7 +426,7 @@ class Trainer:
         if verbose != 0:
             print(verbose_str)
 
-    def get_module(self):
+    def wrap_model(self):
         '''返回nn.Module模块
         '''
         if isinstance(self, nn.Module): return self
