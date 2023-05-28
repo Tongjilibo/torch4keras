@@ -1143,7 +1143,7 @@ class AccelerateCallback(Callback):
         return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
 
     def on_train_begin(self, logs=None):
-        self.trainer.loss_backward = False
+        self.trainer.loss_backward = False  # 不回传梯度，使用accelerator回传
         self.trainer.wrap_model = self.wrap_model
 
     def on_train_step_end(self, logs=None):
