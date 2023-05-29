@@ -1136,15 +1136,14 @@ class AccelerateCallback(Callback):
         self.accelerator = accelerator
 
     def wrap_model(self):
-        '''返回nn.Module模块
-        '''
+        '''返回nn.Module模块'''
         unwrap_model = self.accelerator.unwrap_model(self.model)
         if isinstance(unwrap_model, nn.Module): return unwrap_model
         return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
 
-    def on_train_begin(self, logs=None):
-        self.trainer.loss_backward = False  # 不回传梯度，使用accelerator回传
-        self.trainer.wrap_model = self.wrap_model
+    def loss_backward(self, loss):
+        self.accelerator.backward(loss)
 
-    def on_train_step_end(self, logs=None):
-        self.accelerator.backward(self.trainer.loss)
+    def on_train_begin(self, logs=None):
+        self.trainer.loss_backward = self.loss_backward  # 使用accelerator回传
+        self.trainer.wrap_model = self.wrap_model
