@@ -532,6 +532,10 @@ class AccelrateTrainer(Trainer):
         self.train_dataloader = self.accelerator.prepare(self.train_dataloader)
         self.train_dataloader_iter = iter(self.train_dataloader_iter)
 
+    def prepare(self, *args, **kwargs):
+        '''调用acclerate的prepare，如在外面评估时候需要对dev_dataloader使用'''
+        return self.accelerator.prepare(*args, **kwargs)
+
     def wrap_model(self):
         '''返回nn.Module模块'''
         unwrap_model = self.accelerator.unwrap_model(self.model)
