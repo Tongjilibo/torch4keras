@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import metric_mapping
+from torch4keras.snippets import colorful, metric_mapping
 from torch4keras.callbacks import ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
 from collections import OrderedDict
 from inspect import isfunction
@@ -517,15 +517,15 @@ class AccelrateTrainer(Trainer):
         super().__init__(module)
         from accelerate import Accelerator
         accelerator = Accelerator(**configs)
+        self.model = accelerator.prepare(module)
         self.accelerator = accelerator
         self.device = accelerator.device
         self.verbose = 1 if accelerator.is_local_main_process else 0
+        print(colorful('[WARNING]') + ' AcclerateTrainer may not be compatible with several callbacks, you can use custom callbacks instead.')
     
     def compile(self, *args, **kwargs):
         super().compile(*args, **kwargs)
-        self.optimizer = self.accelerator.prepare(self.scheduler)
-        self.scheduler = self.accelerator.prepare(self.scheduler)
-        self.criterion = self.accelerator.prepare(self.criterion)
+        self.optimizer, self.scheduler, self.criterion = self.accelerator.prepare(self.optimizer, self.scheduler, self.criterion)
 
     def process_inputs(self, *args):
         super().process_inputs(*args)
