@@ -5,6 +5,7 @@ from torch4keras.callbacks import ProgbarLogger, Callback, CallbackList, BaseLog
 from collections import OrderedDict
 from inspect import isfunction
 import os
+import json
 
 
 class Trainer:
@@ -126,7 +127,7 @@ class Trainer:
         loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
 
         # loss backward
-        self.loss_backward(loss)
+        loss = self.loss_backward(loss)
         return output, loss, loss_detail
 
     def loss_backward(self, loss):
@@ -137,9 +138,10 @@ class Trainer:
             self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
         else:
             loss.backward(retain_graph=self.retain_graph)
+        return loss
     
     def prepare_callbacks(self, callbacks):
-        # callbacks设置
+        '''callbacks设置'''
         if callbacks is None:
             callbacks = []
         elif isinstance(callbacks, Callback):
@@ -543,10 +545,32 @@ class AccelrateTrainer(Trainer):
         return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
 
     def loss_backward(self, loss):
-        self.accelerator.backward(loss)
+        return self.accelerator.backward(loss)
 
 
 class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
-    def __init__(self, module=None):
+    def __init__(self, module):
         super().__init__(module)
+        self.model = module
+
+    def compile(self, *args, config_path, inference=False, **kwargs):
+        super().compile(*args, **kwargs)
+        import deepspeed
+        config = json.load(open(config_path))
+        model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+        kwargs = {
+        "model": self.model,
+        "model_parameters": model_parameters,
+        "config_params": config,
+        "optimizer": self.optimizer,
+        "lr_scheduler": self.scheduler,
+        }
+        self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
+        
+    def loss_backward(self, loss):
+        return self.deepspeed_engine.backward(loss)
+    
+    def update_params(self):
+        self.deepspeed_engine.step()
+        return super().update_params()
