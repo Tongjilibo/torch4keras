@@ -1143,6 +1143,7 @@ class AccelerateCallback(Callback):
 
     def loss_backward(self, loss):
         self.accelerator.backward(loss)
+        return loss
 
     def on_train_begin(self, logs=None):
         self.trainer.loss_backward = self.loss_backward  # 使用accelerator回传
