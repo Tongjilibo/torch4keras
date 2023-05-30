@@ -3,7 +3,6 @@ import collections
 import time
 import numpy as np
 from datetime import datetime
-from tqdm import tqdm
 import warnings
 from collections import deque
 import json
@@ -362,11 +361,11 @@ class TerminateOnNaN(Callback):
                 self.trainer.stop_training = True
 
 
-class ProgbarLogger(Callback):
+class KerasProgbarLogger(Callback):
     """ keras进度条
     """
     def __init__(self, stateful_metrics=None, **kwargs):
-        super(ProgbarLogger, self).__init__(**kwargs)
+        super(KerasProgbarLogger, self).__init__(**kwargs)
         if stateful_metrics:
             self.stateful_metrics = set(stateful_metrics)
         else:
@@ -434,11 +433,12 @@ class ProgbarLogger(Callback):
             print('%s - Finish Training' % (time_start))
 
 
-class TqdmProgressBar(ProgbarLogger):
+class TqdmProgressBar(KerasProgbarLogger):
     """ Tqdm进度条
     """
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
+            from tqdm import tqdm
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
@@ -505,6 +505,47 @@ class TqdmProgressBar(ProgbarLogger):
 
         return logs
 
+
+class ProgressBar(TqdmProgressBar):
+    """ progressbar2进度条
+    """
+    def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
+        if self.verbose:
+            import progressbar
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
+            self.target = self.params['steps']
+            self.progbar = progressbar.bar.ProgressBar(min_value=0, max_value=self.params['steps'], redirect_stdout=True)
+        self.seen = 0
+        self._values = collections.OrderedDict()
+        self._seen_so_far = 0
+
+    def on_batch_begin(self, global_step=None, local_step=None, logs=None):
+        if self.seen < self.target:
+            self.log_values = []
+
+    def on_batch_end(self, global_step=None, local_step=None, logs=None):
+        self.seen += 1
+        logs = self.smooth_values(self.seen, logs or {})
+        for k in self.params['metrics']:
+            if k in logs:
+                self.log_values.append((k, logs[k]))
+
+        # Skip progbar update for the last batch;
+        # will be handled by on_epoch_end.
+        if self.verbose and self.seen < self.target:
+            self.progbar.update(self.seen)
+            # self.progbar.set_postfix(self.log_values)
+
+    def on_epoch_end(self, global_step=None, epoch=None, logs=None):
+        logs = self.smooth_values(self.seen, logs or {})
+        for k in self.params['metrics']:
+            if k in logs:
+                self.log_values.append((k, logs[k]))
+        if self.verbose:
+            self.progbar.update(self.seen)
+            self.progbar.finish()
+    
 
 class History(Callback):
     """指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标
@@ -852,21 +893,25 @@ class Logger(Callback):
     '''
     def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
         super(Logger, self).__init__(**kwargs)
-        import logging
-
+        self.log_path = log_path
         self.interval = interval
+        self.mode = mode
         self.sep = separator
-        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING}
-        formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(level_dict[verbosity])
-        save_dir = os.path.dirname(log_path)
-        os.makedirs(save_dir, exist_ok=True)
-        fh = logging.FileHandler(log_path, mode)
-        fh.setFormatter(formatter)
-        self.logger.addHandler(fh)
+        self.name = name
+        self.verbosity = verbosity
 
     def on_train_begin(self, logs=None):
+        import logging
+        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING}
+        formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
+        self.logger = logging.getLogger(self.name)
+        self.logger.setLevel(level_dict[self.verbosity])
+        save_dir = os.path.dirname(self.log_path)
+
+        os.makedirs(save_dir, exist_ok=True)
+        fh = logging.FileHandler(self.log_path, self.mode)
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
         self.logger.info('Start Training'.center(40, '='))
 
     def on_train_end(self, logs=None):

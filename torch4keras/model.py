@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch4keras.snippets import colorful, metric_mapping
-from torch4keras.callbacks import ProgbarLogger, Callback, CallbackList, BaseLogger, History, TqdmProgressBar
+from torch4keras.callbacks import KerasProgbarLogger, TqdmProgressBar, ProgressBar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
 import os
@@ -42,7 +42,7 @@ class Trainer:
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
         :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
-        :param tqdmbar: bool, 是否使用tqdm进度条，从kwargs中解析，默认为False
+        :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras
         :return: None
         '''
         self.criterion = loss
@@ -80,7 +80,7 @@ class Trainer:
         self.grad_accumulation_steps = grad_accumulation_steps
 
         # 进度条参数
-        self.tqdmbar = kwargs.get('tqdmbar', False)
+        self.bar = kwargs.get('bar', 'keras')
     
     def _forward(self, *inputs, **input_kwargs):
         # 如果传入了网络结构module，则调用module的forward
@@ -155,10 +155,14 @@ class Trainer:
         # 进度条
         progbarlogger = None
         if self.verbose:
-            if self.tqdmbar:
+            if self.bar == 'keras':
+                progbarlogger = KerasProgbarLogger(stateful_metrics=self.stateful_metrics)
+            elif self.bar == 'tqdm':
                 progbarlogger = TqdmProgressBar(stateful_metrics=self.stateful_metrics)
+            elif self.bar == 'progressbar2':
+                progbarlogger = ProgressBar(stateful_metrics=self.stateful_metrics)
             else:
-                progbarlogger = ProgbarLogger(stateful_metrics=self.stateful_metrics)
+                progbarlogger = KerasProgbarLogger(stateful_metrics=self.stateful_metrics)
             callbacks_.append(progbarlogger)
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
@@ -512,3 +516,68 @@ def add_trainer(obj, include=None, exclude=None):
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
         obj.initialize()
     return obj
+
+
+class AccelerateTrainer(Trainer):
+    '''accelerate来训练'''
+    def __init__(self, module: nn.Module, **configs):
+        super().__init__(module)
+        from accelerate import Accelerator
+        accelerator = Accelerator(**configs)
+        self.model = accelerator.prepare(module)
+        self.accelerator = accelerator
+        self.device = accelerator.device
+        self.verbose = 1 if accelerator.is_local_main_process else 0
+        print(colorful('[WARNING]') + ' AcclerateTrainer may not be compatible with several callbacks, you can use custom callbacks instead.')
+    
+    def compile(self, *args, **kwargs):
+        super().compile(*args, **kwargs)
+        self.optimizer, self.scheduler, self.criterion = self.accelerator.prepare(self.optimizer, self.scheduler, self.criterion)
+
+    def process_inputs(self, *args):
+        super().process_inputs(*args)
+        self.train_dataloader = self.accelerator.prepare(self.train_dataloader)
+        self.train_dataloader_iter = iter(self.train_dataloader)
+
+    def prepare(self, *args, **kwargs):
+        '''调用acclerate的prepare，如在外面评估时候需要对dev_dataloader使用'''
+        return self.accelerator.prepare(*args, **kwargs)
+
+    def wrap_model(self):
+        '''返回nn.Module模块'''
+        unwrap_model = self.accelerator.unwrap_model(self.model)
+        if isinstance(unwrap_model, nn.Module): return unwrap_model
+        return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
+
+    def loss_backward(self, loss):
+        self.accelerator.backward(loss)
+        return loss
+
+
+class DeepSpeedTrainer(Trainer):
+    '''deepspeed来训练'''
+    def __init__(self, module):
+        super().__init__(module)
+        self.model = module
+
+    def compile(self, *args, config_path, inference=False, master_rank=0, **kwargs):
+        super().compile(*args, **kwargs)
+        import deepspeed
+        config = json.load(open(config_path))
+        model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+        kwargs = {
+        "model": self.model,
+        "model_parameters": model_parameters,
+        "config_params": config,
+        "optimizer": self.optimizer,
+        "lr_scheduler": self.scheduler,
+        }
+        self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
+        self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
+        
+    def loss_backward(self, loss):
+        self.deepspeed_engine.backward(loss)
+        return loss
+    
+    def update_params(self):
+        self.deepspeed_engine.step()
