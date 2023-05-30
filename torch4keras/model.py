@@ -153,6 +153,7 @@ class Trainer:
         callbacks_ = [BaseLogger(self.stateful_metrics)]
 
         # 进度条
+        progbarlogger = None
         if self.verbose:
             if self.tqdmbar:
                 progbarlogger = TqdmProgressBar(stateful_metrics=self.stateful_metrics)
