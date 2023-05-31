@@ -508,8 +508,8 @@ class ProgressBar(TqdmProgbar):
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
-            widgets = [progressbar.SimpleProgress(format='%(value_s)s/%(max_value_s)s'), progressbar.Bar(marker='='), ' ', 
-                       progressbar.Timer(), ' ', progressbar.AdaptiveETA(), ' ']
+            widgets = [progressbar.SimpleProgress(format='%(value_s)s/%(max_value_s)s'), progressbar.Bar(marker='=', left='[', right=']'), ' ', 
+                       progressbar.AdaptiveETA(format='ETA: %(eta)s', format_finished='Time: %(elapsed)s'), ' - ']
             for i, param in enumerate(self.params['metrics']):
                 widgets.append(progressbar.Variable(param, precision=7))
                 if i < len(self.params['metrics'])-1:
