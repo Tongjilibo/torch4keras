@@ -10,7 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 
 seed_everything(42)
-steps_per_epoch = 100
+steps_per_epoch = 1000
 epochs = 5
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -61,12 +61,12 @@ class MyEvaluator(Evaluator):
     # 重构评价函数
     def evaluate(self):
         total, hit = 1e-5, 0
-        for X, y in tqdm(test_dataloader, desc='Evaluating:'):
+        for X, y in tqdm(test_dataloader, desc='Evaluating'):
             pred_y = model.predict(X).argmax(dim=-1)
             hit += pred_y.eq(y).sum().item()
             total += y.shape[0]
         return {'test_acc': hit/total}
-
+    
 
 if __name__ == '__main__':
     evaluator = MyEvaluator(monitor='test_acc', 

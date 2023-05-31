@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch4keras.snippets import colorful, metric_mapping
-from torch4keras.callbacks import KerasProgbarLogger, TqdmProgressBar, ProgressBar, Callback, CallbackList, BaseLogger, History
+from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
 import os
@@ -42,7 +42,7 @@ class Trainer:
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
         :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
-        :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras
+        :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras, 可选keras, tqdm, progressbar2
         :return: None
         '''
         self.criterion = loss
@@ -81,6 +81,7 @@ class Trainer:
 
         # 进度条参数
         self.bar = kwargs.get('bar', 'keras')
+        assert self.bar in {'keras', 'tqdm', 'progressbar2'}, f'Args `bar`={self.bar} illegal, only support `keras, tqdm, progressbar2`'
     
     def _forward(self, *inputs, **input_kwargs):
         # 如果传入了网络结构module，则调用module的forward
@@ -156,13 +157,13 @@ class Trainer:
         progbarlogger = None
         if self.verbose:
             if self.bar == 'keras':
-                progbarlogger = KerasProgbarLogger(stateful_metrics=self.stateful_metrics)
+                progbarlogger = KerasProgbar(stateful_metrics=self.stateful_metrics)
             elif self.bar == 'tqdm':
-                progbarlogger = TqdmProgressBar(stateful_metrics=self.stateful_metrics)
+                progbarlogger = TqdmProgbar(stateful_metrics=self.stateful_metrics)
             elif self.bar == 'progressbar2':
                 progbarlogger = ProgressBar(stateful_metrics=self.stateful_metrics)
             else:
-                progbarlogger = KerasProgbarLogger(stateful_metrics=self.stateful_metrics)
+                progbarlogger = KerasProgbar(stateful_metrics=self.stateful_metrics)
             callbacks_.append(progbarlogger)
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
@@ -180,7 +181,7 @@ class Trainer:
         callback_trainer.stop_training = False  # 在EarlyStopping中会重新设置
         return history, callback_trainer, progbarlogger
 
-    def update_params(self):
+    def step(self):
         '''参数更新'''
         # 参数更新, 真实的参数更新次数要除以grad_accumulation_steps，注意调整总的训练步数
         if (self.global_step+1) % self.grad_accumulation_steps == 0:
@@ -274,7 +275,7 @@ class Trainer:
                 self.callbacks.on_train_step_end()
                 
                 # 参数更新
-                self.update_params()
+                self.step()
 
                 # 添加loss至log打印
                 logs.update({'loss': self.loss.item()})
@@ -579,5 +580,5 @@ class DeepSpeedTrainer(Trainer):
         self.deepspeed_engine.backward(loss)
         return loss
     
-    def update_params(self):
+    def step(self):
         self.deepspeed_engine.step()

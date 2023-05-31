@@ -8,3 +8,5 @@ dist/
 backup
 test
 .DS_Store
+*.pt
+*.log

@@ -1,3 +1,4 @@
+from contextlib import redirect_stderr
 import sys
 import collections
 import time
@@ -13,8 +14,7 @@ from torch4keras.snippets import send_email
 
 
 class Progbar(object):
-    """进度条，直接从keras引入
-    """
+    """进度条，直接从keras引入"""
     def __init__(self, target, width=30, verbose=1, interval=0.05, stateful_metrics=None):
         self.target = target
         self.width = width
@@ -33,8 +33,7 @@ class Progbar(object):
         self._last_update = 0
 
     def update(self, current, values=None):
-        """Updates the progress bar.
-        """
+        """Updates the progress bar."""
         values = values or []
         for k, v in values:
             if k not in self.stateful_metrics:
@@ -271,8 +270,7 @@ class CallbackList(object):
 
 
 class Callback(object):
-    '''Callback基类
-    '''
+    '''Callback基类'''
     def __init__(self, run_callback=True, **kwargs):
         self.trainer = None  # trainer
         self.model = None  # nn.Module模型，或者包含Trainer的nn.Module
@@ -350,8 +348,7 @@ class BaseLogger(Callback):
 
 
 class TerminateOnNaN(Callback):
-    """Loss出现NAN停止训练
-    """
+    """Loss出现NAN停止训练"""
     def on_batch_end(self, global_step, local_step, logs=None):
         logs = logs or {}
         loss = logs.get('loss')
@@ -361,11 +358,10 @@ class TerminateOnNaN(Callback):
                 self.trainer.stop_training = True
 
 
-class KerasProgbarLogger(Callback):
-    """ keras进度条
-    """
+class KerasProgbar(Callback):
+    """ keras进度条 """
     def __init__(self, stateful_metrics=None, **kwargs):
-        super(KerasProgbarLogger, self).__init__(**kwargs)
+        super(KerasProgbar, self).__init__(**kwargs)
         if stateful_metrics:
             self.stateful_metrics = set(stateful_metrics)
         else:
@@ -433,9 +429,8 @@ class KerasProgbarLogger(Callback):
             print('%s - Finish Training' % (time_start))
 
 
-class TqdmProgressBar(KerasProgbarLogger):
-    """ Tqdm进度条
-    """
+class TqdmProgbar(KerasProgbar):
+    """ Tqdm进度条 """
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             from tqdm import tqdm
@@ -477,8 +472,7 @@ class TqdmProgressBar(KerasProgbarLogger):
             self.progbar.close()
     
     def smooth_values(self, current, values=None):
-        '''从Progbar迁移过来
-        '''
+        '''从Progbar迁移过来'''
         values = values or []
         for k, v in values.items():
             if k not in self.stateful_metrics:
@@ -506,16 +500,22 @@ class TqdmProgressBar(KerasProgbarLogger):
         return logs
 
 
-class ProgressBar(TqdmProgressBar):
-    """ progressbar2进度条
-    """
+class ProgressBar(TqdmProgbar):
+    """ progressbar2进度条 """
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             import progressbar
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
-            self.progbar = progressbar.bar.ProgressBar(min_value=0, max_value=self.params['steps'], redirect_stdout=True)
+            widgets = [progressbar.SimpleProgress(format='%(value_s)s/%(max_value_s)s'), progressbar.Bar(marker='='), ' ', 
+                       progressbar.Timer(), ' ', progressbar.AdaptiveETA(), ' ']
+            for i, param in enumerate(self.params['metrics']):
+                widgets.append(progressbar.Variable(param, precision=7))
+                if i < len(self.params['metrics'])-1:
+                    widgets.append(' - ')
+            self.progbar = progressbar.bar.ProgressBar(min_value=0, max_value=self.params['steps'], widgets=widgets, 
+                                                       redirect_stdout=True, redirect_stderr=True)
         self.seen = 0
         self._values = collections.OrderedDict()
         self._seen_so_far = 0
@@ -527,29 +527,23 @@ class ProgressBar(TqdmProgressBar):
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
         logs = self.smooth_values(self.seen, logs or {})
-        for k in self.params['metrics']:
-            if k in logs:
-                self.log_values.append((k, logs[k]))
+        logs_new = {k:logs[k].strip() for k in self.params['metrics'] if k in logs}
 
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose and self.seen < self.target:
-            self.progbar.update(self.seen)
-            # self.progbar.set_postfix(self.log_values)
+            self.progbar.update(self.seen, **logs_new)
 
     def on_epoch_end(self, global_step=None, epoch=None, logs=None):
         logs = self.smooth_values(self.seen, logs or {})
-        for k in self.params['metrics']:
-            if k in logs:
-                self.log_values.append((k, logs[k]))
+        logs_new = {k:logs[k].strip() for k in self.params['metrics'] if k in logs}
         if self.verbose:
-            self.progbar.update(self.seen)
+            self.progbar.update(self.seen, **logs_new)
             self.progbar.finish()
     
 
 class History(Callback):
-    """指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标
-    """
+    """指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标"""
     def on_train_begin(self, logs=None):
         self.epoch = []
         self.history = {}
