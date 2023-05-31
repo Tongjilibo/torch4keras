@@ -557,28 +557,40 @@ class AccelerateTrainer(Trainer):
 
 class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
-    def __init__(self, module):
+    def __init__(self, module, config_path):
         super().__init__(module)
         self.model = module
+        self.config = json.load(open(config_path))
 
     def compile(self, *args, config_path, inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)
         import deepspeed
-        config = json.load(open(config_path))
         model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
         kwargs = {
-        "model": self.model,
-        "model_parameters": model_parameters,
-        "config_params": config,
-        "optimizer": self.optimizer,
-        "lr_scheduler": self.scheduler,
+            "model": self.model,  # deepspeed的forward默认是计算到loss输出的
+            "model_parameters": model_parameters,
+            "config_params": self.config,
+            "optimizer": self.optimizer,
+            "lr_scheduler": self.scheduler,
         }
+        if self.config.get('zero_optimization', {}).get('offload_optimizer', {}).get('device') == 'cpu':
+            kwargs.pop('optimizer')
         self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
         self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
-        
+
+    def wrap_model(self):
+        # 执行deepspeed_engine的forward
+        return self.deepspeed_engine
+
     def loss_backward(self, loss):
         self.deepspeed_engine.backward(loss)
         return loss
     
     def step(self):
         self.deepspeed_engine.step()
+
+    def resume_from_checkpoint(self, *args, **kwargs):
+        return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
+
+    def save_to_checkpoint(self, *args, **kwargs):
+        return self.deepspeed_engine.save_checkpoint(*args, **kwargs)
