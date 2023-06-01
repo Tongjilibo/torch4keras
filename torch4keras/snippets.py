@@ -1,12 +1,14 @@
 import numpy as np
 import torch
+from torch import nn, Tensor
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import time
 import inspect
 from packaging import version
 from torch.utils.data import Dataset, IterableDataset
 import os
 import random
-import traceback 
+import traceback
 
 try:
     from sklearn.metrics import roc_auc_score
@@ -306,3 +308,35 @@ def colorful(obj, color="yellow", display_type="plain"):
     display  = display_type_dict.get(display_type,"")
     out = '\033[{};{}m'.format(display,color_code)+s+'\033[0m'
     return out 
+
+
+def print_trainable_parameters(module):
+    """打印可训练的参数量"""
+    trainable_params = 0
+    all_param = 0
+    for _, param in module.named_parameters():
+        num_params = param.numel()
+        # if using DS Zero 3 and the weights are initialized empty
+        if num_params == 0 and hasattr(param, "ds_numel"):
+            num_params = param.ds_numel
+
+        all_param += num_params
+        if param.requires_grad:
+            trainable_params += num_params
+    print(f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}")
+
+
+def get_parameter_device(parameter):
+    '''获取device, 从transformers包迁移过来'''
+    try:
+        return next(parameter.parameters()).device
+    except StopIteration:
+        # For nn.DataParallel compatibility in PyTorch 1.5
+
+        def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
+            tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
+            return tuples
+
+        gen = parameter._named_members(get_members_fn=find_tensor_attributes)
+        first_tuple = next(gen)
+        return first_tuple[1].device

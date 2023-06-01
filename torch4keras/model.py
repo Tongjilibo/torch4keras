@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import colorful, metric_mapping
+from torch4keras.snippets import colorful, metric_mapping, get_parameter_device
 from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
@@ -29,6 +29,7 @@ class Trainer:
             self.module = module
         # 是否运行Callbacks，目前主要是在DDP模式下运用
         self.run_callbacks = True
+        self.device = get_parameter_device(self.wrap_model())
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
@@ -83,6 +84,11 @@ class Trainer:
         self.bar = kwargs.get('bar', 'keras')
         assert self.bar in {'keras', 'tqdm', 'progressbar2'}, f'Args `bar`={self.bar} illegal, only support `keras, tqdm, progressbar2`'
     
+    def to_model_device(self, *inputs, **input_kwargs):
+        '''遍历并转移到model.device上'''
+        # TODO
+        pass
+
     def _forward(self, *inputs, **input_kwargs):
         # 如果传入了网络结构module，则调用module的forward
         # 如果是继承方式，则调用自身的forward
@@ -529,7 +535,7 @@ class AccelerateTrainer(Trainer):
         self.accelerator = accelerator
         self.device = accelerator.device
         self.verbose = 1 if accelerator.is_local_main_process else 0
-        print(colorful('[WARNING]') + ' AcclerateTrainer may not be compatible with several callbacks, you can use custom callbacks instead.')
+        print(colorful('[WARNING]') + ' AcclerateTrainer may not be compatible with several callbacks, you may use custom callbacks instead.')
     
     def compile(self, *args, **kwargs):
         super().compile(*args, **kwargs)
@@ -562,7 +568,7 @@ class DeepSpeedTrainer(Trainer):
         self.model = module
         self.config = json.load(open(config_path))
 
-    def compile(self, *args, config_path, inference=False, master_rank=0, **kwargs):
+    def compile(self, *args, inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)
         import deepspeed
         model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
@@ -575,6 +581,7 @@ class DeepSpeedTrainer(Trainer):
         }
         if self.config.get('zero_optimization', {}).get('offload_optimizer', {}).get('device') == 'cpu':
             kwargs.pop('optimizer')
+            print(colorful('[WARNING]') + ' You may not use custom optimizer when offload_optimizer=`cpu`')
         self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
         self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
 

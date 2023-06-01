@@ -1166,24 +1166,3 @@ class WandbCallback(Callback):
         # transformer中的on_log
         self._wandb.finish()
         self._initialized = False
-
-
-class AccelerateCallback(Callback):
-    """Accelerate的Callback
-    """
-    def __init__(self, accelerator):
-        self.accelerator = accelerator
-
-    def wrap_model(self):
-        '''返回nn.Module模块'''
-        unwrap_model = self.accelerator.unwrap_model(self.model)
-        if isinstance(unwrap_model, nn.Module): return unwrap_model
-        return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
-
-    def loss_backward(self, loss):
-        self.accelerator.backward(loss)
-        return loss
-
-    def on_train_begin(self, logs=None):
-        self.trainer.loss_backward = self.loss_backward  # 使用accelerator回传
-        self.trainer.wrap_model = self.wrap_model
