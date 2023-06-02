@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import colorful, metric_mapping, get_parameter_device, info_level_prefix
+from torch4keras.snippets import colorful, metric_mapping, get_parameter_device, info_level_prefix, print_trainable_parameters
 from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
@@ -83,6 +83,18 @@ class Trainer:
         # 进度条参数
         self.bar = kwargs.get('bar', 'keras')
         assert self.bar in {'keras', 'tqdm', 'progressbar2'}, f'Args `bar`={self.bar} illegal, only support `keras, tqdm, progressbar2`'
+    
+    def print_trainable_parameters(self):
+        """打印可训练的参数量"""
+        print_trainable_parameters(self.unwrap_model())
+
+    @property
+    def device(self) -> torch.device:
+        """获取model所在的device"""
+        return get_parameter_device(self.unwrap_model())
+    
+    def parameters(self):
+        return self.unwrap_model().parameters()
     
     def to_model_device(self, *inputs, **input_kwargs):
         '''遍历并转移到model.device上'''
@@ -180,7 +192,6 @@ class Trainer:
         self.train_dataloader = train_dataloader  # 设置为成员变量，可由外部的callbacks进行修改
         self.train_dataloader_iter = iter(self.train_dataloader)  # 循环epoch时不重生成
         self.verbose = self.verbose if hasattr(self, 'verbose') else verbose
-        self.device = get_parameter_device(self.unwrap_model())
 
     def _prepare_callbacks(self, callbacks):
         '''callbacks设置'''
