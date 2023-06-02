@@ -248,7 +248,7 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
         smtpObj.quit()  # 退出
         print('[INFO] Send email success')
     except smtplib.SMTPException as e:
-        error = colorful('[Error] Send email error : '+str(e), color='red')
+        error = info_level_prefix('Send email error : '+str(e), 2)
         print(error)
         return error
 
@@ -310,6 +310,19 @@ def colorful(obj, color="yellow", display_type="plain"):
     return out 
 
 
+def info_level_prefix(string, level=0):
+    '''在字符串前面加上有颜色的[INFO][WARNING][ERROR]字样'''
+    if level in {0, 'i', 'info', 'INFO'}:
+        res = colorful('[INFO]', color='green') + string
+    elif level in {1, 'w', 'warn', 'warning', 'WARN', 'WARNING'}:
+        res = colorful('[WARNING]', color='yellow') + string
+    elif level == {2, 'e', 'error', 'ERROR'}:
+        res = colorful('[ERROR]', color='red') + string
+    elif level == 1:
+        res = string
+    return res
+
+   
 def print_trainable_parameters(module):
     """打印可训练的参数量"""
     trainable_params = 0

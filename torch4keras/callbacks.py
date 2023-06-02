@@ -10,7 +10,7 @@ import json
 import copy
 import os
 from torch import nn
-from torch4keras.snippets import send_email
+from torch4keras.snippets import send_email, info_level_prefix
 
 
 class Progbar(object):
@@ -258,6 +258,13 @@ class CallbackList(object):
             if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_dataloader_end(logs)
 
+    def on_train_step_end(self, logs=None):
+        if not self.run_callbacks: return
+        logs = logs or {}
+        for callback in self.callbacks:
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            callback.on_train_step_end(logs)
+
     def __iter__(self):
         return iter(self.callbacks)
 
@@ -292,6 +299,8 @@ class Callback(object):
     def on_batch_end(self, global_step, local_step, logs=None):
         pass
     def on_dataloader_end(self, logs=None):
+        pass
+    def on_train_step_end(self, logs=None):
         pass
 
 
@@ -345,7 +354,7 @@ class TerminateOnNaN(Callback):
         loss = logs.get('loss')
         if loss is not None:
             if np.isnan(loss) or np.isinf(loss):
-                print('Step %d: Invalid loss, terminating training' % global_step)
+                info_level_prefix('Step %d: Invalid loss, terminating training' % global_step, 2)
                 self.trainer.stop_training = True
 
 
