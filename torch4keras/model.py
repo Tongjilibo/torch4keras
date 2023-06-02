@@ -1,11 +1,12 @@
 from torch import nn
 import torch
 from torch4keras.snippets import colorful, metric_mapping, get_parameter_device
-from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar, Callback, CallbackList, BaseLogger, History
+from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
 import os
 import json
+import math
 
 
 class Trainer:
@@ -100,41 +101,45 @@ class Trainer:
         else:
             return self.wrap_model().forward(inputs, **input_kwargs)
 
-    def train_step(self, train_X, train_y):
-        '''forward并返回loss
+    def train_step(self):
+        '''一个batch的训练过程'''
+        tr_loss, tr_loss_detail = 0, {}
+        for _ in range(self.grad_accumulation_steps):
+            self.train_X, self.train_y = self.prepare_nextbatch()  # 获取下一个batch的训练数据
 
-        :param train_X: List[torch.Tensor], 训练数据
-        :param train_y: torch.Tensor/List[torch.Tensor], 标签信息
-        :return: [output, loss, loss_detail] output: torch.Tensor/List[torch.Tensor], 模型输出; loss: nn.Tensor, 计算得到的loss; loss_detail: dict[nn.Tensor], 具体的各个loss
-        '''
-        # 计算loss
-        if self.mixed_precision:
-            with self.autocast(dtype=torch.float16 if self.mixed_precision=='fp16' else torch.bfloat16):
-                output = self._forward(train_X)
-                loss_detail = self.criterion(output, train_y)
-        else:
-            output = self._forward(train_X)
-            loss_detail = self.criterion(output, train_y)
+            # 计算loss
+            if self.mixed_precision:
+                with self.autocast(dtype=torch.float16 if self.mixed_precision=='fp16' else torch.bfloat16):
+                    output = self._forward(self.train_X)
+                    loss_detail = self.criterion(output, self.train_y)
+            else:
+                output = self._forward(self.train_X)
+                loss_detail = self.criterion(output, self.train_y)
 
-        # 整理loss
-        if isinstance(loss_detail, torch.Tensor):
-            loss = loss_detail
-            loss_detail = {}
-        elif isinstance(loss_detail, dict):
-            loss = loss_detail['loss']  # 还存在其他loss，仅用于打印
-            del loss_detail['loss']
-        elif isinstance(loss_detail, (tuple, list)):
-            loss = loss_detail[0]
-            loss_detail = {f'loss{i}':v for i, v in enumerate(loss_detail[1:], start=1)}
-        else:
-            raise ValueError('Return loss only support `Tensor/dict/tuple/list` format')
+            # 整理loss
+            if isinstance(loss_detail, torch.Tensor):
+                loss = loss_detail
+                loss_detail = {}
+            elif isinstance(loss_detail, dict):
+                loss = loss_detail['loss']  # 还存在其他loss，仅用于打印
+                del loss_detail['loss']
+            elif isinstance(loss_detail, (tuple, list)):
+                loss = loss_detail[0]
+                loss_detail = {f'loss{i}':v for i, v in enumerate(loss_detail[1:], start=1)}
+            else:
+                raise ValueError('Return loss only support `Tensor/dict/tuple/list` format')
 
-        # 梯度累积
-        loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
+            # 梯度累积
+            loss = loss / self.grad_accumulation_steps if self.grad_accumulation_steps > 1 else loss
 
-        # loss backward
-        loss = self.loss_backward(loss)
-        return output, loss, loss_detail
+            # loss backward
+            tr_loss += self.loss_backward(loss).item()
+            for k, v in loss_detail.items():
+                v  = v.item() if isinstance(v, torch.Tensor) else v
+                tr_loss_detail[k] = tr_loss_detail.get(k, 0) + v / self.grad_accumulation_steps
+            
+        # TODO: 理论上梯度累积时需对output和train_y进行合并，主要是为了metric_mapping计算的准确
+        return output, tr_loss, tr_loss_detail
 
     def loss_backward(self, loss):
         '''loss.backward'''
@@ -166,7 +171,7 @@ class Trainer:
             elif self.bar == 'tqdm':
                 progbarlogger = TqdmProgbar(stateful_metrics=self.stateful_metrics)
             elif self.bar == 'progressbar2':
-                progbarlogger = ProgressBar(stateful_metrics=self.stateful_metrics)
+                progbarlogger = ProgressBar2Progbar(stateful_metrics=self.stateful_metrics)
             else:
                 progbarlogger = KerasProgbar(stateful_metrics=self.stateful_metrics)
             callbacks_.append(progbarlogger)
@@ -188,31 +193,29 @@ class Trainer:
 
     def step(self):
         '''参数更新'''
-        # 参数更新, 真实的参数更新次数要除以grad_accumulation_steps，注意调整总的训练步数
-        if (self.global_step+1) % self.grad_accumulation_steps == 0:
-            skip_scheduler = False
-            # 混合精度
-            if self.mixed_precision:
-                self.scaler.unscale_(self.optimizer)
-                if self.clip_grad_norm is not None:  # 梯度裁剪
-                    torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                skip_scheduler = self.scaler.get_scale() != self.scale_before_step
+        skip_scheduler = False
+        # 混合精度
+        if self.mixed_precision:
+            self.scaler.unscale_(self.optimizer)
+            if self.clip_grad_norm is not None:  # 梯度裁剪
+                torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            skip_scheduler = self.scaler.get_scale() != self.scale_before_step
+        else:
+            if self.clip_grad_norm is not None:  # 梯度裁剪
+                torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
+            self.optimizer.step()
+
+        self.optimizer.zero_grad()  # 清梯度
+        if (self.scheduler is not None) and not skip_scheduler:
+            if isinstance(self.scheduler, (tuple, list)):
+                for scheduler in self.scheduler:
+                    scheduler.step()
             else:
-                if self.clip_grad_norm is not None:  # 梯度裁剪
-                    torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
-                self.optimizer.step()
+                self.scheduler.step()
 
-            self.optimizer.zero_grad()  # 清梯度
-            if (self.scheduler is not None) and not skip_scheduler:
-                if isinstance(self.scheduler, (tuple, list)):
-                    for scheduler in self.scheduler:
-                        scheduler.step()
-                else:
-                    self.scheduler.step()
-
-    def get_next_batch(self):
+    def prepare_nextbatch(self):
         '''准备下一个batch数据'''
         # 循环dataloader, 不要试用itertools的cycle，遇到过变量不释放的问题
         try:
@@ -224,12 +227,15 @@ class Trainer:
             batch = next(self.train_dataloader_iter)
         return batch
 
-    def process_inputs(self, train_dataloader, steps_per_epoch, epochs, verbose):
+    def prepare_inputs(self, train_dataloader, steps_per_epoch, epochs, verbose):
         '''对fit的输入进行类型检查并置为成员变量'''
         if not hasattr(train_dataloader, '__len__'):
             assert steps_per_epoch is not None, 'Either train_dataloader has attr `__len__` or steps_per_epoch is not None'
-
-        self.steps_per_epoch = len(train_dataloader) if steps_per_epoch is None else steps_per_epoch
+        if steps_per_epoch is None:
+            self.steps_per_epoch = math.ceil(len(train_dataloader) // self.grad_accumulation_steps)
+        else:
+            self.steps_per_epoch = steps_per_epoch
+        self.batch_size = train_dataloader.batch_size
         self.epochs = epochs
         self.total_steps = self.steps_per_epoch * epochs
         self.train_dataloader = train_dataloader  # 设置为成员变量，可由外部的callbacks进行修改
@@ -248,7 +254,7 @@ class Trainer:
         :return: None
         '''
         # 输入处理
-        self.process_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
+        self.prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
 
         # 准备callbacks
         history, callback_trainer, progbarlogger  = self.prepare_callbacks(callbacks)
@@ -269,26 +275,20 @@ class Trainer:
             for local_step in range(resume_step, self.steps_per_epoch):
                 self.local_step = local_step
                 self.global_step = self.epoch * self.steps_per_epoch + self.local_step
-                self.train_X, self.train_y = self.get_next_batch()  # 获取下一个batch的训练数据
-
                 logs = self.log_init()
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
+                # forward和backward
                 self.wrap_model().train()  # 设置为train模式
-
-                # 入参个数判断，如果入参>=3表示是多个入参，如果=2则表示是一个入参
-                self.output, self.loss, self.loss_detail = self.train_step(self.train_X, self.train_y)
-                self.callbacks.on_train_step_end()
+                self.output, self.loss, self.loss_detail = self.train_step()
                 
                 # 参数更新
                 self.step()
 
                 # 添加loss至log打印
-                logs.update({'loss': self.loss.item()})
-                logs_loss_detail = {k: v.item() if isinstance(v, torch.Tensor) else v for k, v in self.loss_detail.items()}
-                logs.update(logs_loss_detail)
+                logs.update(dict({'loss': self.loss}, **self.loss_detail))
                 if self.verbose and (self.global_step == resume_step):
-                    progbarlogger.add_metrics(list(logs_loss_detail.keys()), add_position=1)
+                    progbarlogger.add_metrics(list(self.loss_detail.keys()), add_position=1)
                     
                 # 添加metrics至log打印
                 for metric, func in self.metrics.items():
@@ -314,20 +314,7 @@ class Trainer:
     def log_init(self):
         '''获取batch_size，主要是用于callback中的BaseLogger和Callback
         '''
-        # 从train_X中取batch_size，最多允许嵌套两层，即encoder和decoder的((token_ids1, mask1), (token_ids2, mask2))
-        if isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], (list, tuple)):
-            btz = self.train_X[0][0].size(0)
-        elif isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], torch.Tensor):
-            btz = self.train_X[0].size(0)
-        elif isinstance(self.train_X, (list, tuple)) and isinstance(self.train_X[0], dict):
-            btz = self.train_X[0].get('batch_size', 0)
-        elif isinstance(self.train_X, dict):
-            btz = self.train_X.get('batch_size', 0)
-        elif isinstance(self.train_X, torch.Tensor):
-            btz = self.train_X.size(0)
-        else:
-            raise ValueError('Input only support `[list, tuple, tensor]`')
-        logs ={'size': btz}
+        logs = {'size': self.batch_size * self.grad_accumulation_steps}
 
         # 添加lr
         try:
@@ -541,8 +528,8 @@ class AccelerateTrainer(Trainer):
         super().compile(*args, **kwargs)
         self.optimizer, self.scheduler, self.criterion = self.accelerator.prepare(self.optimizer, self.scheduler, self.criterion)
 
-    def process_inputs(self, *args):
-        super().process_inputs(*args)
+    def prepare_inputs(self, *args):
+        super().prepare_inputs(*args)
         self.train_dataloader = self.accelerator.prepare(self.train_dataloader)
         self.train_dataloader_iter = iter(self.train_dataloader)
 
@@ -595,6 +582,12 @@ class DeepSpeedTrainer(Trainer):
     
     def step(self):
         self.deepspeed_engine.step()
+
+    def predict(self, *inputs, **input_kwargs):
+        return self.wrap_model().predict(*inputs, **input_kwargs)
+
+    def parammeters(self):
+        return self.wrap_model().parammeters()
 
     def resume_from_checkpoint(self, *args, **kwargs):
         return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
