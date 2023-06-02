@@ -29,7 +29,6 @@ class Trainer:
             self.module = module
         # 是否运行Callbacks，目前主要是在DDP模式下运用
         self.run_callbacks = True
-        self.device = get_parameter_device(self.wrap_model())
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
@@ -236,6 +235,7 @@ class Trainer:
         self.train_dataloader = train_dataloader  # 设置为成员变量，可由外部的callbacks进行修改
         self.train_dataloader_iter = iter(self.train_dataloader)  # 循环epoch时不重生成
         self.verbose = self.verbose if hasattr(self, 'verbose') else verbose
+        self.device = get_parameter_device(self.wrap_model())
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
         '''模型训练
