@@ -92,10 +92,7 @@ class Trainer:
     def device(self) -> torch.device:
         """获取model所在的device"""
         return get_parameter_device(self.unwrap_model())
-    
-    def parameters(self):
-        return self.unwrap_model().parameters()
-    
+        
     def to_model_device(self, *inputs, **input_kwargs):
         '''遍历并转移到model.device上'''
         # TODO
