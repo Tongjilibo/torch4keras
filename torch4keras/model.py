@@ -593,9 +593,6 @@ class DeepSpeedTrainer(Trainer):
     def predict(self, *inputs, **input_kwargs):
         return self.unwrap_model().predict(*inputs, **input_kwargs)
 
-    def parammeters(self):
-        return self.unwrap_model().parammeters()
-
     def resume_from_checkpoint(self, *args, **kwargs):
         return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
 
