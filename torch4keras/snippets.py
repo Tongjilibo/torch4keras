@@ -353,3 +353,14 @@ def get_parameter_device(parameter):
         gen = parameter._named_members(get_members_fn=find_tensor_attributes)
         first_tuple = next(gen)
         return first_tuple[1].device
+
+class DottableDict(dict):
+    '''支持点操作符的字典'''
+    def __init__(self, *args, **kwargs):
+        dict.__init__(self, *args, **kwargs)
+        self.__dict__ = self
+    def allowDotting(self, state=True):
+        if state:
+            self.__dict__ = self
+        else:
+            self.__dict__ = dict()

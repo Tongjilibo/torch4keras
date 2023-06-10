@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import colorful, metric_mapping, get_parameter_device, info_level_prefix, print_trainable_parameters
+from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, info_level_prefix, print_trainable_parameters
 from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
@@ -500,6 +500,11 @@ def add_trainer(obj, include=None, exclude=None):
     '''
     include = include or []
     exclude = exclude or []
+    if isinstance(include, str):
+        include = [include]
+    if isinstance(exclude, str):
+        exclude = [exclude]
+    
     if isinstance(obj, (Trainer, TrainerDP, TrainerDDP, BaseModel, BaseModelDP, BaseModelDDP)):
         return obj
     
@@ -514,7 +519,13 @@ def add_trainer(obj, include=None, exclude=None):
                 continue
             elif hasattr(obj, k):  # 如果下游重新定义，则不继承
                 continue
-            exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
+           
+            if eval(f'isfunction(Trainer.{k})'):
+                 # 方法
+                exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
+            else:
+                # TODO 属性等其他
+                pass
         obj.initialize()
     return obj
 
@@ -559,13 +570,33 @@ class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
     def __init__(self, module, config_path):
         super().__init__(module)
-        self.model = module
-        self.config = json.load(open(config_path))
+        self.model = add_trainer(module)
+        self.config = DottableDict(json.load(open(config_path)))
+        self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印，防止进度条打印问题
 
-    def compile(self, *args, inference=False, master_rank=0, **kwargs):
+    def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)
         import deepspeed
-        model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+        from deepspeed.utils import logger as ds_logger
+        import logging
+        log_levels = {
+            "debug": logging.DEBUG,
+            "info": logging.INFO,
+            "warning": logging.WARNING,
+            "error": logging.ERROR,
+            "critical": logging.CRITICAL,
+        }
+
+        ds_logger.setLevel(log_levels.get(log_level, logging.WARNING))
+
+        if inference:
+            # only Z3 makes sense for the inference
+            info_level_prefix("ZeRO inference only makes sense with ZeRO Stage 3", 1)
+            self.optimizer, self.scheduler = None, None
+            model_parameters = None
+        else:
+            model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+        
         kwargs = {
             "model": self.model,  # deepspeed的forward默认是计算到loss输出的
             "model_parameters": model_parameters,
@@ -590,8 +621,9 @@ class DeepSpeedTrainer(Trainer):
     def step(self):
         self.deepspeed_engine.step()
 
+    @torch.inference_mode()
     def predict(self, *inputs, **input_kwargs):
-        return self.unwrap_model().predict(*inputs, **input_kwargs)
+        return self.deepspeed_engine.module.predict(*inputs, **input_kwargs)
 
     def resume_from_checkpoint(self, *args, **kwargs):
         return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
