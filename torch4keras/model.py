@@ -426,17 +426,18 @@ class Trainer:
         # 加载训练进度参数，断点续训使用
         self.load_steps_params(step_params_path)
 
-    def save_to_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None, verbose=0):
+    def save_to_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None, mapping={}, verbose=0):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param step_params_path: str, 训练过程参数保存路径
+        :param mapping: dict, 模型文件的mapping
         '''
         verbose_str = ''
         if model_path:
-            self.save_weights(model_path)
+            self.save_weights(model_path, mapping=mapping)
             verbose_str += f'Model weights successfuly saved to {model_path}.\n'
         if optimizer_path:
             save_dir = os.path.dirname(optimizer_path)
