@@ -313,11 +313,11 @@ def colorful(obj, color="yellow", display_type="plain"):
 def info_level_prefix(string, level=0):
     '''在字符串前面加上有颜色的[INFO][WARNING][ERROR]字样'''
     if level in {0, 'i', 'info', 'INFO'}:
-        res = colorful('[INFO]', color='green') + string
+        res = colorful('[INFO]', color='green') + ' ' + string.strip()
     elif level in {1, 'w', 'warn', 'warning', 'WARN', 'WARNING'}:
-        res = colorful('[WARNING]', color='yellow') + string
+        res = colorful('[WARNING]', color='yellow') + ' ' + string.strip()
     elif level == {2, 'e', 'error', 'ERROR'}:
-        res = colorful('[ERROR]', color='red') + string
+        res = colorful('[ERROR]', color='red') + ' ' + string.strip()
     elif level == 1:
         res = string
     return res
@@ -354,6 +354,7 @@ def get_parameter_device(parameter):
         first_tuple = next(gen)
         return first_tuple[1].device
 
+
 class DottableDict(dict):
     '''支持点操作符的字典'''
     def __init__(self, *args, **kwargs):
@@ -364,3 +365,64 @@ class DottableDict(dict):
             self.__dict__ = self
         else:
             self.__dict__ = dict()
+
+
+def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
+    """
+    这段代码是一个名为 auto_set_cuda_devices 的函数，它接受一个可选的整数参数 best_num。该函数用于自动设置环境变量 CUDA_VISIBLE_DEVICES，以便在多个 GPU 设备中选择最佳的 GPU 设备。
+    首先，该函数检查环境变量 CUDA_VISIBLE_DEVICES 是否已经设置。如果已经设置，则发出警告并返回当前设置的值。
+    如果 best_num 等于 -1，则将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
+    接下来，该函数尝试使用 nvidia-smi 命令查询 GPU 设备的信息。如果命令不存在，则发出警告并将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
+    如果未指定 best_num，则从环境变量 LOCAL_WORLD_SIZE 中获取值。然后将其转换为整数。
+    接下来，该函数解析 nvidia-smi 命令的输出，并计算每个 GPU 设备的得分。得分由 GPU 利用率和可用内存计算得出。
+    最后，该函数选择得分最高的 best_num 个 GPU 设备，并将其索引作为字符串连接起来。然后将环境变量 CUDA_VISIBLE_DEVICES 设置为该字符串并返回。
+    """
+    import subprocess
+
+    # 无需重复设置
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        print(info_level_prefix("Environment variable `CUDA_VISIBLE_DEVICES` has already been set", 'w'))
+        return os.environ["CUDA_VISIBLE_DEVICES"]
+
+    if best_num == -1:
+        print(info_level_prefix(f"SET CUDA_VISIBLE_DEVICES=-1"))
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        return "-1"
+
+    try:
+        p = subprocess.Popen(
+            ["nvidia-smi",
+             "--query-gpu=index,utilization.gpu,memory.total,memory.free",
+             "--format=csv,noheader,nounits"],
+            stdout=subprocess.PIPE)
+    except FileNotFoundError:
+        print(info_level_prefix("`nvidia-smi` not exists"), 'e')
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        return "-1"
+
+    if best_num is None:
+        best_num = os.environ.get("LOCAL_WORLD_SIZE", 1)
+    best_num = int(best_num)
+
+    stdout, _ = p.communicate()
+    outputs = stdout.decode("utf-8")
+    lines = outputs.split(os.linesep)
+
+    scores = []
+    for item in lines:
+        item_arr = item.split(",")
+        if len(item_arr) != 4:
+            continue
+        gpu_score = 100 - int(item_arr[1].strip())
+        memory_score = 100 * (int(item_arr[3].strip()) / int(item_arr[2].strip()))
+        score = gpu_score + memory_score
+        scores.append(score)
+
+    best_num = min(best_num, len(scores))
+    topk_idx = (-np.asarray(scores)).argsort()[:best_num]
+
+    topk_idx_str = ",".join(map(str, topk_idx))
+    print(info_level_prefix(f"SET CUDA_VISIBLE_DEVICES={topk_idx_str}"))
+    os.environ["CUDA_VISIBLE_DEVICES"] = topk_idx_str
+
+    return topk_idx_str
