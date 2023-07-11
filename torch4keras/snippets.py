@@ -310,19 +310,41 @@ def colorful(obj, color="yellow", display_type="plain"):
     return out 
 
 
-def info_level_prefix(string, level=0):
+def log_level(string, level=0, verbose=1):
     '''在字符串前面加上有颜色的[INFO][WARNING][ERROR]字样'''
     if level in {0, 'i', 'info', 'INFO'}:
-        res = colorful('[INFO]', color='green') + ' ' + string.strip()
+        res = log_info(string, verbose)
     elif level in {1, 'w', 'warn', 'warning', 'WARN', 'WARNING'}:
-        res = colorful('[WARNING]', color='yellow') + ' ' + string.strip()
+        res = log_warn(string, verbose)
     elif level == {2, 'e', 'error', 'ERROR'}:
-        res = colorful('[ERROR]', color='red') + ' ' + string.strip()
+        res = log_error(string, verbose)
     elif level == 1:
         res = string
     return res
+info_level_prefix = log_level
 
-   
+
+def log_info(string, verbose=1):
+    res = colorful('[INFO]', color='green') + ' ' + string.strip()
+    if verbose != 0:
+        print(res)
+    return res
+
+
+def log_warn(string, verbose=1):
+    res = colorful('[WARNING]', color='yellow') + ' ' + string.strip()
+    if verbose != 0:
+        print(res)
+    return res
+
+
+def log_error(string, verbose=1):
+    res = colorful('[ERROR]', color='red') + ' ' + string.strip()
+    if verbose != 0:
+        print(res)
+    return res
+
+
 def print_trainable_parameters(module):
     """打印可训练的参数量"""
     trainable_params = 0
