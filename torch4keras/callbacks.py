@@ -13,6 +13,9 @@ from torch import nn
 from torch4keras.snippets import send_email, info_level_prefix
 
 
+SKIP_METRICS = {'size'}
+
+
 class Progbar(object):
     """进度条，直接从keras引入"""
     def __init__(self, target, width=30, verbose=1, time_interval=0.05, stateful_metrics=None, smooth_interval=None):
@@ -35,7 +38,8 @@ class Progbar(object):
         self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
         self._total_width = 0
         self._seen_so_far = 0
-        self._values = collections.OrderedDict()
+        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
+        self._smooth_values = dict()  # 存储滑动平均的结果，stateful_metrics时候滑动平均结果和不滑动一致
         self._start = time.time()
         self._last_update = 0
 
@@ -120,6 +124,7 @@ class Progbar(object):
                 info += ' - %s:' % k
                 if isinstance(self._values[k], list):
                     avg = np.mean(self._values[k][0] / max(1, self._values[k][1]))  # 指标平滑
+                    self._smooth_values[k] = avg  # 存储滑动平均的结果
                     if abs(avg) > 1e-3:
                         info += ' %.4f' % avg
                     else:
@@ -377,6 +382,7 @@ class KerasProgbar(Callback):
             self.stateful_metrics = set(stateful_metrics)
         else:
             raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
+        self.stateful_metrics.add('lr')  # 学习率是不能平滑
         self.smooth_interval = smooth_interval
         self.width = width
 
@@ -413,35 +419,28 @@ class KerasProgbar(Callback):
                                    stateful_metrics=self.stateful_metrics, smooth_interval=self.smooth_interval)
         self.seen = 0
 
-    def on_batch_begin(self, global_step=None, local_step=None, logs=None):
-        if self.seen < self.target:
-            self.log_values = []
-
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         logs = logs or {}
         self.seen += 1
-        for k in self.params['metrics']:
-            if k in logs:
-                self.log_values.append((k, logs[k]))
-
+        log_values = [(k, logs[k]) for k in self.params['metrics'] if k in logs]
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose and self.seen < self.target:
-            self.progbar.update(self.seen, self.log_values)
+            self.progbar.update(self.seen, log_values)
+            logs.update(self.progbar._smooth_values)  # 如果进度条是平滑的，那这里的logs也覆盖掉
 
     def on_epoch_end(self, global_step=None, epoch=None, logs=None):
         logs = logs or {}
-        for k in self.params['metrics']:
-            if k in logs:
-                self.log_values.append((k, logs[k]))
+        log_values = [(k, logs[k]) for k in self.params['metrics'] if k in logs]
         if self.verbose:
-            self.progbar.update(self.seen, self.log_values)
+            self.progbar.update(self.seen, log_values)
+            logs.update(self.progbar._smooth_values)
     
     def on_train_end(self, logs=None):
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Finish Training' % (time_start))
-
+        
 
 class TqdmProgbar(KerasProgbar):
     """ Tqdm进度条 """
@@ -454,35 +453,30 @@ class TqdmProgbar(KerasProgbar):
             self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0)
         self.seen = 0
         self._values = collections.OrderedDict()
+        self._smooth_values = dict()
         self._seen_so_far = 0
-
-    def on_batch_begin(self, global_step=None, local_step=None, logs=None):
-        if self.seen < self.target:
-            self.log_values = []
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
-        logs = self.smooth_values(self.seen, logs or {})
-        for k in self.params['metrics']:
-            if k in logs:
-                self.log_values.append((k, logs[k]))
+        logs_new = self.smooth_values(self.seen, logs or {})
+        log_values = [(k, logs_new[k]) for k in self.params['metrics'] if k in logs_new]
 
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose and self.seen < self.target:
             self.progbar.n = self.seen
             self.progbar.refresh()
-            self.progbar.set_postfix(self.log_values)
+            self.progbar.set_postfix(log_values)
+            logs.update(self._smooth_values)
 
     def on_epoch_end(self, global_step=None, epoch=None, logs=None):
-        logs = self.smooth_values(self.seen, logs or {})
-        for k in self.params['metrics']:
-            if k in logs:
-                self.log_values.append((k, logs[k]))
+        logs_new = self.smooth_values(self.seen, logs or {})
+        log_values = [(k, logs_new[k]) for k in self.params['metrics'] if k in logs_new]
         if self.verbose:
             self.progbar.n = self.seen
             self.progbar.refresh()
-            self.progbar.set_postfix(self.log_values)
+            self.progbar.set_postfix(log_values)
+            logs.update(self._smooth_values)
             self.progbar.close()
     
     def smooth_values(self, current, values=None):
@@ -491,6 +485,9 @@ class TqdmProgbar(KerasProgbar):
         for k, v in values.items():
             if k not in self.stateful_metrics:
                 if k not in self._values:
+                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 0):
+                    # 如果定义了累积smooth_interval，则需要重新累计
                     self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
                 else:
                     self._values[k][0] += v * (current - self._seen_so_far)
@@ -503,6 +500,7 @@ class TqdmProgbar(KerasProgbar):
         for k in self._values:
             if isinstance(self._values[k], list):
                 avg = np.mean(self._values[k][0] / max(1, self._values[k][1]))
+                self._smooth_values[k] = avg
                 if abs(avg) > 1e-3:
                     logs[k] = ' %.4f' % avg
                 else:
@@ -533,25 +531,23 @@ class ProgressBar2Progbar(TqdmProgbar):
         self._values = collections.OrderedDict()
         self._seen_so_far = 0
 
-    def on_batch_begin(self, global_step=None, local_step=None, logs=None):
-        if self.seen < self.target:
-            self.log_values = []
-
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
-        logs = self.smooth_values(self.seen, logs or {})
-        logs_new = {k:logs[k].strip() for k in self.params['metrics'] if k in logs}
+        logs_new = self.smooth_values(self.seen, logs or {})
+        logs_new = {k:logs_new[k].strip() for k in self.params['metrics'] if k in logs_new}
 
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose and self.seen < self.target:
             self.progbar.update(self.seen, **logs_new)
+            logs.update(self._smooth_values)
 
     def on_epoch_end(self, global_step=None, epoch=None, logs=None):
-        logs = self.smooth_values(self.seen, logs or {})
-        logs_new = {k:logs[k].strip() for k in self.params['metrics'] if k in logs}
+        logs_new = self.smooth_values(self.seen, logs or {})
+        logs_new = {k:logs_new[k].strip() for k in self.params['metrics'] if k in logs_new}
         if self.verbose:
             self.progbar.update(self.seen, **logs_new)
+            logs.update(self._smooth_values)
             self.progbar.finish()
     
 
@@ -928,12 +924,12 @@ class Logger(Callback):
         self.logger.info(f'Epoch {epoch+1}'.center(40, '='))
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in {'size'}])
+        log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in SKIP_METRICS])
         self.logger.info(f'epoch={epoch+1}{self.sep}{log_str}')
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if (global_step+1) % self.interval == 0:
-            log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in {'size'}])
+            log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in SKIP_METRICS])
             self.logger.info(f'step={global_step+1}{self.sep}{log_str}')
 
 
@@ -975,7 +971,7 @@ class Tensorboard(Callback):
     def process(self, iteration, logs):
         logs = logs or {}
         for k, v in logs.items():
-            if k in {'size'}:
+            if k in SKIP_METRICS:
                 continue
             index = k if '/' in k else f"{self.prefix}{k}"
             self.writer.add_scalar(index, v, iteration)
@@ -1119,17 +1115,16 @@ class WandbCallback(Callback):
         self.config = config or {}
         self.run_id = None
         self.metrics = set()
-        self.hidden_metrics = {'size'}
 
     def define_metric(self, logs=None):
         if getattr(self._wandb, "define_metric", None):
             for m in logs.keys():
                 if m not in self.metrics:
-                    self._wandb.define_metric(name=m, step_metric=self.method, hidden=True if m in self.hidden_metrics else False)
+                    self._wandb.define_metric(name=m, step_metric=self.method, hidden=True if m in SKIP_METRICS else False)
                     self.metrics.add(m)
     def adjust_logs(self, logs, **kwargs):
         logs_new = {**logs, **kwargs}
-        return {k:v for k,v in logs_new.items() if k not in self.hidden_metrics}
+        return {k:v for k,v in logs_new.items() if k not in SKIP_METRICS}
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self._wandb is None:
