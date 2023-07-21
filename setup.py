@@ -7,7 +7,7 @@ with open("README.md", "r", encoding='utf-8') as fh:
 
 setup(
     name='torch4keras',
-    version='v0.0.9',
+    version='v0.1.0.dev',
     description='Use torch like keras',
     long_description=long_description,
     long_description_content_type="text/markdown",

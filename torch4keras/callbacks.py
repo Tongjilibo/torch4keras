@@ -15,16 +15,23 @@ from torch4keras.snippets import send_email, info_level_prefix
 
 class Progbar(object):
     """进度条，直接从keras引入"""
-    def __init__(self, target, width=30, verbose=1, interval=0.05, stateful_metrics=None):
+    def __init__(self, target, width=30, verbose=1, time_interval=0.05, stateful_metrics=None, smooth_interval=None):
+        '''
+        :param target: 进度条的step数量
+        :param width: 进度条的宽度
+        :param verbose: 是否展示进度条
+        :param time_interval: 更新进度条的最短时间间隔
+        :param stateful_metrics: list, 以状态量记录指标的格式
+        :param smooth_interval: int, 平滑时候使用的的step个数
+        '''
         self.target = target
         self.width = width
         self.verbose = verbose
-        self.interval = interval
-        if stateful_metrics:
-            self.stateful_metrics = set(stateful_metrics)
-        else:
-            self.stateful_metrics = set()
-
+        self.time_interval = time_interval
+        assert (smooth_interval is None) or isinstance(smooth_interval, int), 'Args `smooth_interval` only support `int` format'
+        self.smooth_interval = smooth_interval
+        self.stateful_metrics = set(stateful_metrics) if stateful_metrics else set()
+        
         self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
         self._total_width = 0
         self._seen_so_far = 0
@@ -38,8 +45,10 @@ class Progbar(object):
         for k, v in values:
             if k not in self.stateful_metrics:
                 if k not in self._values:
-                    self._values[k] = [v * (current - self._seen_so_far),
-                                       current - self._seen_so_far]
+                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 0):
+                    # 如果定义了累积smooth_interval，则需要重新累计
+                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
                 else:
                     self._values[k][0] += v * (current - self._seen_so_far)
                     self._values[k][1] += (current - self._seen_so_far)
@@ -54,8 +63,8 @@ class Progbar(object):
         now = time.time()
         info = ' - %.0fs' % (now - self._start)
         if self.verbose == 1:
-            if (now - self._last_update < self.interval and
-                    self.target is not None and current < self.target):
+            if (now - self._last_update < self.time_interval and self.target is not None and current < self.target):
+                # 训练每个step太快了，则不更新进度条，累计达到一定的时间间隔再更新进度条
                 return
 
             prev_total_width = self._total_width
@@ -92,8 +101,7 @@ class Progbar(object):
             if self.target is not None and current < self.target:
                 eta = time_per_unit * (self.target - current)
                 if eta > 3600:
-                    eta_format = ('%d:%02d:%02d' %
-                                  (eta // 3600, (eta % 3600) // 60, eta % 60))
+                    eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
                 elif eta > 60:
                     eta_format = '%d:%02d' % (eta // 60, eta % 60)
                 else:
@@ -111,8 +119,7 @@ class Progbar(object):
             for k in self._values:
                 info += ' - %s:' % k
                 if isinstance(self._values[k], list):
-                    avg = np.mean(
-                        self._values[k][0] / max(1, self._values[k][1]))
+                    avg = np.mean(self._values[k][0] / max(1, self._values[k][1]))  # 指标平滑
                     if abs(avg) > 1e-3:
                         info += ' %.4f' % avg
                     else:
@@ -360,12 +367,18 @@ class TerminateOnNaN(Callback):
 
 class KerasProgbar(Callback):
     """ keras进度条 """
-    def __init__(self, stateful_metrics=None, **kwargs):
+    def __init__(self, stateful_metrics=None, smooth_interval=None, width=30, **kwargs):
         super(KerasProgbar, self).__init__(**kwargs)
-        if stateful_metrics:
+        if stateful_metrics is None:
+            self.stateful_metrics = set()
+        elif isinstance(stateful_metrics, str):
+            self.stateful_metrics = {stateful_metrics}
+        elif isinstance(stateful_metrics, (set, tuple, list)):
             self.stateful_metrics = set(stateful_metrics)
         else:
-            self.stateful_metrics = set()
+            raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
+        self.smooth_interval = smooth_interval
+        self.width = width
 
     def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
         '''在指定位置插入metrics指标
@@ -396,7 +409,8 @@ class KerasProgbar(Callback):
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
-            self.progbar = Progbar(target=self.target, verbose=self.verbose, stateful_metrics=self.stateful_metrics)
+            self.progbar = Progbar(target=self.target, width=self.width, verbose=self.verbose, 
+                                   stateful_metrics=self.stateful_metrics, smooth_interval=self.smooth_interval)
         self.seen = 0
 
     def on_batch_begin(self, global_step=None, local_step=None, logs=None):
@@ -488,8 +502,7 @@ class TqdmProgbar(KerasProgbar):
         logs = collections.OrderedDict()
         for k in self._values:
             if isinstance(self._values[k], list):
-                avg = np.mean(
-                    self._values[k][0] / max(1, self._values[k][1]))
+                avg = np.mean(self._values[k][0] / max(1, self._values[k][1]))
                 if abs(avg) > 1e-3:
                     logs[k] = ' %.4f' % avg
                 else:

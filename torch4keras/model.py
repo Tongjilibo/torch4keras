@@ -32,7 +32,7 @@ class Trainer:
         self.run_callbacks = True
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
-                stateful_metrics=None, grad_accumulation_steps=1, **kwargs):
+                grad_accumulation_steps=1, progbar_config=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -41,9 +41,14 @@ class Trainer:
         :param clip_grad_norm: bool, 是否使用梯度裁剪, 默认为False
         :param mixed_precision: bool, 是否使用混合精度，默认为False
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
-        :param stateful_metrics: List[str], 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
         :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras, 可选keras, tqdm, progressbar2
+        :param progbar_config: 进度条的配置，其中包含
+            bar: str, 默认为keras
+            stateful_metrics: List[str], 默认为None, 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
+            smooth_interval: int, 默认为None, 表示指标平滑时候的累计步数
+            width: int, keras进度条下表示进度条的长度
+
         :return: None
         '''
         self.criterion = loss
@@ -75,15 +80,16 @@ class Trainer:
                 self.metrics.update({metric: metric})
             else:
                 raise ValueError('Args metrics only support `String, Dict, Callback, List[String, Dict, Callback]` format')
-        self.stateful_metrics = stateful_metrics
 
         # 梯度累积
         self.grad_accumulation_steps = grad_accumulation_steps
 
         # 进度条参数
-        self.bar = kwargs.get('bar', 'keras')
-        assert self.bar in {'keras', 'tqdm', 'progressbar2'}, f'Args `bar`={self.bar} illegal, only support `keras, tqdm, progressbar2`'
-    
+        self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
+        self.progbar_config['bar'] = self.progbar_config.get('bar', 'keras')
+        assert self.progbar_config['bar'] in {'keras', 'tqdm', 'progressbar2'}, \
+            f'Args `bar`={self.progbar_config["bar"]} illegal, only support `keras, tqdm, progressbar2`'
+
     def print_trainable_parameters(self):
         """打印可训练的参数量"""
         print_trainable_parameters(self.unwrap_model())
@@ -200,19 +206,19 @@ class Trainer:
             assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
 
         history = History()
-        callbacks_ = [BaseLogger(self.stateful_metrics)]
+        callbacks_ = [BaseLogger(**self.progbar_config)]
 
         # 进度条
         progbarlogger = None
         if self.verbose:
-            if self.bar == 'keras':
-                progbarlogger = KerasProgbar(stateful_metrics=self.stateful_metrics)
-            elif self.bar == 'tqdm':
-                progbarlogger = TqdmProgbar(stateful_metrics=self.stateful_metrics)
-            elif self.bar == 'progressbar2':
-                progbarlogger = ProgressBar2Progbar(stateful_metrics=self.stateful_metrics)
+            if self.progbar_config['bar'] == 'keras':
+                progbarlogger = KerasProgbar(**self.progbar_config)
+            elif self.progbar_config['bar'] == 'tqdm':
+                progbarlogger = TqdmProgbar(**self.progbar_config)
+            elif self.progbar_config['bar'] == 'progressbar2':
+                progbarlogger = ProgressBar2Progbar(**self.progbar_config)
             else:
-                progbarlogger = KerasProgbar(stateful_metrics=self.stateful_metrics)
+                progbarlogger = KerasProgbar(**self.progbar_config)
             callbacks_.append(progbarlogger)
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
