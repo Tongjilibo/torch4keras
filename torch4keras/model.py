@@ -43,10 +43,10 @@ class Trainer:
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
         :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras, 可选keras, tqdm, progressbar2
-        :param progbar_config: 进度条的配置，其中包含
+        :param progbar_config: 进度条的配置，如果使用指标平滑会更新到后续其他callbacks中（比如Logger），实现进度条显示和日志会保持一致
             bar: str, 默认为keras
-            stateful_metrics: List[str], 默认为None, 不滑动平均仅进行状态记录的metric，指标抖动会更加明显
-            smooth_interval: int, 默认为None, 表示指标平滑时候的累计步数
+            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
+            smooth_interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
             width: int, keras进度条下表示进度条的长度
 
         :return: None
@@ -86,6 +86,8 @@ class Trainer:
 
         # 进度条参数
         self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
+        progbar_config_keys = ['bar', 'stateful_metrics', 'smooth_interval', 'width']
+        self.progbar_config.update({k:v for k, v in kwargs.items() if k in progbar_config_keys})  # 直接传参也可以
         self.progbar_config['bar'] = self.progbar_config.get('bar', 'keras')
         assert self.progbar_config['bar'] in {'keras', 'tqdm', 'progressbar2'}, \
             f'Args `bar`={self.progbar_config["bar"]} illegal, only support `keras, tqdm, progressbar2`'

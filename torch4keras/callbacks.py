@@ -1,4 +1,3 @@
-from contextlib import redirect_stderr
 import sys
 import collections
 import time
@@ -14,6 +13,20 @@ from torch4keras.snippets import send_email, info_level_prefix
 
 
 SKIP_METRICS = {'size'}
+
+
+def _process_stateful_metrics(stateful_metrics):
+    ''''''
+    if stateful_metrics is None:
+        stateful_metrics_new = set()
+    elif isinstance(stateful_metrics, str):
+        stateful_metrics_new = {stateful_metrics}
+    elif isinstance(stateful_metrics, (set, tuple, list)):
+        stateful_metrics_new = set(stateful_metrics)
+    else:
+        raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
+    stateful_metrics_new.add('lr')  # 学习率是不能平滑
+    return stateful_metrics_new
 
 
 class Progbar(object):
@@ -33,7 +46,7 @@ class Progbar(object):
         self.time_interval = time_interval
         assert (smooth_interval is None) or isinstance(smooth_interval, int), 'Args `smooth_interval` only support `int` format'
         self.smooth_interval = smooth_interval
-        self.stateful_metrics = set(stateful_metrics) if stateful_metrics else set()
+        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
         
         self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
         self._total_width = 0
@@ -52,7 +65,7 @@ class Progbar(object):
                     self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
                 elif (self.smooth_interval is not None) and (current % self.smooth_interval == 0):
                     # 如果定义了累积smooth_interval，则需要重新累计
-                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+                    self._values[k] = [v, 1]
                 else:
                     self._values[k][0] += v * (current - self._seen_so_far)
                     self._values[k][1] += (current - self._seen_so_far)
@@ -323,10 +336,7 @@ class BaseLogger(Callback):
     """
     def __init__(self, stateful_metrics=None, **kwargs):
         super(BaseLogger, self).__init__(**kwargs)
-        if stateful_metrics:
-            self.stateful_metrics = set(stateful_metrics)
-        else:
-            self.stateful_metrics = set()
+        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
         self.seen = 0
@@ -374,15 +384,7 @@ class KerasProgbar(Callback):
     """ keras进度条 """
     def __init__(self, stateful_metrics=None, smooth_interval=None, width=30, **kwargs):
         super(KerasProgbar, self).__init__(**kwargs)
-        if stateful_metrics is None:
-            self.stateful_metrics = set()
-        elif isinstance(stateful_metrics, str):
-            self.stateful_metrics = {stateful_metrics}
-        elif isinstance(stateful_metrics, (set, tuple, list)):
-            self.stateful_metrics = set(stateful_metrics)
-        else:
-            raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
-        self.stateful_metrics.add('lr')  # 学习率是不能平滑
+        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
         self.smooth_interval = smooth_interval
         self.width = width
 
@@ -393,9 +395,9 @@ class KerasProgbar(Callback):
             add_position = len(self.params['metrics'])
         metrics = [metrics] if isinstance(metrics, str) else metrics
         if stateful_metrics:
-            stateful_metrics = [stateful_metrics] if isinstance(stateful_metrics, str) else stateful_metrics
-            self.stateful_metrics.update(set(stateful_metrics))
-            self.progbar.stateful_metrics.update(set(stateful_metrics))
+            stateful_metrics = _process_stateful_metrics(stateful_metrics)
+            self.stateful_metrics.update(stateful_metrics)
+            self.progbar.stateful_metrics.update(stateful_metrics)
 
         add_metrics = []
         for metric in metrics:
@@ -444,13 +446,16 @@ class KerasProgbar(Callback):
 
 class TqdmProgbar(KerasProgbar):
     """ Tqdm进度条 """
+    def __init__(self, stateful_metrics=None, smooth_interval=None, width=None, **kwargs):
+        super().__init__(stateful_metrics, smooth_interval, width, **kwargs)
+
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             from tqdm import tqdm
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
-            self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0)
+            self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0, ncols=self.width)
         self.seen = 0
         self._values = collections.OrderedDict()
         self._smooth_values = dict()
@@ -488,7 +493,7 @@ class TqdmProgbar(KerasProgbar):
                     self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
                 elif (self.smooth_interval is not None) and (current % self.smooth_interval == 0):
                     # 如果定义了累积smooth_interval，则需要重新累计
-                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+                    self._values[k] = [v, 1]
                 else:
                     self._values[k][0] += v * (current - self._seen_so_far)
                     self._values[k][1] += (current - self._seen_so_far)
@@ -529,6 +534,7 @@ class ProgressBar2Progbar(TqdmProgbar):
                                                        redirect_stdout=True, redirect_stderr=True)
         self.seen = 0
         self._values = collections.OrderedDict()
+        self._smooth_values = dict()
         self._seen_so_far = 0
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
