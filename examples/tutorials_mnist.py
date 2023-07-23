@@ -17,7 +17,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # 读取数据
 mnist = torchvision.datasets.MNIST(root='./', download=True)
 x, y = mnist.train_data.unsqueeze(1), mnist.train_labels
-# x, y = x.to(device), y.to(device)
+x, y = x.to(device), y.to(device)
 x = x.float() / 255.0    # scale the pixels to [0, 1]
 x_train, y_train = x[:40000], y[:40000]
 train_dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=8)
@@ -54,7 +54,7 @@ net = torch.nn.Sequential(
 model = Trainer(net.to(device))
 optimizer = optim.Adam(net.parameters())
 scheduler = get_linear_schedule_with_warmup(optimizer, steps_per_epoch, steps_per_epoch*epochs)
-model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'], to_model_device=True)
+model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 
 class MyEvaluator(Evaluator):

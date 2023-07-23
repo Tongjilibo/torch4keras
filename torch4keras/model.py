@@ -23,7 +23,7 @@ class Trainer:
         self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
-        self.to_model_device = False  # 自动把tensor转到model所在的device
+        self.move_to_model_device = True  # 自动把tensor转到model所在的device
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
@@ -33,7 +33,7 @@ class Trainer:
         self.run_callbacks = True
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
-                grad_accumulation_steps=1, progbar_config=None, to_model_device=False, **kwargs):
+                grad_accumulation_steps=1, progbar_config=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -49,7 +49,6 @@ class Trainer:
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             smooth_interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
             width: int, keras进度条下表示进度条的长度
-        :param to_model_device: bool, 自动把数据tensor转到model.device, 默认未false
 
         :return: None
         '''
@@ -57,7 +56,6 @@ class Trainer:
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.clip_grad_norm = clip_grad_norm
-        self.to_model_device = to_model_device
         assert mixed_precision in {True, False, 'fp16', 'bf16'}
         self.mixed_precision = 'fp16' if mixed_precision is True else mixed_precision
         if self.mixed_precision:
@@ -104,23 +102,30 @@ class Trainer:
         """获取model所在的device"""
         return get_parameter_device(self.unwrap_model())
         
-    def _to_model_device(self, inputs, **input_kwargs):
+    def _move_to_model_device(self, inputs, **input_kwargs):
         '''遍历并转移到model.device上'''
-        if isinstance(inputs, torch.Tensor):  # tensor不展开
-            inputs = inputs.to(self.device)
-        elif isinstance(inputs, (tuple, list)):
-            inputs = [input_.to(self.device) for input_ in inputs]
-        
-        input_kwargs = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in input_kwargs.items()}
+        def _to_device(tensor):
+            if isinstance(tensor, torch.Tensor) and (tensor.device != self.device):
+                return tensor.to(self.device)
+            else:
+                return tensor
+
+        if self.move_to_model_device:
+            if isinstance(inputs, torch.Tensor):  # tensor不展开
+                inputs = _to_device(inputs)
+            elif isinstance(inputs, (tuple, list)):
+                inputs = [_to_device(i) for i in inputs]
+            
+            input_kwargs = {k: _to_device(v) for k, v in input_kwargs.items()}
         return inputs, input_kwargs
 
     def _forward(self, *inputs, **input_kwargs):
-        # 如果传入了网络结构module，则调用module的forward
-        # 如果是继承方式，则调用自身的forward
+        '''调用模型的forward
+        如果传入了网络结构module，则调用module的forward；如果是继承方式，则调用自身的forward
+        '''
         if (len(inputs)==1) and isinstance(inputs[0], (tuple,list)):  # 防止([])嵌套
             inputs = inputs[0]
-        if self.to_model_device:
-            inputs, input_kwargs = self._to_model_device(inputs, **input_kwargs)
+        inputs, input_kwargs = self._move_to_model_device(inputs, **input_kwargs)
         
         if isinstance(inputs, torch.Tensor):  # tensor不展开
             return self.unwrap_model().forward(inputs, **input_kwargs)
@@ -130,18 +135,17 @@ class Trainer:
             return self.unwrap_model().forward(inputs, **input_kwargs)
 
     def train_step(self, train_X, train_y):
-        if self.to_model_device:
-            train_y, _ = self._to_model_device(train_y)  # TODO: train_y可否是dict
-            self.train_y = train_y
+        ''' Perform a training step on a batch of inputs. '''
+        self.train_y, _ = self._move_to_model_device(train_y)  # TODO: train_y可否是dict
 
         # 计算loss
         if self.mixed_precision:
             with self.autocast(dtype=torch.float16 if self.mixed_precision=='fp16' else torch.bfloat16):
                 output = self._forward(train_X)
-                loss_detail = self.criterion(output, train_y)
+                loss_detail = self.criterion(output, self.train_y)
         else:
             output = self._forward(train_X)
-            loss_detail = self.criterion(output, train_y)
+            loss_detail = self.criterion(output, self.train_y)
 
         # 整理loss
         if isinstance(loss_detail, torch.Tensor):
