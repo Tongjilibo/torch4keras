@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, print_trainable_parameters
+from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, print_trainable_parameters, colorful
 from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
@@ -20,10 +20,11 @@ class Trainer:
     
     def initialize(self, module=None):
         # 这里主要是为了外面调用用到
-        self.global_step, self.local_step, self.total_steps, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, None, None
+        self.global_step, self.local_step, self.total_steps, self.batch_step, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
         self.move_to_model_device = True  # 自动把tensor转到model所在的device
+        self.log_first_step = False  # 是否打印第一个step的数据
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
@@ -118,6 +119,12 @@ class Trainer:
             
             input_kwargs = {k: _to_device(v) for k, v in input_kwargs.items()}
         return inputs, input_kwargs
+
+    def _log_first_step(self, resume_step):
+        '''打印第一个step的数据'''
+        if self.log_first_step and self.verbose and (self.global_step == resume_step):
+            print(colorful('[Train_data]: ', color='green'), + self.train_X)
+            print(colorful('[Label]: ', color='green'), + self.train_X)
 
     def _forward(self, *inputs, **input_kwargs):
         '''调用模型的forward
@@ -262,10 +269,11 @@ class Trainer:
         # 循环dataloader, 不要试用itertools的cycle，遇到过变量不释放的问题
         try:
             batch = next(self.train_dataloader_iter)
+            self.batch_step += 1
         except StopIteration:
             self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成self.train_dataloader的情况，如预训练
             self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
-            self.bti = 0
+            self.batch_step = 0
             batch = next(self.train_dataloader_iter)
         return batch
 
@@ -285,11 +293,10 @@ class Trainer:
         # 准备callbacks
         history, callback_trainer, progbarlogger  = self._prepare_callbacks(callbacks)
 
-        # epoch：当前epoch
-        # global_step：当前全局训练步数
-        # local_step: 当前epoch内的训练步数，不同epoch中相同local_step对应的batch数据不一定相同，在steps_per_epoch=None时相同
-        # bti：在dataloader中的index，不同epoch中相同的bti对应的batch数据一般相同，除非重新生成dataloader
-        self.bti = 0
+        #       epoch: 当前epoch
+        # global_step: 当前全局训练步数
+        #  local_step: 当前epoch内的训练步数，不同epoch中相同local_step对应的batch数据不一定相同，在steps_per_epoch=None时相同
+        #  batch_step: 在dataloader中的index，不同epoch中相同的bti对应的batch数据一般相同，除非重新生成dataloader
         for epoch in range(self.resume_epoch, epochs):
             self.epoch = epoch
             # resume_step：判断local_step的起点，以及进度条的起始位置
@@ -309,6 +316,7 @@ class Trainer:
                 tr_loss, tr_loss_detail = 0, {}
                 for _ in range(self.grad_accumulation_steps):
                     self.train_X, self.train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
+                    self._log_first_step(resume_step)  # log第一个step
                     self.output, self.loss, self.loss_detail = self.train_step(self.train_X, self.train_y)
                     self.callbacks.on_train_step_end()
                     tr_loss += self.loss.item()
@@ -337,7 +345,6 @@ class Trainer:
 
                 self.callbacks.on_batch_end(self.global_step, self.local_step, logs)
 
-                self.bti += 1
             self.callbacks.on_epoch_end(self.global_step, self.epoch, logs)
             # TerminateOnNaN、EarlyStopping等停止训练策略
             if callback_trainer.stop_training:
