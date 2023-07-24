@@ -248,9 +248,8 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
         smtpObj.quit()  # 退出
         print('[INFO] Send email success')
     except smtplib.SMTPException as e:
-        error = info_level_prefix('Send email error : '+str(e), 2)
-        print(error)
-        return error
+        log_error('Send email error : '+str(e))
+        return str(e)
 
 
 def email_when_error(receivers, **configs):
@@ -403,11 +402,11 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
 
     # 无需重复设置
     if "CUDA_VISIBLE_DEVICES" in os.environ:
-        print(info_level_prefix("Environment variable `CUDA_VISIBLE_DEVICES` has already been set", 'w'))
+        log_warn("Environment variable `CUDA_VISIBLE_DEVICES` has already been set")
         return os.environ["CUDA_VISIBLE_DEVICES"]
 
     if best_num == -1:
-        print(info_level_prefix(f"SET CUDA_VISIBLE_DEVICES=-1"))
+        log_info(f"SET CUDA_VISIBLE_DEVICES=-1")
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         return "-1"
 
@@ -418,7 +417,7 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
              "--format=csv,noheader,nounits"],
             stdout=subprocess.PIPE)
     except FileNotFoundError:
-        print(info_level_prefix("`nvidia-smi` not exists"), 'e')
+        log_error("`nvidia-smi` not exists")
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         return "-1"
 
@@ -444,7 +443,7 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
     topk_idx = (-np.asarray(scores)).argsort()[:best_num]
 
     topk_idx_str = ",".join(map(str, topk_idx))
-    print(info_level_prefix(f"SET CUDA_VISIBLE_DEVICES={topk_idx_str}"))
+    log_info(f"SET CUDA_VISIBLE_DEVICES={topk_idx_str}")
     os.environ["CUDA_VISIBLE_DEVICES"] = topk_idx_str
 
     return topk_idx_str

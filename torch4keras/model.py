@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, info_level_prefix, print_trainable_parameters
+from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, print_trainable_parameters
 from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, BaseLogger, History
 from collections import OrderedDict
 from inspect import isfunction
@@ -568,7 +568,7 @@ class AccelerateTrainer(Trainer):
         self.accelerator = accelerator
         self.device = accelerator.device
         self.verbose = 1 if accelerator.is_local_main_process else 0
-        print(info_level_prefix('AcclerateTrainer may not be compatible with several callbacks, you may use custom callbacks instead.', 1))
+        log_warn('AcclerateTrainer may not be compatible with several callbacks, you may use custom callbacks instead.')
     
     def compile(self, *args, **kwargs):
         super().compile(*args, **kwargs)
@@ -619,7 +619,7 @@ class DeepSpeedTrainer(Trainer):
 
         if inference:
             # only Z3 makes sense for the inference
-            info_level_prefix("ZeRO inference only makes sense with ZeRO Stage 3", 1)
+            log_warn("ZeRO inference only makes sense with ZeRO Stage 3")
             self.optimizer, self.scheduler = None, None
             model_parameters = None
         else:
@@ -634,7 +634,7 @@ class DeepSpeedTrainer(Trainer):
         }
         if self.config.get('zero_optimization', {}).get('offload_optimizer', {}).get('device') == 'cpu':
             kwargs.pop('optimizer')
-            print(info_level_prefix('You may not use custom optimizer when offload_optimizer=`cpu`', 1))
+            log_warn('You may not use custom optimizer when offload_optimizer=`cpu`')
         self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
         self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
 

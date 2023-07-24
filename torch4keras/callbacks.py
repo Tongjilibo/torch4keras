@@ -8,8 +8,7 @@ from collections import deque
 import json
 import copy
 import os
-from torch import nn
-from torch4keras.snippets import send_email, info_level_prefix
+from torch4keras.snippets import log_error, send_email
 
 
 SKIP_METRICS = {'size'}
@@ -376,7 +375,7 @@ class TerminateOnNaN(Callback):
         loss = logs.get('loss')
         if loss is not None:
             if np.isnan(loss) or np.isinf(loss):
-                info_level_prefix('Step %d: Invalid loss, terminating training' % global_step, 2)
+                log_error('Step %d: Invalid loss, terminating training' % global_step)
                 self.trainer.stop_training = True
 
 
