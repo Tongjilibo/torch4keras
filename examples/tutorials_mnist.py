@@ -56,7 +56,6 @@ optimizer = optim.Adam(net.parameters())
 scheduler = get_linear_schedule_with_warmup(optimizer, steps_per_epoch, steps_per_epoch*epochs)
 model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
-
 class MyEvaluator(Evaluator):
     # 重构评价函数
     def evaluate(self):
@@ -70,16 +69,16 @@ class MyEvaluator(Evaluator):
 
 if __name__ == '__main__':
     evaluator = MyEvaluator(monitor='test_acc', 
-                            model_path='./ckpt/best_model.pt', 
-                            optimizer_path='./ckpt/best_optimizer.pt', 
-                            scheduler_path='./ckpt/best_scheduler.pt', 
-                            steps_params_path='./ckpt/best_step_params.pt')
-    ckpt = Checkpoint('./ckpt/model_{epoch}_{test_acc:.5f}.pt',
-                      optimizer_path='./ckpt/optimizer_{epoch}_{test_acc:.5f}.pt',
-                      scheduler_path='./ckpt/scheduler_{epoch}_{test_acc:.5f}.pt',
-                      steps_params_path='./ckpt/steps_params_{epoch}_{test_acc:.5f}.pt')
+                            model_path='./ckpt/best/best_model.pt', 
+                            optimizer_path='./ckpt/best/best_optimizer.pt', 
+                            scheduler_path='./ckpt/best/best_scheduler.pt', 
+                            steps_params_path='./ckpt/best/best_step_params.pt')
+    ckpt = Checkpoint('./ckpt/{epoch}/model_{epoch}_{test_acc:.5f}.pt',
+                      optimizer_path='./ckpt/{epoch}/optimizer_{epoch}_{test_acc:.5f}.pt',
+                      scheduler_path='./ckpt/{epoch}/scheduler_{epoch}_{test_acc:.5f}.pt',
+                      steps_params_path='./ckpt/{epoch}/steps_params_{epoch}_{test_acc:.5f}.pt')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
-    logger = Logger('./ckpt/log.log')
+    logger = Logger('./ckpt/log.log', interval=100)
     email = EmailCallback(receivers='tongjilibo@163.com')
     wandb = WandbCallback(save_code=True)
     model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=[Summary(), logger, evaluator, ckpt, early_stop])
