@@ -10,3 +10,4 @@ test
 .DS_Store
 *.pt
 *.log
+ckpt

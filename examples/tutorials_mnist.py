@@ -4,7 +4,7 @@ import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel, Trainer
 from torch4keras.snippets import seed_everything
-from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary, Logger, EmailCallback, WandbCallback
+from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary, Logger, EmailCallback, WandbCallback, Tensorboard
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
@@ -54,7 +54,7 @@ net = torch.nn.Sequential(
 model = Trainer(net.to(device))
 optimizer = optim.Adam(net.parameters())
 scheduler = get_linear_schedule_with_warmup(optimizer, steps_per_epoch, steps_per_epoch*epochs)
-model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'], bar='tqdm')
+model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 class MyEvaluator(Evaluator):
     # 重构评价函数
@@ -78,7 +78,9 @@ if __name__ == '__main__':
                       scheduler_path='./ckpt/{epoch}/scheduler_{epoch}_{test_acc:.5f}.pt',
                       steps_params_path='./ckpt/{epoch}/steps_params_{epoch}_{test_acc:.5f}.pt')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
-    logger = Logger('./ckpt/log.log', interval=100)
-    email = EmailCallback(receivers='tongjilibo@163.com')
-    wandb = WandbCallback(save_code=True)
-    hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=[Summary(), evaluator, logger, ckpt, early_stop])
+    logger = Logger('./ckpt/log.log', interval=100)  # log文件
+    ts_board = Tensorboard('./ckpt/tensorboard', method='step', interval=100)  # tensorboard
+    email = EmailCallback(receivers='tongjilibo@163.com')  # 发送邮件
+    wandb = WandbCallback(save_code=True)  # wandb
+    hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, 
+                     callbacks=[Summary(), evaluator, logger, ts_board, ckpt, early_stop])

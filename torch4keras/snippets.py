@@ -246,7 +246,7 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
         smtpObj.login(mail_user, mail_pwd)  # 登录到服务器
         smtpObj.sendmail(sender, receivers, message.as_string())  # 发送
         smtpObj.quit()  # 退出
-        print('[INFO] Send email success')
+        log_info('Send email success')
     except smtplib.SMTPException as e:
         log_error('Send email error : '+str(e))
         return str(e)
@@ -357,7 +357,7 @@ def print_trainable_parameters(module):
         all_param += num_params
         if param.requires_grad:
             trainable_params += num_params
-    print(f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}")
+    log_info(f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}")
 
 
 def get_parameter_device(parameter):

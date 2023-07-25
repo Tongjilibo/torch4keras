@@ -62,7 +62,7 @@ class Progbar(object):
             if k not in self.stateful_metrics:
                 if k not in self._values:
                     self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
-                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 0):
+                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 1):
                     # 如果定义了累积smooth_interval，则需要重新累计
                     self._values[k] = [v, 1]
                 else:
@@ -435,7 +435,7 @@ class TqdmProgbar(KerasProgbar):
             if k not in self.stateful_metrics:
                 if k not in self._values:
                     self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
-                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 0):
+                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 1):
                     # 如果定义了累积smooth_interval，则需要重新累计
                     self._values[k] = [v, 1]
                 else:
@@ -887,15 +887,13 @@ class Tensorboard(Callback):
     :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
-    :param on_epoch_end_scalar_epoch: bool, epoch结束后是横轴是按照epoch还是global_step来记录
     '''
-    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', on_epoch_end_scalar_epoch=True, **kwargs):
+    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
         self.interval = interval
         self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
-        self.on_epoch_end_scalar_epoch = on_epoch_end_scalar_epoch  # 控制on_epoch_end记录的是epoch还是global_step
 
         from tensorboardX import SummaryWriter
         os.makedirs(log_dir, exist_ok=True)
@@ -904,8 +902,7 @@ class Tensorboard(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
             # 默认记录的是epoch
-            log_step = epoch+1 if self.on_epoch_end_scalar_epoch else global_step+1
-            self.process(log_step, logs)
+            self.process(epoch+1, logs)
 
     def on_batch_end(self, global_step, local_step, logs=None):
         # 默认记录的是global_step
@@ -998,7 +995,7 @@ class EmailCallback(Callback):
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
-            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
+            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
             subject = f'[INFO] Epoch {epoch+1} performance'
             if self.subject != '':
                 subject = self.subject + ' | ' + subject
@@ -1006,14 +1003,14 @@ class EmailCallback(Callback):
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
-            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
+            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
             subject = f'[INFO] Step {global_step} performance'
             if self.subject != '':
                 subject = self.subject + ' | ' + subject
             self._email(subject, msg)
 
     def on_train_end(self, logs=None):
-        msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k!='size'}, indent=2, ensure_ascii=False)
+        msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
         subject = f'[INFO] Finish training'
         if self.subject != '':
             subject = self.subject + ' | ' + subject

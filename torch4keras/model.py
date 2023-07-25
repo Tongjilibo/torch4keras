@@ -45,7 +45,7 @@ class Trainer:
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
         :param grad_accumulation_steps: int, 梯度累积步数，默认为1
         :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras, 可选keras, tqdm, progressbar2
-        :param progbar_config: 进度条的配置，如果使用指标平滑会更新到后续其他callbacks中（比如Logger），实现进度条显示和日志会保持一致
+        :param progbar_config: 进度条的配置，默认是对整个epoch计算均值指标
             bar: str, 默认为keras
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             smooth_interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
