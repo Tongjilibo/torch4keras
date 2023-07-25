@@ -54,7 +54,7 @@ net = torch.nn.Sequential(
 model = Trainer(net.to(device))
 optimizer = optim.Adam(net.parameters())
 scheduler = get_linear_schedule_with_warmup(optimizer, steps_per_epoch, steps_per_epoch*epochs)
-model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'])
+model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'], bar='tqdm')
 
 class MyEvaluator(Evaluator):
     # 重构评价函数
@@ -81,4 +81,4 @@ if __name__ == '__main__':
     logger = Logger('./ckpt/log.log', interval=100)
     email = EmailCallback(receivers='tongjilibo@163.com')
     wandb = WandbCallback(save_code=True)
-    model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=[Summary(), logger, evaluator, ckpt, early_stop])
+    hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=[Summary(), evaluator, logger, ckpt, early_stop])

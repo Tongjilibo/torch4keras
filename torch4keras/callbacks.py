@@ -328,46 +328,6 @@ class Callback(object):
         pass
 
 
-class BaseLogger(Callback):
-    """计算metrics的均值, 默认是callbacks中第一项, 主要是为History服务
-    
-    :param stateful_metrics: List[str], 仅保留状态信息的指标
-    """
-    def __init__(self, stateful_metrics=None, **kwargs):
-        super(BaseLogger, self).__init__(**kwargs)
-        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
-
-    def on_epoch_begin(self, global_step, epoch, logs=None):
-        self.seen = 0
-        self.totals = {}
-
-    def on_batch_end(self, global_step, local_step, logs=None):
-        logs = logs or {}
-        batch_size = logs.get('size', 0)
-        self.seen += batch_size
-
-        for k, v in logs.items():
-            if k in self.stateful_metrics:
-                self.totals[k] = v
-            else:
-                if k in self.totals:
-                    self.totals[k] += v * batch_size
-                else:
-                    self.totals[k] = v * batch_size
-
-    def on_epoch_end(self, global_step, epoch, logs=None):
-        '''在epoch_end对指标计算epoch的均值
-        '''
-        if logs is not None:
-            for k in self.params['metrics']:
-                if k in self.totals:
-                    # Make value available to next callbacks.
-                    if k in self.stateful_metrics:
-                        logs[k] = self.totals[k]
-                    else:
-                        logs[k] = self.totals[k] / self.seen
-
-
 class TerminateOnNaN(Callback):
     """Loss出现NAN停止训练"""
     def on_batch_end(self, global_step, local_step, logs=None):
@@ -426,16 +386,9 @@ class KerasProgbar(Callback):
         log_values = [(k, logs[k]) for k in self.params['metrics'] if k in logs]
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
-        if self.verbose and self.seen < self.target:
-            self.progbar.update(self.seen, log_values)
-            logs.update(self.progbar._smooth_values)  # 如果进度条是平滑的，那这里的logs也覆盖掉
-
-    def on_epoch_end(self, global_step=None, epoch=None, logs=None):
-        logs = logs or {}
-        log_values = [(k, logs[k]) for k in self.params['metrics'] if k in logs]
         if self.verbose:
             self.progbar.update(self.seen, log_values)
-            logs.update(self.progbar._smooth_values)
+            logs.update(self.progbar._smooth_values)  # 如果进度条是平滑的，那这里的logs也覆盖掉
     
     def on_train_end(self, logs=None):
         if self.verbose:
@@ -467,21 +420,13 @@ class TqdmProgbar(KerasProgbar):
 
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
-        if self.verbose and self.seen < self.target:
-            self.progbar.n = self.seen
-            self.progbar.refresh()
-            self.progbar.set_postfix(log_values)
-            logs.update(self._smooth_values)
-
-    def on_epoch_end(self, global_step=None, epoch=None, logs=None):
-        logs_new = self.smooth_values(self.seen, logs or {})
-        log_values = [(k, logs_new[k]) for k in self.params['metrics'] if k in logs_new]
         if self.verbose:
             self.progbar.n = self.seen
             self.progbar.refresh()
             self.progbar.set_postfix(log_values)
             logs.update(self._smooth_values)
-            self.progbar.close()
+            if self.seen >= self.target:
+                self.progbar.close()
     
     def smooth_values(self, current, values=None):
         '''从Progbar迁移过来'''
@@ -543,18 +488,12 @@ class ProgressBar2Progbar(TqdmProgbar):
 
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
-        if self.verbose and self.seen < self.target:
-            self.progbar.update(self.seen, **logs_new)
-            logs.update(self._smooth_values)
-
-    def on_epoch_end(self, global_step=None, epoch=None, logs=None):
-        logs_new = self.smooth_values(self.seen, logs or {})
-        logs_new = {k:logs_new[k].strip() for k in self.params['metrics'] if k in logs_new}
         if self.verbose:
             self.progbar.update(self.seen, **logs_new)
             logs.update(self._smooth_values)
-            self.progbar.finish()
-    
+            if self.seen >= self.target:
+                self.progbar.finish()
+
 
 class History(Callback):
     """指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标"""

@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, print_trainable_parameters, colorful
-from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, BaseLogger, History
+from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from inspect import isfunction
 import os
@@ -234,7 +234,7 @@ class Trainer:
             assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
 
         history = History()
-        callbacks_ = [BaseLogger(**self.progbar_config)]
+        callbacks_ = []
 
         # 进度条
         progbarlogger = None
