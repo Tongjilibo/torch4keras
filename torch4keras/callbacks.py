@@ -8,10 +8,11 @@ from collections import deque
 import json
 import copy
 import os
-from torch4keras.snippets import log_error, send_email
+from torch4keras.snippets import log_info, log_error, send_email
 
 
-SKIP_METRICS = {'size'}
+SKIP_METRICS = {}  # 不记录的metrics
+NO_SMOOTH_METRICS = {'lr'}  # 不能平滑的指标
 
 
 def _process_stateful_metrics(stateful_metrics):
@@ -24,13 +25,55 @@ def _process_stateful_metrics(stateful_metrics):
         stateful_metrics_new = set(stateful_metrics)
     else:
         raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
-    stateful_metrics_new.add('lr')  # 学习率是不能平滑
+    stateful_metrics_new.update(NO_SMOOTH_METRICS)
     return stateful_metrics_new
+
+
+class SmoothMetric:
+    '''指标平滑'''
+    def __init__(self, interval=None, stateful_metrics=None) -> None:
+        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
+        self.interval = interval
+        self.stateful_metrics = stateful_metrics or set()
+        self._seen_so_far = 0
+    
+    def update(self, current, logs:dict):
+        if (self.interval is not None) and (current % self.interval == 1):
+            # 如果定义了累积smooth_interval，则需要重新累计
+            self.reset()
+        
+        for k, v in logs.items():
+            if k in SKIP_METRICS:
+                continue
+            elif (k in NO_SMOOTH_METRICS) or (k in self.stateful_metrics):
+                self._values[k] = [v, 1]
+            elif k not in self._values:
+                self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+            else:
+                self._values[k][0] += v * (current - self._seen_so_far)
+                self._values[k][1] += (current - self._seen_so_far)
+            
+        self._seen_so_far = current
+        return self._values
+
+    def reset(self):
+        self._values = collections.OrderedDict()
+
+    def get_smooth_logs(self, logs):
+        smooth_logs = {k: v[0]/v[1] for k, v in self._values.items() if k not in SKIP_METRICS}
+        for k, v in logs.items() :
+            if (k in SKIP_METRICS) or (k in smooth_logs):
+                continue
+            smooth_logs[k] = v
+        return smooth_logs
+
+    def add(self, n, values=None):
+        self.update(self._seen_so_far + n, values)
 
 
 class Progbar(object):
     """进度条，直接从keras引入"""
-    def __init__(self, target, width=30, verbose=1, time_interval=0.05, stateful_metrics=None, smooth_interval=None):
+    def __init__(self, target, width=30, verbose=1, time_interval=0.05, smooth_interval=None, stateful_metrics=None):
         '''
         :param target: 进度条的step数量
         :param width: 进度条的宽度
@@ -44,37 +87,16 @@ class Progbar(object):
         self.verbose = verbose
         self.time_interval = time_interval
         assert (smooth_interval is None) or isinstance(smooth_interval, int), 'Args `smooth_interval` only support `int` format'
-        self.smooth_interval = smooth_interval
         self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
-        
         self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
         self._total_width = 0
-        self._seen_so_far = 0
-        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
-        self._smooth_values = dict()  # 存储滑动平均的结果，stateful_metrics时候滑动平均结果和不滑动一致
         self._start = time.time()
         self._last_update = 0
+        self.smooth_metric = SmoothMetric(smooth_interval, stateful_metrics)
 
     def update(self, current, values=None):
         """Updates the progress bar."""
-        values = values or []
-        for k, v in values:
-            if k not in self.stateful_metrics:
-                if k not in self._values:
-                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
-                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 1):
-                    # 如果定义了累积smooth_interval，则需要重新累计
-                    self._values[k] = [v, 1]
-                else:
-                    self._values[k][0] += v * (current - self._seen_so_far)
-                    self._values[k][1] += (current - self._seen_so_far)
-            else:
-                # Stateful metrics output a numeric value.  This representation
-                # means "take an average from a single value" but keeps the
-                # numeric formatting.
-                self._values[k] = [v, 1]
-        
-        self._seen_so_far = current
+        _values = self.smooth_metric.update(current, values)
 
         now = time.time()
         info = ' - %.0fs' % (now - self._start)
@@ -132,17 +154,16 @@ class Progbar(object):
                 else:
                     info += ' %.0fus/step' % (time_per_unit * 1e6)
 
-            for k in self._values:
+            for k in _values:
                 info += ' - %s:' % k
-                if isinstance(self._values[k], list):
-                    avg = np.mean(self._values[k][0] / max(1, self._values[k][1]))  # 指标平滑
-                    self._smooth_values[k] = avg  # 存储滑动平均的结果
+                if isinstance(_values[k], list):
+                    avg = np.mean(_values[k][0] / max(1, _values[k][1]))  # 指标平滑
                     if abs(avg) > 1e-3:
                         info += ' %.4f' % avg
                     else:
                         info += ' %.4e' % avg
                 else:
-                    info += ' %s' % self._values[k]
+                    info += ' %s' % _values[k]
             info += ' '  # 最后加个空格，防止中途有别的打印
             self._total_width += len(info)
             if prev_total_width > self._total_width:
@@ -156,10 +177,9 @@ class Progbar(object):
 
         elif self.verbose == 2:
             if self.target is None or current >= self.target:
-                for k in self._values:
+                for k in _values:
                     info += ' - %s:' % k
-                    avg = np.mean(
-                        self._values[k][0] / max(1, self._values[k][1]))
+                    avg = np.mean(_values[k][0] / max(1, _values[k][1]))
                     if avg > 1e-3:
                         info += ' %.4f' % avg
                     else:
@@ -172,7 +192,7 @@ class Progbar(object):
         self._last_update = now
 
     def add(self, n, values=None):
-        self.update(self._seen_so_far + n, values)
+        self.smooth_metric.add(n, values)
 
 
 class CallbackList(object):
@@ -383,12 +403,11 @@ class KerasProgbar(Callback):
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         logs = logs or {}
         self.seen += 1
-        log_values = [(k, logs[k]) for k in self.params['metrics'] if k in logs]
+        log_values = {k:logs[k] for k in self.params['metrics'] if k in logs}
         # Skip progbar update for the last batch;
         # will be handled by on_epoch_end.
         if self.verbose:
             self.progbar.update(self.seen, log_values)
-            logs.update(self.progbar._smooth_values)  # 如果进度条是平滑的，那这里的logs也覆盖掉
     
     def on_train_end(self, logs=None):
         if self.verbose:
@@ -409,13 +428,11 @@ class TqdmProgbar(KerasProgbar):
             self.target = self.params['steps']
             self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0, ncols=self.width)
         self.seen = 0
-        self._values = collections.OrderedDict()
-        self._smooth_values = dict()
-        self._seen_so_far = 0
+        self.smooth_metric = SmoothMetric(self.smooth_interval, self.stateful_metrics)
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
-        logs_new = self.smooth_values(self.seen, logs or {})
+        logs_new = self.smooth_values(self.seen, logs)
         log_values = [(k, logs_new[k]) for k in self.params['metrics'] if k in logs_new]
 
         # Skip progbar update for the last batch;
@@ -424,38 +441,23 @@ class TqdmProgbar(KerasProgbar):
             self.progbar.n = self.seen
             self.progbar.refresh()
             self.progbar.set_postfix(log_values)
-            logs.update(self._smooth_values)
             if self.seen >= self.target:
                 self.progbar.close()
     
     def smooth_values(self, current, values=None):
         '''从Progbar迁移过来'''
-        values = values or []
-        for k, v in values.items():
-            if k not in self.stateful_metrics:
-                if k not in self._values:
-                    self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
-                elif (self.smooth_interval is not None) and (current % self.smooth_interval == 1):
-                    # 如果定义了累积smooth_interval，则需要重新累计
-                    self._values[k] = [v, 1]
-                else:
-                    self._values[k][0] += v * (current - self._seen_so_far)
-                    self._values[k][1] += (current - self._seen_so_far)
-            else:
-                self._values[k] = [v, 1]
-        self._seen_so_far = current
+        _values = self.smooth_metric.update(current, values)
 
         logs = collections.OrderedDict()
-        for k in self._values:
-            if isinstance(self._values[k], list):
-                avg = np.mean(self._values[k][0] / max(1, self._values[k][1]))
-                self._smooth_values[k] = avg
+        for k in _values:
+            if isinstance(_values[k], list):
+                avg = np.mean(_values[k][0] / max(1, _values[k][1]))
                 if abs(avg) > 1e-3:
                     logs[k] = ' %.4f' % avg
                 else:
                     logs[k] = ' %.4e' % avg
             else:
-                logs[k] = ' %s' % self._values[k]
+                logs[k] = ' %s' % _values[k]
 
         return logs
 
@@ -477,9 +479,6 @@ class ProgressBar2Progbar(TqdmProgbar):
             self.progbar = progressbar.bar.ProgressBar(min_value=0, max_value=self.params['steps'], widgets=widgets, 
                                                        redirect_stdout=True, redirect_stderr=True)
         self.seen = 0
-        self._values = collections.OrderedDict()
-        self._smooth_values = dict()
-        self._seen_so_far = 0
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
@@ -490,7 +489,6 @@ class ProgressBar2Progbar(TqdmProgbar):
         # will be handled by on_epoch_end.
         if self.verbose:
             self.progbar.update(self.seen, **logs_new)
-            logs.update(self._smooth_values)
             if self.seen >= self.target:
                 self.progbar.finish()
 
@@ -833,19 +831,24 @@ class Logger(Callback):
 
     :param log_path: str, log文件的保存路径
     :param interval: int, 保存log的间隔
+    :param smooth: bool, 是否对interval期间的指标进行平滑处理
     :param mode: str, log保存的模式, 默认为'a'表示追加
     :param separator: str, 指标间分隔符
     :param verbosity: int, 可选[0,1,2]，指定log的level
     :param name: str, 默认为None
     '''
-    def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
+    def __init__(self, log_path, interval=10, smooth=True, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
         super(Logger, self).__init__(**kwargs)
         self.log_path = log_path
         self.interval = interval
+        self.smooth = smooth
         self.mode = mode
         self.sep = separator
         self.name = name
         self.verbosity = verbosity
+        if self.smooth:
+            self.smooth_metric_step = SmoothMetric(interval=self.interval)
+            log_info(f'Logger callback calculate {interval} steps average metrics')
 
     def on_train_begin(self, logs=None):
         import logging
@@ -866,13 +869,23 @@ class Logger(Callback):
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
         self.logger.info(f'Epoch {epoch+1}'.center(40, '='))
+        if self.smooth:
+            self.smooth_metric_epoch = SmoothMetric()
 
     def on_epoch_end(self, global_step, epoch, logs=None):
+        if self.smooth:
+            logs = self.smooth_metric_epoch.get_smooth_logs(logs)
         log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in SKIP_METRICS])
         self.logger.info(f'epoch={epoch+1}{self.sep}{log_str}')
 
     def on_batch_end(self, global_step, local_step, logs=None):
+        if self.smooth:
+            self.smooth_metric_step.update(global_step+1, logs)
+            self.smooth_metric_epoch.update(local_step+1, logs)
+
         if (global_step+1) % self.interval == 0:
+            if self.smooth:
+                logs = self.smooth_metric_step.get_smooth_logs(logs)
             log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in SKIP_METRICS])
             self.logger.info(f'step={global_step+1}{self.sep}{log_str}')
 
@@ -886,27 +899,45 @@ class Tensorboard(Callback):
     :param log_dir: str, tensorboard文件的保存路径
     :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 保存tensorboard的间隔
+    :param smooth: bool, 是否对interval期间的指标进行平滑处理
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     '''
-    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', **kwargs):
+    def __init__(self, log_dir, method='epoch', interval=10, smooth=True, prefix='train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
+        self.log_dir = log_dir
         self.method = method
         self.interval = interval
+        self.smooth = smooth
         self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
+        if self.smooth and (self.method=='step'):
+            self.smooth_metric_step = SmoothMetric(interval=self.interval)
+            log_info(f'Tensorboard callback calculate {interval} steps average metrics')
 
+    def on_train_begin(self, logs=None):
         from tensorboardX import SummaryWriter
-        os.makedirs(log_dir, exist_ok=True)
-        self.writer = SummaryWriter(log_dir=str(log_dir))  # prepare summary writer
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
+
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        if self.smooth and (self.method == 'epoch'):
+            self.smooth_metric_epoch = SmoothMetric()
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
-            # 默认记录的是epoch
+            if self.smooth:
+                logs = self.smooth_metric_epoch.get_smooth_logs(logs)
             self.process(epoch+1, logs)
 
     def on_batch_end(self, global_step, local_step, logs=None):
-        # 默认记录的是global_step
+        if self.smooth and (self.method == 'step'):
+            self.smooth_metric_step.update(global_step+1, logs)
+        elif self.smooth and (self.method == 'step'):
+            self.smooth_metric_epoch.update(local_step+1, logs)
+
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+            if self.smooth:
+                logs = self.smooth_metric_step.get_smooth_logs(logs)
             self.process(global_step+1, logs)
 
     def process(self, iteration, logs):
@@ -1034,7 +1065,7 @@ class WandbCallback(Callback):
     :param 
     """
     def __init__(self, method='epoch', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
-                 interval=100, save_code=False, config=None):
+                 interval=100, smooth=True, save_code=False, config=None):
         try:
             import wandb
             self._wandb = wandb
@@ -1042,6 +1073,7 @@ class WandbCallback(Callback):
             print("[WARNING] WandbCallback requires wandb to be installed. Run `pip install wandb`.")
             self._wandb = None
 
+        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
         self._initialized = False
         # log outputs
@@ -1052,10 +1084,14 @@ class WandbCallback(Callback):
             self.run_name = self.trial_name
         self.watch = watch
         self.interval = interval
+        self.smooth = smooth
         self.save_code = save_code
         self.config = config or {}
         self.run_id = None
         self.metrics = set()
+        if self.smooth and (self.method=='step'):
+            self.smooth_metric_step = SmoothMetric(interval=self.interval)
+            log_info(f'WandbCallback calculate {interval} steps average metrics')
 
     def define_metric(self, logs=None):
         if getattr(self._wandb, "define_metric", None):
@@ -1063,21 +1099,36 @@ class WandbCallback(Callback):
                 if m not in self.metrics:
                     self._wandb.define_metric(name=m, step_metric=self.method, hidden=True if m in SKIP_METRICS else False)
                     self.metrics.add(m)
+
     def adjust_logs(self, logs, **kwargs):
         logs_new = {**logs, **kwargs}
         return {k:v for k,v in logs_new.items() if k not in SKIP_METRICS}
+
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        if self.smooth and (self.method == 'epoch'):
+            self.smooth_metric_epoch = SmoothMetric()
 
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self._wandb is None:
             return
         if self.method == 'epoch':
+            if self.smooth:
+                logs = self.smooth_metric_epoch.get_smooth_logs(logs)
             self.define_metric(logs)
             self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if self._wandb is None:
             return
+        
+        if self.smooth and (self.method == 'step'):
+            self.smooth_metric_step.update(global_step+1, logs)
+        elif self.smooth and (self.method == 'step'):
+            self.smooth_metric_epoch.update(local_step+1, logs)
+
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+            if self.smooth:
+                logs = self.smooth_metric_step.get_smooth_logs(logs)
             self.define_metric(logs)
             self._wandb.log(self.adjust_logs(logs, step=global_step))
         
@@ -1107,7 +1158,7 @@ class WandbCallback(Callback):
         # keep track of model topology and gradients, unsupported on TPU
         if self.watch != "false":
             self._wandb.watch(self.model, log=self.watch, log_freq=max(100, self.interval))
- 
+
     def on_train_end(self, logs=None):
         if self._wandb is None:
             return

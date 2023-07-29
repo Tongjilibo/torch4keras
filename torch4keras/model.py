@@ -355,7 +355,7 @@ class Trainer:
     def _log_init(self):
         '''获取batch_size，主要是用于callback中的BaseLogger和Callback
         '''
-        logs = {'size': self.batch_size * self.grad_accumulation_steps}
+        logs = {}
 
         # 添加lr
         try:
@@ -436,7 +436,8 @@ class Trainer:
         if trainable_only and (verbose > 0):
             params_all = sum(p.numel() for p in self.unwrap_model().parameters())
             params_trainable = sum(p.numel() for p in self.unwrap_model().parameters() if p.requires_grad)
-            print(f"[INFO] Only trainable parameters saved and occupy {params_trainable}/{params_all} {params_trainable/params_all:.2f}%")
+            ratio = params_trainable/params_all*100
+            log_info(f"Only trainable parameters saved and occupy {params_trainable}/{params_all}={ratio:.2f}%")
 
     def resume_from_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None):
         '''同时加载模型、优化器、训练过程参数
