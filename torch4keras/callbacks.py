@@ -232,6 +232,28 @@ class SmoothMetric:
         self.update(self._seen_so_far + n, values)
 
 
+class SmoothMetricCallback(Callback):
+    '''指标平滑的callback
+    '''
+    def __init__(self, interval=10, **kwargs):
+        super(SmoothMetricCallback, self).__init__(**kwargs)
+        self.interval = interval
+        self.smooth_metric_step = SmoothMetric(interval=self.interval)
+        log_info(f'SmoothCallback callback calculate {interval} steps average metrics')
+
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        self.smooth_metric_epoch = SmoothMetric()
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        logs_news = self.smooth_metric_epoch.get_smooth_logs(logs)
+        logs.update(logs_news)
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        self.smooth_metric_epoch.update(local_step+1, logs)
+        logs_news = self.smooth_metric_step.update(global_step+1, logs)
+        logs.update(logs_news)
+
+
 class Progbar(object):
     """进度条，直接从keras引入"""
     def __init__(self, target, width=30, verbose=1, time_interval=0.05, interval=None, stateful_metrics=None):
@@ -756,7 +778,7 @@ class Checkpoint(Callback):
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', interval=100, verbose=0, **kwargs):
+    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', interval=10, verbose=0, **kwargs):
         super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
@@ -803,7 +825,7 @@ class Evaluator(Checkpoint):
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, scheduler_path=None,
-                 steps_params_path=None, method='epoch', interval=100, **kwargs):
+                 steps_params_path=None, method='epoch', interval=10, **kwargs):
         super().__init__(model_path, optimizer_path, scheduler_path, steps_params_path, method, interval, **kwargs)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
@@ -855,9 +877,6 @@ class Logger(Callback):
         self.sep = separator
         self.name = name
         self.verbosity = verbosity
-        if self.smooth:
-            self.smooth_metric_step = SmoothMetric(interval=self.interval)
-            log_info(f'Logger callback calculate {interval} steps average metrics')
 
     def on_train_begin(self, logs=None):
         import logging
@@ -879,23 +898,13 @@ class Logger(Callback):
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
         self.logger.info(f'Epoch {epoch+1}'.center(40, '='))
-        if self.smooth:
-            self.smooth_metric_epoch = SmoothMetric()
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        if self.smooth:
-            logs = self.smooth_metric_epoch.get_smooth_logs(logs)
         log_str = f'{self.sep}'.join([f'{k}={round(v)}' for k, v in logs.items() if k not in SKIP_METRICS])
         self.logger.info(f'epoch={epoch+1}{self.sep}{log_str}')
 
     def on_batch_end(self, global_step, local_step, logs=None):
-        if self.smooth:
-            self.smooth_metric_step.update(global_step+1, logs)
-            self.smooth_metric_epoch.update(local_step+1, logs)
-
         if (global_step+1) % self.interval == 0:
-            if self.smooth:
-                logs = self.smooth_metric_step.get_smooth_logs(logs)
             log_str = f'{self.sep}'.join([f'{k}={round(v)}' for k, v in logs.items() if k not in SKIP_METRICS])
             self.logger.info(f'step={global_step+1}{self.sep}{log_str}')
 
@@ -912,42 +921,25 @@ class Tensorboard(Callback):
     :param smooth: bool, 是否对interval期间的指标进行平滑处理
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     '''
-    def __init__(self, log_dir, method='epoch', interval=10, smooth=True, prefix='train', **kwargs):
+    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.log_dir = log_dir
         self.method = method
         self.interval = interval
-        self.smooth = smooth
         self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
-        if self.smooth and (self.method=='step'):
-            self.smooth_metric_step = SmoothMetric(interval=self.interval)
-            log_info(f'Tensorboard callback calculate {interval} steps average metrics')
 
     def on_train_begin(self, logs=None):
         from tensorboardX import SummaryWriter
         os.makedirs(self.log_dir, exist_ok=True)
         self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
 
-    def on_epoch_begin(self, global_step, epoch, logs=None):
-        if self.smooth and (self.method == 'epoch'):
-            self.smooth_metric_epoch = SmoothMetric()
-
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.method == 'epoch':
-            if self.smooth:
-                logs = self.smooth_metric_epoch.get_smooth_logs(logs)
             self.process(epoch+1, logs)
 
     def on_batch_end(self, global_step, local_step, logs=None):
-        if self.smooth and (self.method == 'step'):
-            self.smooth_metric_step.update(global_step+1, logs)
-        elif self.smooth and (self.method == 'step'):
-            self.smooth_metric_epoch.update(local_step+1, logs)
-
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
-            if self.smooth:
-                logs = self.smooth_metric_step.get_smooth_logs(logs)
             self.process(global_step+1, logs)
 
     def process(self, iteration, logs):
@@ -972,7 +964,7 @@ class WandbCallback(Callback):
     :param 
     """
     def __init__(self, method='step', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
-                 interval=100, smooth=True, save_code=False, config=None):
+                 interval=10, save_code=False, config=None):
         try:
             import wandb
             self._wandb = wandb
@@ -991,14 +983,10 @@ class WandbCallback(Callback):
             self.run_name = self.trial_name
         self.watch = watch
         self.interval = interval
-        self.smooth = smooth
         self.save_code = save_code
         self.config = config or {}
         self.run_id = None
         self.metrics = set()
-        if self.smooth and (self.method=='step'):
-            self.smooth_metric_step = SmoothMetric(interval=self.interval)
-            log_info(f'WandbCallback calculate {interval} steps average metrics')
 
     def define_metric(self, logs=None):
         if getattr(self._wandb, "define_metric", None):
@@ -1011,16 +999,10 @@ class WandbCallback(Callback):
         logs_new = {**logs, **kwargs}
         return {k:v for k,v in logs_new.items() if k not in SKIP_METRICS}
 
-    def on_epoch_begin(self, global_step, epoch, logs=None):
-        if self.smooth and (self.method == 'epoch'):
-            self.smooth_metric_epoch = SmoothMetric()
-
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self._wandb is None:
             return
         if self.method == 'epoch':
-            if self.smooth:
-                logs = self.smooth_metric_epoch.get_smooth_logs(logs)
             self.define_metric(logs)
             self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
 
@@ -1028,14 +1010,7 @@ class WandbCallback(Callback):
         if self._wandb is None:
             return
         
-        if self.smooth and (self.method == 'step'):
-            self.smooth_metric_step.update(global_step+1, logs)
-        elif self.smooth and (self.method == 'step'):
-            self.smooth_metric_epoch.update(local_step+1, logs)
-
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
-            if self.smooth:
-                logs = self.smooth_metric_step.get_smooth_logs(logs)
             self.define_metric(logs)
             self._wandb.log(self.adjust_logs(logs, step=global_step))
         
