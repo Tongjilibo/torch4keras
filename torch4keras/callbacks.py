@@ -13,186 +13,14 @@ from torch4keras.snippets import log_info, log_error, send_email
 
 SKIP_METRICS = {}  # 不记录的metrics
 NO_SMOOTH_METRICS = {'lr'}  # 不能平滑的指标
+ROUND_PRECISION = 4
+_round_precision = eval(f"1e-{ROUND_PRECISION-1}")
 
 
-def _process_stateful_metrics(stateful_metrics):
-    ''''''
-    if stateful_metrics is None:
-        stateful_metrics_new = set()
-    elif isinstance(stateful_metrics, str):
-        stateful_metrics_new = {stateful_metrics}
-    elif isinstance(stateful_metrics, (set, tuple, list)):
-        stateful_metrics_new = set(stateful_metrics)
-    else:
-        raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
-    stateful_metrics_new.update(NO_SMOOTH_METRICS)
-    return stateful_metrics_new
-
-
-class SmoothMetric:
-    '''指标平滑'''
-    def __init__(self, interval=None, stateful_metrics=None) -> None:
-        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
-        self.interval = interval
-        self.stateful_metrics = stateful_metrics or set()
-        self._seen_so_far = 0
-    
-    def update(self, current, logs:dict):
-        if (self.interval is not None) and (current % self.interval == 1):
-            # 如果定义了累积smooth_interval，则需要重新累计
-            self.reset()
-        
-        for k, v in logs.items():
-            if k in SKIP_METRICS:
-                continue
-            elif (k in NO_SMOOTH_METRICS) or (k in self.stateful_metrics):
-                self._values[k] = [v, 1]
-            elif k not in self._values:
-                self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
-            else:
-                self._values[k][0] += v * (current - self._seen_so_far)
-                self._values[k][1] += (current - self._seen_so_far)
-            
-        self._seen_so_far = current
-        return self._values
-
-    def reset(self):
-        self._values = collections.OrderedDict()
-
-    def get_smooth_logs(self, logs):
-        smooth_logs = {k: v[0]/v[1] for k, v in self._values.items() if k not in SKIP_METRICS}
-        for k, v in logs.items() :
-            if (k in SKIP_METRICS) or (k in smooth_logs):
-                continue
-            smooth_logs[k] = v
-        return smooth_logs
-
-    def add(self, n, values=None):
-        self.update(self._seen_so_far + n, values)
-
-
-class Progbar(object):
-    """进度条，直接从keras引入"""
-    def __init__(self, target, width=30, verbose=1, time_interval=0.05, smooth_interval=None, stateful_metrics=None):
-        '''
-        :param target: 进度条的step数量
-        :param width: 进度条的宽度
-        :param verbose: 是否展示进度条
-        :param time_interval: 更新进度条的最短时间间隔
-        :param stateful_metrics: list, 以状态量记录指标的格式
-        :param smooth_interval: int, 平滑时候使用的的step个数
-        '''
-        self.target = target
-        self.width = width
-        self.verbose = verbose
-        self.time_interval = time_interval
-        assert (smooth_interval is None) or isinstance(smooth_interval, int), 'Args `smooth_interval` only support `int` format'
-        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
-        self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
-        self._total_width = 0
-        self._start = time.time()
-        self._last_update = 0
-        self.smooth_metric = SmoothMetric(smooth_interval, stateful_metrics)
-
-    def update(self, current, values=None):
-        """Updates the progress bar."""
-        _values = self.smooth_metric.update(current, values)
-
-        now = time.time()
-        info = ' - %.0fs' % (now - self._start)
-        if self.verbose == 1:
-            if (now - self._last_update < self.time_interval and self.target is not None and current < self.target):
-                # 训练每个step太快了，则不更新进度条，累计达到一定的时间间隔再更新进度条
-                return
-
-            prev_total_width = self._total_width
-            if self._dynamic_display:
-                sys.stdout.write('\b' * prev_total_width)
-                sys.stdout.write('\r')
-            else:
-                sys.stdout.write('\n')
-
-            if self.target is not None:
-                numdigits = int(np.floor(np.log10(self.target))) + 1
-                barstr = '%%%dd/%d [' % (numdigits, self.target)
-                bar = barstr % current
-                prog = float(current) / self.target
-                prog_width = int(self.width * prog)
-                if prog_width > 0:
-                    bar += ('=' * (prog_width - 1))
-                    if current < self.target:
-                        bar += '>'
-                    else:
-                        bar += '='
-                bar += ('.' * (self.width - prog_width))
-                bar += ']'
-            else:
-                bar = '%7d/Unknown' % current
-
-            self._total_width = len(bar)
-            sys.stdout.write(bar)
-
-            if current:
-                time_per_unit = (now - self._start) / current
-            else:
-                time_per_unit = 0
-            if self.target is not None and current < self.target:
-                eta = time_per_unit * (self.target - current)
-                if eta > 3600:
-                    eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
-                elif eta > 60:
-                    eta_format = '%d:%02d' % (eta // 60, eta % 60)
-                else:
-                    eta_format = '%ds' % eta
-
-                info = ' - ETA: %s' % eta_format
-            else:
-                if time_per_unit >= 1:
-                    info += ' %.0fs/step' % time_per_unit
-                elif time_per_unit >= 1e-3:
-                    info += ' %.0fms/step' % (time_per_unit * 1e3)
-                else:
-                    info += ' %.0fus/step' % (time_per_unit * 1e6)
-
-            for k in _values:
-                info += ' - %s:' % k
-                if isinstance(_values[k], list):
-                    avg = np.mean(_values[k][0] / max(1, _values[k][1]))  # 指标平滑
-                    if abs(avg) > 1e-3:
-                        info += ' %.4f' % avg
-                    else:
-                        info += ' %.4e' % avg
-                else:
-                    info += ' %s' % _values[k]
-            info += ' '  # 最后加个空格，防止中途有别的打印
-            self._total_width += len(info)
-            if prev_total_width > self._total_width:
-                info += (' ' * (prev_total_width - self._total_width))
-
-            if self.target is not None and current >= self.target:
-                info += '\n'
-
-            sys.stdout.write(info)
-            sys.stdout.flush()
-
-        elif self.verbose == 2:
-            if self.target is None or current >= self.target:
-                for k in _values:
-                    info += ' - %s:' % k
-                    avg = np.mean(_values[k][0] / max(1, _values[k][1]))
-                    if avg > 1e-3:
-                        info += ' %.4f' % avg
-                    else:
-                        info += ' %.4e' % avg
-                info += '\n'
-
-                sys.stdout.write(info)
-                sys.stdout.flush()
-
-        self._last_update = now
-
-    def add(self, n, values=None):
-        self.smooth_metric.add(n, values)
+def round(v, mode='f'):
+    if abs(v) < _round_precision:
+        mode = 'e'
+    return f"%.{ROUND_PRECISION}{mode}" % v
 
 
 class CallbackList(object):
@@ -348,23 +176,192 @@ class Callback(object):
         pass
 
 
-class TerminateOnNaN(Callback):
-    """Loss出现NAN停止训练"""
-    def on_batch_end(self, global_step, local_step, logs=None):
-        logs = logs or {}
-        loss = logs.get('loss')
-        if loss is not None:
-            if np.isnan(loss) or np.isinf(loss):
-                log_error('Step %d: Invalid loss, terminating training' % global_step)
-                self.trainer.stop_training = True
+def _process_stateful_metrics(stateful_metrics):
+    ''''''
+    if stateful_metrics is None:
+        stateful_metrics_new = set()
+    elif isinstance(stateful_metrics, str):
+        stateful_metrics_new = {stateful_metrics}
+    elif isinstance(stateful_metrics, (set, tuple, list)):
+        stateful_metrics_new = set(stateful_metrics)
+    else:
+        raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
+    stateful_metrics_new.update(NO_SMOOTH_METRICS)
+    return stateful_metrics_new
+
+
+class SmoothMetric:
+    '''指标平滑'''
+    def __init__(self, interval=None, stateful_metrics=None) -> None:
+        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
+        self.interval = interval
+        self.stateful_metrics = stateful_metrics or set()
+        self._seen_so_far = 0
+    
+    def update(self, current, logs:dict):
+        if (self.interval is not None) and (current % self.interval == 1):
+            # 如果定义了累积interval，则需要重新累计
+            self.reset()
+        
+        for k, v in logs.items():
+            if k in SKIP_METRICS:
+                continue
+            elif (k in NO_SMOOTH_METRICS) or (k in self.stateful_metrics):
+                self._values[k] = [v, 1]
+            elif k not in self._values:
+                self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+            else:
+                self._values[k][0] += v * (current - self._seen_so_far)
+                self._values[k][1] += (current - self._seen_so_far)
+            
+        self._seen_so_far = current
+        return self._values
+
+    def reset(self):
+        self._values = collections.OrderedDict()
+
+    def get_smooth_logs(self, logs):
+        smooth_logs = {k: v[0]/v[1] for k, v in self._values.items() if k not in SKIP_METRICS}
+        for k, v in logs.items() :
+            if (k in SKIP_METRICS) or (k in smooth_logs):
+                continue
+            smooth_logs[k] = v
+        return smooth_logs
+
+    def add(self, n, values=None):
+        self.update(self._seen_so_far + n, values)
+
+
+class Progbar(object):
+    """进度条，直接从keras引入"""
+    def __init__(self, target, width=30, verbose=1, time_interval=0.05, interval=None, stateful_metrics=None):
+        '''
+        :param target: 进度条的step数量
+        :param width: 进度条的宽度
+        :param verbose: 是否展示进度条
+        :param time_interval: 更新进度条的最短时间间隔
+        :param interval: int, 平滑时候使用的的step个数
+        :param stateful_metrics: list, 以状态量记录指标的格式
+        '''
+        self.target = target
+        self.width = width
+        self.verbose = verbose
+        self.time_interval = time_interval
+        assert (interval is None) or isinstance(interval, int), 'Args `interval` only support `int` format'
+        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
+        self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
+        self._total_width = 0
+        self._start = time.time()
+        self._last_update = 0
+        self.smooth_metric = SmoothMetric(interval, stateful_metrics)
+
+    def update(self, current, values=None):
+        """Updates the progress bar."""
+        _values = self.smooth_metric.update(current, values)
+
+        now = time.time()
+        info = ' - %.0fs' % (now - self._start)
+        if self.verbose == 1:
+            if (now - self._last_update < self.time_interval and self.target is not None and current < self.target):
+                # 训练每个step太快了，则不更新进度条，累计达到一定的时间间隔再更新进度条
+                return
+
+            prev_total_width = self._total_width
+            if self._dynamic_display:
+                sys.stdout.write('\b' * prev_total_width)
+                sys.stdout.write('\r')
+            else:
+                sys.stdout.write('\n')
+
+            if self.target is not None:
+                numdigits = int(np.floor(np.log10(self.target))) + 1
+                barstr = '%%%dd/%d [' % (numdigits, self.target)
+                bar = barstr % current
+                prog = float(current) / self.target
+                prog_width = int(self.width * prog)
+                if prog_width > 0:
+                    bar += ('=' * (prog_width - 1))
+                    if current < self.target:
+                        bar += '>'
+                    else:
+                        bar += '='
+                bar += ('.' * (self.width - prog_width))
+                bar += ']'
+            else:
+                bar = '%7d/Unknown' % current
+
+            self._total_width = len(bar)
+            sys.stdout.write(bar)
+
+            if current:
+                time_per_unit = (now - self._start) / current
+            else:
+                time_per_unit = 0
+            if self.target is not None and current < self.target:
+                eta = time_per_unit * (self.target - current)
+                if eta > 3600:
+                    eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
+                elif eta > 60:
+                    eta_format = '%d:%02d' % (eta // 60, eta % 60)
+                else:
+                    eta_format = '%ds' % eta
+
+                info = ' - ETA: %s' % eta_format
+            else:
+                if time_per_unit >= 1:
+                    info += ' %.0fs/step' % time_per_unit
+                elif time_per_unit >= 1e-3:
+                    info += ' %.0fms/step' % (time_per_unit * 1e3)
+                else:
+                    info += ' %.0fus/step' % (time_per_unit * 1e6)
+
+            for k in _values:
+                info += ' - %s:' % k
+                if isinstance(_values[k], list):
+                    avg = np.mean(_values[k][0] / max(1, _values[k][1]))  # 指标平滑
+                    if abs(avg) > 1e-3:
+                        info += f' %.{ROUND_PRECISION}f' % avg
+                    else:
+                        info += f' %.{ROUND_PRECISION}e' % avg
+                else:
+                    info += ' %s' % _values[k]
+            info += ' '  # 最后加个空格，防止中途有别的打印
+            self._total_width += len(info)
+            if prev_total_width > self._total_width:
+                info += (' ' * (prev_total_width - self._total_width))
+
+            if self.target is not None and current >= self.target:
+                info += '\n'
+
+            sys.stdout.write(info)
+            sys.stdout.flush()
+
+        elif self.verbose == 2:
+            if self.target is None or current >= self.target:
+                for k in _values:
+                    info += ' - %s:' % k
+                    avg = np.mean(_values[k][0] / max(1, _values[k][1]))
+                    if avg > 1e-3:
+                        info += f' %.{ROUND_PRECISION}f' % avg
+                    else:
+                        info += f' %.{ROUND_PRECISION}e' % avg
+                info += '\n'
+
+                sys.stdout.write(info)
+                sys.stdout.flush()
+
+        self._last_update = now
+
+    def add(self, n, values=None):
+        self.smooth_metric.add(n, values)
 
 
 class KerasProgbar(Callback):
     """ keras进度条 """
-    def __init__(self, stateful_metrics=None, smooth_interval=None, width=30, **kwargs):
+    def __init__(self, stateful_metrics=None, interval=None, width=30, **kwargs):
         super(KerasProgbar, self).__init__(**kwargs)
         self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
-        self.smooth_interval = smooth_interval
+        self.interval = interval
         self.width = width
 
     def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
@@ -397,7 +394,7 @@ class KerasProgbar(Callback):
             print('%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
             self.progbar = Progbar(target=self.target, width=self.width, verbose=self.verbose, 
-                                   stateful_metrics=self.stateful_metrics, smooth_interval=self.smooth_interval)
+                                   stateful_metrics=self.stateful_metrics, interval=self.interval)
         self.seen = 0
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
@@ -417,8 +414,8 @@ class KerasProgbar(Callback):
 
 class TqdmProgbar(KerasProgbar):
     """ Tqdm进度条 """
-    def __init__(self, stateful_metrics=None, smooth_interval=None, width=None, **kwargs):
-        super().__init__(stateful_metrics, smooth_interval, width, **kwargs)
+    def __init__(self, stateful_metrics=None, interval=None, width=None, **kwargs):
+        super().__init__(stateful_metrics, interval, width, **kwargs)
 
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
@@ -428,7 +425,7 @@ class TqdmProgbar(KerasProgbar):
             self.target = self.params['steps']
             self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0, ncols=self.width)
         self.seen = 0
-        self.smooth_metric = SmoothMetric(self.smooth_interval, self.stateful_metrics)
+        self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
@@ -453,9 +450,9 @@ class TqdmProgbar(KerasProgbar):
             if isinstance(_values[k], list):
                 avg = np.mean(_values[k][0] / max(1, _values[k][1]))
                 if abs(avg) > 1e-3:
-                    logs[k] = ' %.4f' % avg
+                    logs[k] = f' %.{ROUND_PRECISION}f' % avg
                 else:
-                    logs[k] = ' %.4e' % avg
+                    logs[k] = f' %.{ROUND_PRECISION}e' % avg
             else:
                 logs[k] = ' %s' % _values[k]
 
@@ -479,6 +476,7 @@ class ProgressBar2Progbar(TqdmProgbar):
             self.progbar = progressbar.bar.ProgressBar(min_value=0, max_value=self.params['steps'], widgets=widgets, 
                                                        redirect_stdout=True, redirect_stderr=True)
         self.seen = 0
+        self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
     def on_batch_end(self, global_step=None, local_step=None, logs=None):
         self.seen += 1
@@ -491,6 +489,17 @@ class ProgressBar2Progbar(TqdmProgbar):
             self.progbar.update(self.seen, **logs_new)
             if self.seen >= self.target:
                 self.progbar.finish()
+
+
+class TerminateOnNaN(Callback):
+    """Loss出现NAN停止训练"""
+    def on_batch_end(self, global_step, local_step, logs=None):
+        logs = logs or {}
+        loss = logs.get('loss')
+        if loss is not None:
+            if np.isnan(loss) or np.isinf(loss):
+                log_error('Step %d: Invalid loss, terminating training' % global_step)
+                self.trainer.stop_training = True
 
 
 class History(Callback):
@@ -745,9 +754,9 @@ class Checkpoint(Callback):
     :param scheduler_path: str, scheduler保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
-    :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
+    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', step_interval=100, verbose=0, **kwargs):
+    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', interval=100, verbose=0, **kwargs):
         super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
@@ -755,7 +764,7 @@ class Checkpoint(Callback):
         self.optimizer_path = optimizer_path  # 是否保存优化器
         self.scheduler_path = scheduler_path  # 是否保存scheduler
         self.steps_params_path = steps_params_path  # 是否保存训练步数
-        self.step_interval = step_interval  # method='step'时候生效
+        self.interval = interval  # method='step'时候生效
         self.verbose = verbose
     
     def on_epoch_end(self, global_step, epoch, logs=None):
@@ -765,7 +774,7 @@ class Checkpoint(Callback):
 
     def on_batch_end(self, global_step, local_step, logs=None):
         logs = logs or {}
-        if (self.method == 'step') and ((global_step+1) % self.step_interval == 0):
+        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
             self.process(global_step+1, logs)
 
     def process(self, suffix, logs):
@@ -791,11 +800,11 @@ class Evaluator(Checkpoint):
     :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param scheduler_path: str, scheduler保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param step_interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
+    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, scheduler_path=None,
-                 steps_params_path=None, method='epoch', step_interval=100, **kwargs):
-        super().__init__(model_path, optimizer_path, scheduler_path, steps_params_path, method, step_interval, **kwargs)
+                 steps_params_path=None, method='epoch', interval=100, **kwargs):
+        super().__init__(model_path, optimizer_path, scheduler_path, steps_params_path, method, interval, **kwargs)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
         self.mode = mode
@@ -814,8 +823,8 @@ class Evaluator(Checkpoint):
             super().process(suffix, logs)
 
         if self.verbose > 0:
-            print_str = ', '.join([f'{k}: {v:.5f}' for k, v in perf.items()])
-            print(print_str + f'. best_{self.monitor}: {self.best_perf:.5f}\n')
+            print_str = ', '.join([f'{k}: {round(v)}' for k, v in perf.items()])
+            print(print_str + f'. best_{self.monitor}: {round(self.best_perf)}\n')
         
     # 定义评价函数
     def evaluate(self):
@@ -862,6 +871,7 @@ class Logger(Callback):
         fh = logging.FileHandler(self.log_path, self.mode)
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
+        self.logger.info(f'Logger callback calculate {self.interval} steps average metrics')
         self.logger.info('Start Training'.center(40, '='))
 
     def on_train_end(self, logs=None):
@@ -875,7 +885,7 @@ class Logger(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self.smooth:
             logs = self.smooth_metric_epoch.get_smooth_logs(logs)
-        log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in SKIP_METRICS])
+        log_str = f'{self.sep}'.join([f'{k}={round(v)}' for k, v in logs.items() if k not in SKIP_METRICS])
         self.logger.info(f'epoch={epoch+1}{self.sep}{log_str}')
 
     def on_batch_end(self, global_step, local_step, logs=None):
@@ -886,7 +896,7 @@ class Logger(Callback):
         if (global_step+1) % self.interval == 0:
             if self.smooth:
                 logs = self.smooth_metric_step.get_smooth_logs(logs)
-            log_str = f'{self.sep}'.join([f'{k}={v:.5f}' for k, v in logs.items() if k not in SKIP_METRICS])
+            log_str = f'{self.sep}'.join([f'{k}={round(v)}' for k, v in logs.items() if k not in SKIP_METRICS])
             self.logger.info(f'step={global_step+1}{self.sep}{log_str}')
 
 
@@ -949,109 +959,6 @@ class Tensorboard(Callback):
             self.writer.add_scalar(index, v, iteration)
 
 
-class LambdaCallback(Callback):
-    """lambda表达式
-    """
-    def __init__(self, on_epoch_begin=None, on_epoch_end=None, on_batch_begin=None, on_batch_end=None, 
-                 on_train_begin=None, on_train_end=None, on_dataloader_end=None, **kwargs):
-        super(LambdaCallback, self).__init__(**kwargs)
-        self.__dict__.update(kwargs)
-        if on_epoch_begin is not None:
-            self.on_epoch_begin = on_epoch_begin
-        else:
-            self.on_epoch_begin = lambda global_step, epoch, logs: None
-
-        if on_epoch_end is not None:
-            self.on_epoch_end = on_epoch_end
-        else:
-            self.on_epoch_end = lambda global_step, epoch, logs: None
-
-        if on_batch_begin is not None:
-            self.on_batch_begin = on_batch_begin
-        else:
-            self.on_batch_begin = lambda global_step, local_step, logs: None
-
-        if on_batch_end is not None:
-            self.on_batch_end = on_batch_end
-        else:
-            self.on_batch_end = lambda global_step, local_step, logs: None
-
-        if on_train_begin is not None:
-            self.on_train_begin = on_train_begin
-        else:
-            self.on_train_begin = lambda logs: None
-
-        if on_train_end is not None:
-            self.on_train_end = on_train_end
-        else:
-            self.on_train_end = lambda logs: None
-        
-        if on_dataloader_end is not None:
-            self.on_dataloader_end = on_train_end
-        else:
-            self.on_dataloader_end = lambda logs: None
-
-
-class Summary(Callback):
-    '''调用torchinfo的summary
-    '''
-    def on_train_begin(self, logs=None):
-        from torchinfo import summary
-        print()
-        summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
-        print()
-
-
-class EmailCallback(Callback):
-    '''发送Email
-
-    :param receivers: str/list, 收件人邮箱
-    :param method: str, 控制是按照epoch还是step来发送邮件，默认为'epoch', 可选{'step', 'epoch'}
-    :param interval: int, 发送邮件的的step间隔
-    :param mail_host: str, 发件服务器host
-    :param mail_user: str, 发件人
-    :param mail_pwd: str, smtp的第三方密码
-    :param sender: str, 发件人邮箱
-    '''
-    def __init__(self, receivers, subject='', method='epoch', interval=10, mail_host=None, mail_user=None, mail_pwd=None, sender=None, **kwargs):
-        super(EmailCallback, self).__init__(**kwargs)
-        self.method = method
-        self.interval = interval
-        self.receivers = receivers
-        self.subject = subject
-        self.mail_host = mail_host
-        self.mail_user = mail_user
-        self.mail_pwd = mail_pwd
-        self.sender = sender
-
-    def on_epoch_end(self, global_step, epoch, logs=None):
-        if self.method == 'epoch':
-            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
-            subject = f'[INFO] Epoch {epoch+1} performance'
-            if self.subject != '':
-                subject = self.subject + ' | ' + subject
-            self._email(subject, msg)
-
-    def on_batch_end(self, global_step, local_step, logs=None):
-        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
-            msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
-            subject = f'[INFO] Step {global_step} performance'
-            if self.subject != '':
-                subject = self.subject + ' | ' + subject
-            self._email(subject, msg)
-
-    def on_train_end(self, logs=None):
-        msg = json.dumps({k:f'{v:.5f}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
-        subject = f'[INFO] Finish training'
-        if self.subject != '':
-            subject = self.subject + ' | ' + subject
-        self._email(subject, msg)
-
-    def _email(self, subject, msg):
-        send_email(self.receivers, subject=subject, msg=msg, mail_host=self.mail_host,
-                   mail_user=self.mail_user, mail_pwd=self.mail_pwd, sender=self.sender)
-
-
 class WandbCallback(Callback):
     """从transformers迁移过来
     A :class:`~transformers.TrainerCallback` that sends the logs to `Weight and Biases <https://www.wandb.com/>`__.
@@ -1064,7 +971,7 @@ class WandbCallback(Callback):
     :param project: str，wandb的project name, 默认为bert4torch
     :param 
     """
-    def __init__(self, method='epoch', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
+    def __init__(self, method='step', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
                  interval=100, smooth=True, save_code=False, config=None):
         try:
             import wandb
@@ -1166,3 +1073,107 @@ class WandbCallback(Callback):
         # transformer中的on_log
         self._wandb.finish()
         self._initialized = False
+
+
+class LambdaCallback(Callback):
+    """lambda表达式
+    """
+    def __init__(self, on_epoch_begin=None, on_epoch_end=None, on_batch_begin=None, on_batch_end=None, 
+                 on_train_begin=None, on_train_end=None, on_dataloader_end=None, **kwargs):
+        super(LambdaCallback, self).__init__(**kwargs)
+        self.__dict__.update(kwargs)
+        if on_epoch_begin is not None:
+            self.on_epoch_begin = on_epoch_begin
+        else:
+            self.on_epoch_begin = lambda global_step, epoch, logs: None
+
+        if on_epoch_end is not None:
+            self.on_epoch_end = on_epoch_end
+        else:
+            self.on_epoch_end = lambda global_step, epoch, logs: None
+
+        if on_batch_begin is not None:
+            self.on_batch_begin = on_batch_begin
+        else:
+            self.on_batch_begin = lambda global_step, local_step, logs: None
+
+        if on_batch_end is not None:
+            self.on_batch_end = on_batch_end
+        else:
+            self.on_batch_end = lambda global_step, local_step, logs: None
+
+        if on_train_begin is not None:
+            self.on_train_begin = on_train_begin
+        else:
+            self.on_train_begin = lambda logs: None
+
+        if on_train_end is not None:
+            self.on_train_end = on_train_end
+        else:
+            self.on_train_end = lambda logs: None
+        
+        if on_dataloader_end is not None:
+            self.on_dataloader_end = on_train_end
+        else:
+            self.on_dataloader_end = lambda logs: None
+
+
+class Summary(Callback):
+    '''调用torchinfo的summary
+    '''
+    def on_train_begin(self, logs=None):
+        from torchinfo import summary
+        print()
+        summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
+        print()
+
+
+class EmailCallback(Callback):
+    '''发送Email
+
+    :param receivers: str/list, 收件人邮箱
+    :param method: str, 控制是按照epoch还是step来发送邮件，默认为'epoch', 可选{'step', 'epoch'}
+    :param interval: int, 发送邮件的的step间隔
+    :param mail_host: str, 发件服务器host
+    :param mail_user: str, 发件人
+    :param mail_pwd: str, smtp的第三方密码
+    :param sender: str, 发件人邮箱
+    '''
+    def __init__(self, receivers, subject='', method='epoch', interval=10, mail_host=None, mail_user=None, mail_pwd=None, sender=None, **kwargs):
+        super(EmailCallback, self).__init__(**kwargs)
+        self.method = method
+        self.interval = interval
+        self.receivers = receivers
+        self.subject = subject
+        self.mail_host = mail_host
+        self.mail_user = mail_user
+        self.mail_pwd = mail_pwd
+        self.sender = sender
+
+    def on_epoch_end(self, global_step, epoch, logs=None):
+        if self.method == 'epoch':
+            msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
+            subject = f'[INFO] Epoch {epoch+1} performance'
+            if self.subject != '':
+                subject = self.subject + ' | ' + subject
+            self._email(subject, msg)
+
+    def on_batch_end(self, global_step, local_step, logs=None):
+        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+            msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
+            subject = f'[INFO] Step {global_step} performance'
+            if self.subject != '':
+                subject = self.subject + ' | ' + subject
+            self._email(subject, msg)
+
+    def on_train_end(self, logs=None):
+        msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
+        subject = f'[INFO] Finish training'
+        if self.subject != '':
+            subject = self.subject + ' | ' + subject
+        self._email(subject, msg)
+
+    def _email(self, subject, msg):
+        send_email(self.receivers, subject=subject, msg=msg, mail_host=self.mail_host,
+                   mail_user=self.mail_user, mail_pwd=self.mail_pwd, sender=self.sender)
+
