@@ -410,6 +410,11 @@ class KerasProgbar(Callback):
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Start Training' % (time_start))
 
+    def on_train_end(self, logs=None):
+        if self.verbose:
+            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print('%s - Finish Training' % (time_start))
+
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -428,12 +433,7 @@ class KerasProgbar(Callback):
         if self.verbose:
             self.progbar.update(self.seen, log_values)
     
-    def on_train_end(self, logs=None):
-        if self.verbose:
-            time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('%s - Finish Training' % (time_start))
         
-
 class TqdmProgbar(KerasProgbar):
     """ Tqdm进度条 """
     def __init__(self, stateful_metrics=None, interval=None, width=None, **kwargs):
@@ -862,17 +862,15 @@ class Logger(Callback):
 
     :param log_path: str, log文件的保存路径
     :param interval: int, 保存log的间隔
-    :param smooth: bool, 是否对interval期间的指标进行平滑处理
     :param mode: str, log保存的模式, 默认为'a'表示追加
     :param separator: str, 指标间分隔符
     :param verbosity: int, 可选[0,1,2]，指定log的level
     :param name: str, 默认为None
     '''
-    def __init__(self, log_path, interval=10, smooth=True, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
+    def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
         super(Logger, self).__init__(**kwargs)
         self.log_path = log_path
         self.interval = interval
-        self.smooth = smooth
         self.mode = mode
         self.sep = separator
         self.name = name
@@ -918,10 +916,9 @@ class Tensorboard(Callback):
     :param log_dir: str, tensorboard文件的保存路径
     :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 保存tensorboard的间隔
-    :param smooth: bool, 是否对interval期间的指标进行平滑处理
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     '''
-    def __init__(self, log_dir, method='epoch', interval=10, prefix='train', **kwargs):
+    def __init__(self, log_dir, method='step', interval=10, prefix='train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.log_dir = log_dir
