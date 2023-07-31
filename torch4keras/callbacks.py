@@ -8,7 +8,7 @@ from collections import deque
 import json
 import copy
 import os
-from torch4keras.snippets import log_info, log_error, send_email
+from torch4keras.snippets import log_info, log_error, log_warn, send_email
 
 # 不记录的metrics
 SKIP_METRICS = os.environ.get('SKIP_METRICS', {})
@@ -979,7 +979,7 @@ class WandbCallback(Callback):
             import wandb
             self._wandb = wandb
         except:
-            print("[WARNING] WandbCallback requires wandb to be installed. Run `pip install wandb`.")
+            log_warn("WandbCallback requires wandb to be installed. Run `pip install wandb`.")
             self._wandb = None
 
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
