@@ -238,7 +238,7 @@ class SmoothMetric:
         self.update(self._seen_so_far + n, values)
 
 
-class SmoothMetricCallback(Callback):
+class SmoothMetricsCallback(Callback):
     '''指标平滑的callback，会inplace修改log，影响后续的callback中log
     1）适用情形：希望Logger, Tensorboard，Wandb, EarlyStopping等callbacks中使用的累计平滑的指标
     2）使用方法：初始化后，放在fit()中靠前的位置来对log进行修改
@@ -248,7 +248,7 @@ class SmoothMetricCallback(Callback):
     :param stateful_metrics: list, 以状态量记录指标的格式
     '''
     def __init__(self, interval=100, stateful_metrics=None, **kwargs):
-        super(SmoothMetricCallback, self).__init__(**kwargs)
+        super(SmoothMetricsCallback, self).__init__(**kwargs)
         self.interval = interval
         self.stateful_metrics = stateful_metrics
         self.smooth_metric_step = SmoothMetric(interval=self.interval, stateful_metrics=self.stateful_metrics)

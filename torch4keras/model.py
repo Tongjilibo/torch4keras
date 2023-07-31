@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, print_trainable_parameters, colorful
-from torch4keras.callbacks import KerasProgbar, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
+from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from inspect import isfunction
 import os
@@ -34,7 +34,7 @@ class Trainer:
         self.run_callbacks = True
 
     def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
-                grad_accumulation_steps=1, progbar_config=None, **kwargs):
+                grad_accumulation_steps=1, progbar_config=None, smooth_metrics_config=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -50,6 +50,9 @@ class Trainer:
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
             width: int, keras进度条下表示进度条的长度
+        :param smooth_metrics_config: 指标平滑的配置
+            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
+            interval: int, 表示指标平滑时候的累计步数，默认为100
 
         :return: None
         '''
@@ -88,11 +91,12 @@ class Trainer:
 
         # 进度条参数
         self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
-        progbar_config_keys = ['bar', 'stateful_metrics', 'interval', 'width']
-        self.progbar_config.update({k:v for k, v in kwargs.items() if k in progbar_config_keys})  # 直接传参也可以
         self.progbar_config['bar'] = self.progbar_config.get('bar', 'keras')
         assert self.progbar_config['bar'] in {'keras', 'tqdm', 'progressbar2'}, \
             f'Args `bar`={self.progbar_config["bar"]} illegal, only support `keras, tqdm, progressbar2`'
+
+        # smooth_metrics参数
+        self.smooth_metrics_config = smooth_metrics_config
 
     def print_trainable_parameters(self):
         """打印可训练的参数量"""
@@ -248,6 +252,14 @@ class Trainer:
             else:
                 progbarlogger = KerasProgbar(**self.progbar_config)
             callbacks_.append(progbarlogger)
+
+        # 指标平滑
+        if self.smooth_metrics_config is not None:
+            if any([isinstance(i, SmoothMetricsCallback) for i in callbacks]):
+                log_warn(f'SmoothMetricsCallback already in use and args `smooth_metrics_config` will be ignored')
+            else:
+                callbacks_.append(SmoothMetricsCallback(**self.smooth_metrics_config))
+
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
         callback_trainer = self
