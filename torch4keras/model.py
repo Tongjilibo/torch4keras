@@ -48,7 +48,7 @@ class Trainer:
         :param progbar_config: 进度条的配置，默认是对整个epoch计算均值指标
             bar: str, 默认为keras
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
-            smooth_interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
+            interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
             width: int, keras进度条下表示进度条的长度
 
         :return: None
@@ -88,7 +88,7 @@ class Trainer:
 
         # 进度条参数
         self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
-        progbar_config_keys = ['bar', 'stateful_metrics', 'smooth_interval', 'width']
+        progbar_config_keys = ['bar', 'stateful_metrics', 'interval', 'width']
         self.progbar_config.update({k:v for k, v in kwargs.items() if k in progbar_config_keys})  # 直接传参也可以
         self.progbar_config['bar'] = self.progbar_config.get('bar', 'keras')
         assert self.progbar_config['bar'] in {'keras', 'tqdm', 'progressbar2'}, \

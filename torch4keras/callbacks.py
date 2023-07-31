@@ -10,10 +10,14 @@ import copy
 import os
 from torch4keras.snippets import log_info, log_error, send_email
 
+# 不记录的metrics
+SKIP_METRICS = os.environ.get('SKIP_METRICS', {})
+SKIP_METRICS = eval(SKIP_METRICS) if isinstance(SKIP_METRICS, str) else SKIP_METRICS
 
-SKIP_METRICS = {}  # 不记录的metrics
-NO_SMOOTH_METRICS = {'lr'}  # 不能平滑的指标
-ROUND_PRECISION = 4
+NO_SMOOTH_METRICS = os.environ.get('NO_SMOOTH_METRICS', {'lr'})  # 不能平滑的指标
+NO_SMOOTH_METRICS = eval(NO_SMOOTH_METRICS) if isinstance(NO_SMOOTH_METRICS, str) else NO_SMOOTH_METRICS
+
+ROUND_PRECISION = int(os.environ.get('ROUND_PRECISION', 4))  # 指标的精度
 _round_precision = eval(f"1e-{ROUND_PRECISION-1}")
 
 
@@ -220,12 +224,14 @@ class SmoothMetric:
     def reset(self):
         self._values = collections.OrderedDict()
 
-    def get_smooth_logs(self, logs):
+    def get_smooth_logs(self, logs=None):
         smooth_logs = {k: v[0]/v[1] for k, v in self._values.items() if k not in SKIP_METRICS}
-        for k, v in logs.items() :
-            if (k in SKIP_METRICS) or (k in smooth_logs):
-                continue
-            smooth_logs[k] = v
+        
+        if logs is not None:
+            for k, v in logs.items() :
+                if (k in SKIP_METRICS) or (k in smooth_logs):
+                    continue
+                smooth_logs[k] = v
         return smooth_logs
 
     def add(self, n, values=None):
@@ -233,25 +239,35 @@ class SmoothMetric:
 
 
 class SmoothMetricCallback(Callback):
-    '''指标平滑的callback
+    '''指标平滑的callback，会inplace修改log，影响后续的callback中log
+    1）适用情形：希望Logger, Tensorboard，Wandb, EarlyStopping等callbacks中使用的累计平滑的指标
+    2）使用方法：初始化后，放在fit()中靠前的位置来对log进行修改
+    3）step的平滑是全局来看的（跨epoch不中断），epoch平滑是对每个epoch分别累计计算
+
+    :param interval: int, 平滑时候使用的的step个数
+    :param stateful_metrics: list, 以状态量记录指标的格式
     '''
-    def __init__(self, interval=10, **kwargs):
+    def __init__(self, interval=100, stateful_metrics=None, **kwargs):
         super(SmoothMetricCallback, self).__init__(**kwargs)
         self.interval = interval
-        self.smooth_metric_step = SmoothMetric(interval=self.interval)
-        log_info(f'SmoothCallback callback calculate {interval} steps average metrics')
+        self.stateful_metrics = stateful_metrics
+        self.smooth_metric_step = SmoothMetric(interval=self.interval, stateful_metrics=self.stateful_metrics)
+        log_info(f'SmoothMetricCallback calculate {interval} steps average metrics')
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
-        self.smooth_metric_epoch = SmoothMetric()
+        self.smooth_metric_epoch = SmoothMetric(stateful_metrics=self.stateful_metrics)
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        logs_news = self.smooth_metric_epoch.get_smooth_logs(logs)
-        logs.update(logs_news)
+        self.smooth_metric_epoch.get_smooth_logs(logs)
+        smooth_logs = self.smooth_metric_epoch.get_smooth_logs()
+        logs.update(smooth_logs)
 
     def on_batch_end(self, global_step, local_step, logs=None):
         self.smooth_metric_epoch.update(local_step+1, logs)
-        logs_news = self.smooth_metric_step.update(global_step+1, logs)
-        logs.update(logs_news)
+        self.smooth_metric_step.update(global_step+1, logs)
+        
+        smooth_logs = self.smooth_metric_step.get_smooth_logs()
+        logs.update(smooth_logs)
 
 
 class Progbar(object):
@@ -428,8 +444,6 @@ class KerasProgbar(Callback):
         logs = logs or {}
         self.seen += 1
         log_values = {k:logs[k] for k in self.params['metrics'] if k in logs}
-        # Skip progbar update for the last batch;
-        # will be handled by on_epoch_end.
         if self.verbose:
             self.progbar.update(self.seen, log_values)
     
@@ -778,7 +792,7 @@ class Checkpoint(Callback):
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', interval=10, verbose=0, **kwargs):
+    def __init__(self, model_path, optimizer_path=None, scheduler_path=None, steps_params_path=None, method='epoch', interval=100, verbose=0, **kwargs):
         super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
@@ -825,7 +839,7 @@ class Evaluator(Checkpoint):
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor='perf', mode='max', verbose=1, model_path=None, optimizer_path=None, scheduler_path=None,
-                 steps_params_path=None, method='epoch', interval=10, **kwargs):
+                 steps_params_path=None, method='epoch', interval=100, **kwargs):
         super().__init__(model_path, optimizer_path, scheduler_path, steps_params_path, method, interval, **kwargs)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
@@ -867,7 +881,7 @@ class Logger(Callback):
     :param verbosity: int, 可选[0,1,2]，指定log的level
     :param name: str, 默认为None
     '''
-    def __init__(self, log_path, interval=10, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
+    def __init__(self, log_path, interval=100, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
         super(Logger, self).__init__(**kwargs)
         self.log_path = log_path
         self.interval = interval
@@ -888,7 +902,6 @@ class Logger(Callback):
         fh = logging.FileHandler(self.log_path, self.mode)
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
-        self.logger.info(f'Logger callback calculate {self.interval} steps average metrics')
         self.logger.info('Start Training'.center(40, '='))
 
     def on_train_end(self, logs=None):
@@ -918,7 +931,7 @@ class Tensorboard(Callback):
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     '''
-    def __init__(self, log_dir, method='step', interval=10, prefix='train', **kwargs):
+    def __init__(self, log_dir, method='step', interval=100, prefix='train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.log_dir = log_dir
@@ -961,7 +974,7 @@ class WandbCallback(Callback):
     :param 
     """
     def __init__(self, method='step', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
-                 interval=10, save_code=False, config=None):
+                 interval=100, save_code=False, config=None):
         try:
             import wandb
             self._wandb = wandb
@@ -1111,7 +1124,7 @@ class EmailCallback(Callback):
     :param mail_pwd: str, smtp的第三方密码
     :param sender: str, 发件人邮箱
     '''
-    def __init__(self, receivers, subject='', method='epoch', interval=10, mail_host=None, mail_user=None, mail_pwd=None, sender=None, **kwargs):
+    def __init__(self, receivers, subject='', method='epoch', interval=100, mail_host=None, mail_user=None, mail_pwd=None, sender=None, **kwargs):
         super(EmailCallback, self).__init__(**kwargs)
         self.method = method
         self.interval = interval

@@ -81,7 +81,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20230730**: 增加指标平滑的Callback，统一管理指标平滑的问题
+- **20230731**: 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION
 - **20230725**: 修复v0.1.0的bug，主要是进度条和log的标签平滑的问题
 - **20230724**: 允许调整进度条的显示参数, 进度条和日志同步（如果进度条平滑了则日志也平滑）, 自动把tensor转到model.device上, 允许打印第一个batch来检查样本
 - **20230716**：增加auto_set_cuda_devices自动选择显卡，增加log_info，log_warn, log_error等小函数
