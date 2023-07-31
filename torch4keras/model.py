@@ -48,7 +48,6 @@ class Trainer:
         :param progbar_config: 进度条的配置，默认是对整个epoch计算均值指标
             bar: str, 默认为keras
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
-            interval: int, 表示指标平滑时候的累计步数，默认为None表示对整个epoch进行平滑
             width: int, keras进度条下表示进度条的长度
         :param smooth_metrics_config: 指标平滑的配置
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
@@ -91,12 +90,14 @@ class Trainer:
 
         # 进度条参数
         self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
+        self.progbar_config.update({k:v for k, v in kwargs.items() if k in ['bar', 'stateful_metrics', 'width']})  # 直接传参
         self.progbar_config['bar'] = self.progbar_config.get('bar', 'keras')
         assert self.progbar_config['bar'] in {'keras', 'tqdm', 'progressbar2'}, \
             f'Args `bar`={self.progbar_config["bar"]} illegal, only support `keras, tqdm, progressbar2`'
 
-        # smooth_metrics参数
-        self.smooth_metrics_config = smooth_metrics_config
+        # smooth_metrics参数: 默认平滑
+        self.smooth_metrics_config = smooth_metrics_config or {}
+        self.smooth_metrics_config.update({k:v for k, v in kwargs.items() if k in ['stateful_metrics', 'interval']})  # 直接传参也可以
 
     def print_trainable_parameters(self):
         """打印可训练的参数量"""
@@ -485,20 +486,20 @@ class Trainer:
         verbose_str = ''
         if model_path:
             self.save_weights(model_path, mapping=mapping)
-            verbose_str += f'Model weights successfuly saved to {model_path}.\n'
+            verbose_str += f'Model weights successfuly saved to {model_path}\n'
         if optimizer_path:
             save_dir = os.path.dirname(optimizer_path)
             os.makedirs(save_dir, exist_ok=True)
             torch.save(self.optimizer.state_dict(), optimizer_path)
-            verbose_str += f'Optimizer successfuly saved to {optimizer_path}.\n'
+            verbose_str += f'Optimizer successfuly saved to {optimizer_path}\n'
         if scheduler_path and (self.scheduler is not None):
             save_dir = os.path.dirname(scheduler_path)
             os.makedirs(save_dir, exist_ok=True)
             torch.save(self.scheduler.state_dict(), scheduler_path)
-            verbose_str += f'Scheduler successfuly saved to {scheduler_path}.\n'
+            verbose_str += f'Scheduler successfuly saved to {scheduler_path}\n'
         if step_params_path:
             self.save_steps_params(step_params_path)
-            verbose_str += f'Steps_params successfuly saved to {step_params_path}.\n'
+            verbose_str += f'Steps_params successfuly saved to {step_params_path}'
         if verbose != 0:
             print(verbose_str)
 
