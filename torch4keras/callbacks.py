@@ -247,12 +247,13 @@ class SmoothMetricsCallback(Callback):
     :param interval: int, 平滑时候使用的的step个数
     :param stateful_metrics: list, 以状态量记录指标的格式
     '''
-    def __init__(self, interval=100, stateful_metrics=None, **kwargs):
+    def __init__(self, interval=100, stateful_metrics=None, verbose=0, **kwargs):
         super(SmoothMetricsCallback, self).__init__(**kwargs)
         self.interval = interval
         self.stateful_metrics = stateful_metrics
         self.smooth_metric_step = SmoothMetric(interval=self.interval, stateful_metrics=self.stateful_metrics)
-        # log_info(f'SmoothMetricCallback calculate {interval} steps average metrics')
+        if verbose != 0:
+            log_info(f'SmoothMetricCallback calculate {interval} steps average metrics')
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
         self.smooth_metric_epoch = SmoothMetric(stateful_metrics=self.stateful_metrics)

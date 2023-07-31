@@ -49,7 +49,7 @@ class Trainer:
             bar: str, 默认为keras
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             width: int, keras进度条下表示进度条的长度
-        :param smooth_metrics_config: 指标平滑的配置
+        :param smooth_metrics_config: 指标平滑的配置，默认为None表示采取默认平滑设置
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             interval: int, 表示指标平滑时候的累计步数，默认为100
 
@@ -96,8 +96,11 @@ class Trainer:
             f'Args `bar`={self.progbar_config["bar"]} illegal, only support `keras, tqdm, progressbar2`'
 
         # smooth_metrics参数: 默认平滑
-        self.smooth_metrics_config = smooth_metrics_config or {}
-        self.smooth_metrics_config.update({k:v for k, v in kwargs.items() if k in ['stateful_metrics', 'interval']})  # 直接传参也可以
+        if smooth_metrics_config is False:  # compile时传入False, 表示不使用平滑
+            self.smooth_metrics_config = None
+        else:
+            self.smooth_metrics_config = smooth_metrics_config or {}
+            self.smooth_metrics_config.update({k:v for k, v in kwargs.items() if k in ['stateful_metrics', 'interval', 'verbose']})  # 直接传参
 
     def print_trainable_parameters(self):
         """打印可训练的参数量"""
