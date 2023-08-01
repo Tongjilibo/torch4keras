@@ -68,15 +68,8 @@ class MyEvaluator(Evaluator):
     
 
 if __name__ == '__main__':
-    evaluator = MyEvaluator(monitor='test_acc', 
-                            model_path='./ckpt/best/best_model.pt', 
-                            optimizer_path='./ckpt/best/best_optimizer.pt', 
-                            scheduler_path='./ckpt/best/best_scheduler.pt', 
-                            steps_params_path='./ckpt/best/best_step_params.pt')
-    ckpt = Checkpoint('./ckpt/{epoch}/model_{test_acc:.5f}.pt',
-                      optimizer_path='./ckpt/{epoch}/optimizer_{test_acc:.5f}.pt',
-                      scheduler_path='./ckpt/{epoch}/scheduler_{test_acc:.5f}.pt',
-                      steps_params_path='./ckpt/{epoch}/steps_params_{test_acc:.5f}.pt')
+    evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/')
+    ckpt = Checkpoint(save_dir='./ckpt/{epoch}/')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
     logger = Logger('./ckpt/log.log')  # log文件
     ts_board = Tensorboard('./ckpt/tensorboard')  # tensorboard

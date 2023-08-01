@@ -23,7 +23,7 @@ class Trainer:
         self.global_step, self.local_step, self.total_steps, self.batch_step, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
-        self.move_to_model_device = True  # 自动把tensor转到model所在的device
+        self.move_to_model_device = False  # 自动把tensor转到model所在的device
         self.log_first_step = False  # 是否打印第一个step的数据
         self.callbacks = []
         # 传入Module实例方式
@@ -455,40 +455,64 @@ class Trainer:
             ratio = params_trainable/params_all*100
             log_info(f"Only trainable parameters saved and occupy {params_trainable}/{params_all}={ratio:.2f}%")
 
-    def resume_from_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None):
+    def resume_from_checkpoint(self, save_dir=None, model_path=None, optimizer_path=None, scheduler_path=None, steps_params_path=None, 
+                               mapping={}, verbose=0, **kwargs):
         '''同时加载模型、优化器、训练过程参数
 
+        :param save_dir: str, 保存目录
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
-        :param step_params_path: str, 训练过程参数保存路径
+        :param steps_params_path: str, 训练过程参数保存路径
+        :param mapping: dict, 模型文件的mapping
         '''
+        model_path = model_path or os.path.join(save_dir, 'model.pt')
+        optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
+        scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
+        steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
+
+        verbose_str = ''
         # 加载模型权重
         if model_path:
-            self.load_weights(model_path)
+            self.load_weights(model_path, mapping=mapping)
+            verbose_str += f'Model weights successfuly resumed from {model_path}\n'
         # 加载优化器，断点续训使用
         if optimizer_path:
             state_dict = torch.load(optimizer_path, map_location='cpu')
             self.optimizer.load_state_dict(state_dict)
+            verbose_str += f'Optimizer successfuly resumed from {optimizer_path}\n'
         # 加载优化器，断点续训使用
         if scheduler_path:
             state_dict = torch.load(scheduler_path, map_location='cpu')
             self.scheduler.load_state_dict(state_dict)
+            verbose_str += f'Scheduler successfuly resumed from {scheduler_path}\n'
         # 加载训练进度参数，断点续训使用
-        self.load_steps_params(step_params_path)
+        if steps_params_path:
+            self.load_steps_params(steps_params_path)
+            verbose_str += f'Steps_params successfuly resumed from {steps_params_path}'
+        if verbose == 1:
+            print(verbose_str)
 
-    def save_to_checkpoint(self, model_path=None, optimizer_path=None, scheduler_path=None, step_params_path=None, mapping={}, verbose=0):
+    def save_to_checkpoint(self, save_dir=None, model_path=None, optimizer_path=None, scheduler_path=None, steps_params_path=None, 
+                           mapping={}, trainable_only=False, verbose=0, **kwargs):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
+        :param save_dir: str, 保存目录
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
-        :param step_params_path: str, 训练过程参数保存路径
+        :param steps_params_path: str, 训练过程参数保存路径
         :param mapping: dict, 模型文件的mapping
+        :param trainable_only
         '''
+        model_path = model_path or os.path.join(save_dir, 'model.pt')
+        optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
+        scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
+        steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
+
         verbose_str = ''
         if model_path:
-            self.save_weights(model_path, mapping=mapping)
+            self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)
             verbose_str += f'Model weights successfuly saved to {model_path}\n'
         if optimizer_path:
             save_dir = os.path.dirname(optimizer_path)
@@ -500,9 +524,9 @@ class Trainer:
             os.makedirs(save_dir, exist_ok=True)
             torch.save(self.scheduler.state_dict(), scheduler_path)
             verbose_str += f'Scheduler successfuly saved to {scheduler_path}\n'
-        if step_params_path:
-            self.save_steps_params(step_params_path)
-            verbose_str += f'Steps_params successfuly saved to {step_params_path}'
+        if steps_params_path:
+            self.save_steps_params(steps_params_path)
+            verbose_str += f'Steps_params successfuly saved to {steps_params_path}'
         if verbose == 1:
             print(verbose_str)
 
