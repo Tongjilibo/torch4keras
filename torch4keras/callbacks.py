@@ -895,7 +895,7 @@ class Logger(Callback):
         self.logger.info('Start Training'.center(40, '='))
 
     def on_train_end(self, logs=None):
-        self.logger.info('Finish Training'.center(40, '='))
+        self.logger.info('Finish Training'.center(40, '=') + '\n')
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
         self.logger.info(f'Epoch {epoch+1}'.center(40, '='))
