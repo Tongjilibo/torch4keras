@@ -114,7 +114,7 @@ class Trainer:
     def _move_to_model_device(self, inputs, **input_kwargs):
         '''遍历并转移到model.device上'''
         def _to_device(tensor):
-            if isinstance(tensor, torch.Tensor) and (tensor.device != self.device):
+            if isinstance(tensor, torch.Tensor) and hasattr(self, 'device') and (tensor.device != self.device):
                 return tensor.to(self.device)
             else:
                 return tensor
