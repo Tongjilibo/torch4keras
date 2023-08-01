@@ -503,7 +503,7 @@ class Trainer:
         if step_params_path:
             self.save_steps_params(step_params_path)
             verbose_str += f'Steps_params successfuly saved to {step_params_path}'
-        if verbose != 0:
+        if verbose == 1:
             print(verbose_str)
 
     def unwrap_model(self):

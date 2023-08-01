@@ -73,13 +73,13 @@ if __name__ == '__main__':
                             optimizer_path='./ckpt/best/best_optimizer.pt', 
                             scheduler_path='./ckpt/best/best_scheduler.pt', 
                             steps_params_path='./ckpt/best/best_step_params.pt')
-    ckpt = Checkpoint('./ckpt/{epoch}/model_{epoch}_{test_acc:.5f}.pt',
-                      optimizer_path='./ckpt/{epoch}/optimizer_{epoch}_{test_acc:.5f}.pt',
-                      scheduler_path='./ckpt/{epoch}/scheduler_{epoch}_{test_acc:.5f}.pt',
-                      steps_params_path='./ckpt/{epoch}/steps_params_{epoch}_{test_acc:.5f}.pt')
+    ckpt = Checkpoint('./ckpt/{epoch}/model_{test_acc:.5f}.pt',
+                      optimizer_path='./ckpt/{epoch}/optimizer_{test_acc:.5f}.pt',
+                      scheduler_path='./ckpt/{epoch}/scheduler_{test_acc:.5f}.pt',
+                      steps_params_path='./ckpt/{epoch}/steps_params_{test_acc:.5f}.pt')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
-    logger = Logger('./ckpt/log.log', interval=100)  # log文件
-    ts_board = Tensorboard('./ckpt/tensorboard', method='step', interval=100)  # tensorboard
+    logger = Logger('./ckpt/log.log')  # log文件
+    ts_board = Tensorboard('./ckpt/tensorboard')  # tensorboard
     email = EmailCallback(receivers='tongjilibo@163.com')  # 发送邮件
     wandb = WandbCallback(save_code=True)  # wandb
     hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, 
