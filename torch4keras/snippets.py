@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, IterableDataset
 import os
 import random
 import traceback
+import copy
 
 try:
     from sklearn.metrics import roc_auc_score
@@ -447,3 +448,65 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
     os.environ["CUDA_VISIBLE_DEVICES"] = topk_idx_str
 
     return topk_idx_str
+
+
+def watch_gpu_state(gpu_id_list=None):
+    '''监控gpu的抓过你太'''
+    import pynvml
+    pynvml.nvmlInit()
+    tesorboard_info_list = []
+    if gpu_id_list is None:
+        deviceCount = pynvml.nvmlDeviceGetCount()
+        device_list = [i for i in range(deviceCount)]
+    else:
+        device_list = gpu_id_list
+    G = 1024*1024*1024
+
+    gpu_info = {}
+    tesorboard_info_list = []
+    for i in device_list:
+        tesorboard_info = {}
+        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+        tesorboard_info['gpu_name'] = pynvml.nvmlDeviceGetName(handle)
+        meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        tesorboard_info['gpu_mem_used'] = meminfo.used/G
+        UTIL = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        tesorboard_info['gpu_gpu_util'] = UTIL.gpu
+        tesorboard_info['gpu_mem_util'] = UTIL.memory
+        tesorboard_info_list.append(copy.deepcopy(tesorboard_info))
+    for tesorboard_info,i in zip(tesorboard_info_list, device_list):
+        gpu_info[f'System/gpu{i}_mem_used_Gbyte'] = tesorboard_info['gpu_mem_used']
+        gpu_info[f'System/gpu{i}_gpu_util'] = tesorboard_info['gpu_gpu_util']
+        gpu_info[f'System/gpu{i}_mem_util'] = tesorboard_info['gpu_mem_util']
+    pynvml.nvmlShutdown()
+    return gpu_info
+
+
+def watch_process_state(pid=None):
+    ''' 查看进程相关信息 '''
+    import psutil
+    p = psutil.Process(pid or os.getpid())
+    G = 1024*1024*1024
+
+    info = {}
+    # CPU
+    info[f"System/cpu_percent"] = p.cpu_percent(interval=0.5)
+
+    # 内存
+    data = psutil.virtual_memory()
+    info["System/mem_used_Gbyte"] = (data.total - data.available)/G
+    info["System/mem_percent"] = data.percent
+    info[f"System/RSS_Gbyte"] = p.memory_info().rss/G
+    info[f"System/VMS_Gbyte"] = p.memory_info().vms/G
+
+    # 磁盘信息
+    data = psutil.disk_io_counters()
+    info[f"System/disk_read_Gbyte"] = data.read_bytes/G
+    info[f"System/disk_write_Gbyte"] = data.write_bytes/G
+
+    # 网络
+    data = psutil.net_io_counters()
+    info["System/net_sent_Gbyte"] = data.bytes_sent/G
+    info["System/net_recv_Gbyte"] = data.bytes_recv/G
+
+    return info
