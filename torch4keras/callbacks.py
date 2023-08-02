@@ -10,14 +10,19 @@ import copy
 import os
 from torch4keras.snippets import log_info, log_error, log_warn, send_email
 
+# 忽略nan的指标
+IGNORE_NAN_VALUES = os.environ.get('IGNORE_NAN_VALUES', False)
+
 # 不记录的metrics
 SKIP_METRICS = os.environ.get('SKIP_METRICS', {})
 SKIP_METRICS = eval(SKIP_METRICS) if isinstance(SKIP_METRICS, str) else SKIP_METRICS
 
-NO_SMOOTH_METRICS = os.environ.get('NO_SMOOTH_METRICS', {'lr'})  # 不能平滑的指标
+# 不能平滑的指标
+NO_SMOOTH_METRICS = os.environ.get('NO_SMOOTH_METRICS', {'lr'})
 NO_SMOOTH_METRICS = eval(NO_SMOOTH_METRICS) if isinstance(NO_SMOOTH_METRICS, str) else NO_SMOOTH_METRICS
 
-ROUND_PRECISION = int(os.environ.get('ROUND_PRECISION', 4))  # 指标的精度
+# 指标的精度
+ROUND_PRECISION = int(os.environ.get('ROUND_PRECISION', 4))
 _round_precision = eval(f"1e-{ROUND_PRECISION-1}")
 
 
@@ -209,6 +214,9 @@ class SmoothMetric:
         
         for k, v in logs.items():
             if k in SKIP_METRICS:
+                continue
+            elif IGNORE_NAN_VALUES and np.isnan(v):
+                log_error(f'Value `{k}` at {current} step is nan')
                 continue
             elif (k in NO_SMOOTH_METRICS) or (k in self.stateful_metrics):
                 self._values[k] = [v, 1]
@@ -846,6 +854,12 @@ class Evaluator(Checkpoint):
         perf = perf if isinstance(perf, dict) else {'perf': perf}
         logs.update(perf)  # 评估的指标后续可能会用到
         
+        # 不存在
+        if perf.get(self.monitor) is None:
+            warnings.warn('Evaluator callback conditioned on metric `%s` which is not available. Available metrics are: %s' %
+                (self.monitor, ','.join(list(logs.keys()))), RuntimeWarning)
+            return
+
         # 满足条件
         if ((self.mode == 'max') and (perf[self.monitor] >= self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] <= self.best_perf)):
             self.best_perf = perf[self.monitor]
@@ -937,7 +951,8 @@ class Tensorboard(Callback):
         self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        self.process(epoch+1, logs, self.prefix_epoch)
+        if hasattr(self.trainer, 'epochs') and self.trainer.epochs > 1:
+            self.process(epoch+1, logs, self.prefix_epoch)
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if (global_step+1) % self.interval == 0:
@@ -1001,8 +1016,9 @@ class WandbCallback(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self._wandb is None:
             return
-        self.define_metric('epoch', logs)  # TODO: 这里仅记录了epoch中不在step中记录的部分，如evaluate得到的结果
-        self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
+        if hasattr(self.trainer, 'epochs') and self.trainer.epochs > 1:
+            self.define_metric('epoch', logs)
+            self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if self._wandb is None:
