@@ -921,17 +921,15 @@ class Tensorboard(Callback):
     若每隔一定steps对验证集评估，则Tensorboard的interval设置成和Evaluater一致或者约数，保证Tensorboard能记录到
 
     :param log_dir: str, tensorboard文件的保存路径
-    :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     '''
-    def __init__(self, log_dir, method='step', interval=100, prefix='train', **kwargs):
+    def __init__(self, log_dir, interval=100, prefix='train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
-        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.log_dir = log_dir
-        self.method = method
         self.interval = interval
-        self.prefix = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
+        self.prefix_step = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
+        self.prefix_epoch = prefix+'_epoch/' if len(prefix.strip()) > 0 else 'epoch/'  # 控制默认的前缀，用于区分栏目
 
     def on_train_begin(self, logs=None):
         from tensorboardX import SummaryWriter
@@ -939,19 +937,18 @@ class Tensorboard(Callback):
         self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
 
     def on_epoch_end(self, global_step, epoch, logs=None):
-        if self.method == 'epoch':
-            self.process(epoch+1, logs)
+        self.process(epoch+1, logs, self.prefix_epoch)
 
     def on_batch_end(self, global_step, local_step, logs=None):
-        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
-            self.process(global_step+1, logs)
+        if (global_step+1) % self.interval == 0:
+            self.process(global_step+1, logs, self.prefix_step)
 
-    def process(self, iteration, logs):
+    def process(self, iteration, logs, prefix):
         logs = logs or {}
         for k, v in logs.items():
             if k in SKIP_METRICS:
                 continue
-            index = k if '/' in k else f"{self.prefix}{k}"
+            index = k if '/' in k else f"{prefix}{k}"
             self.writer.add_scalar(index, v, iteration)
 
 
@@ -967,7 +964,7 @@ class WandbCallback(Callback):
     :param project: str，wandb的project name, 默认为bert4torch
     :param 
     """
-    def __init__(self, method='step', project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
+    def __init__(self, project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
                  interval=100, save_code=False, config=None):
         try:
             import wandb
@@ -976,8 +973,6 @@ class WandbCallback(Callback):
             log_warn("WandbCallback requires wandb to be installed. Run `pip install wandb`.")
             self._wandb = None
 
-        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
-        self.method = method
         self._initialized = False
         # log outputs
         self.project = project
@@ -992,11 +987,11 @@ class WandbCallback(Callback):
         self.run_id = None
         self.metrics = set()
 
-    def define_metric(self, logs=None):
+    def define_metric(self, step_metric, logs=None):
         if getattr(self._wandb, "define_metric", None):
             for m in logs.keys():
                 if m not in self.metrics:
-                    self._wandb.define_metric(name=m, step_metric=self.method, hidden=True if m in SKIP_METRICS else False)
+                    self._wandb.define_metric(name=m, step_metric=step_metric, hidden=True if m in SKIP_METRICS else False)
                     self.metrics.add(m)
 
     def adjust_logs(self, logs, **kwargs):
@@ -1006,17 +1001,16 @@ class WandbCallback(Callback):
     def on_epoch_end(self, global_step, epoch, logs=None):
         if self._wandb is None:
             return
-        if self.method == 'epoch':
-            self.define_metric(logs)
-            self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
+        self.define_metric('epoch', logs)  # TODO: 这里仅记录了epoch中不在step中记录的部分，如evaluate得到的结果
+        self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
 
     def on_batch_end(self, global_step, local_step, logs=None):
         if self._wandb is None:
             return
         
-        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
-            self.define_metric(logs)
-            self._wandb.log(self.adjust_logs(logs, step=global_step))
+        if (global_step+1) % self.interval == 0:
+            self.define_metric('step', logs)
+            self._wandb.log(self.adjust_logs(logs, step=global_step+1))
         
     def on_train_begin(self, logs=None):
         if self._wandb is None:

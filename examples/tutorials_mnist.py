@@ -76,4 +76,4 @@ if __name__ == '__main__':
     email = EmailCallback(receivers='tongjilibo@163.com')  # 发送邮件
     wandb = WandbCallback(save_code=True)  # wandb
     hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, 
-                     callbacks=[Summary(), evaluator, logger, ts_board, ckpt, early_stop])
+                     callbacks=[Summary(), evaluator, logger, ts_board, wandb, ckpt, early_stop])
