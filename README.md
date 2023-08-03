@@ -65,6 +65,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - 简单示例: [turorials_mnist](https://github.com/Tongjilibo/torch4keras/blob/master/examples/turorials_mnist.py)
 
 ## 4. 版本说明
+- **v0.1.1**: 20230803 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION，默认对指标会进行平滑，修改tensorboard和wandb的callback, 允许跳过nan的指标, Tensorboard可以记录gpu等系统信息
 - **v0.1.0.post2**: 20230725 修复v0.1.0的bug，主要是进度条和log的标签平滑的问题
 - **v0.1.0**: 20230724 允许调整进度条的显示参数, 进度条和日志同步（如果进度条平滑了则日志也平滑）, 自动把tensor转到model.device上, 允许打印第一个batch来检查样本
 - **v0.0.9**：20230716 增加auto_set_cuda_devices自动选择显卡，增加log_info，log_warn, log_error等小函数
@@ -81,7 +82,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20230802**: 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION，默认对指标会进行平滑，修改tensorboard和wandb的callback, 允许跳过nan的指标, Tensorboard可以记录gpu等系统信息
+- **20230803**: 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION，默认对指标会进行平滑，修改tensorboard和wandb的callback, 允许跳过nan的指标, Tensorboard可以记录gpu等系统信息
 - **20230725**: 修复v0.1.0的bug，主要是进度条和log的标签平滑的问题
 - **20230724**: 允许调整进度条的显示参数, 进度条和日志同步（如果进度条平滑了则日志也平滑）, 自动把tensor转到model.device上, 允许打印第一个batch来检查样本
 - **20230716**：增加auto_set_cuda_devices自动选择显卡，增加log_info，log_warn, log_error等小函数
