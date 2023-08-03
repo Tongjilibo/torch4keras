@@ -8,7 +8,7 @@ from collections import deque
 import json
 import copy
 import os
-from torch4keras.snippets import log_info, log_error, log_warn, send_email, watch_process_state, watch_gpu_state
+from torch4keras.snippets import log_info, log_error, log_warn, send_email
 
 # 忽略nan的指标
 IGNORE_NAN_VALUES = os.environ.get('IGNORE_NAN_VALUES', False)
@@ -937,15 +937,13 @@ class Tensorboard(Callback):
     :param log_dir: str, tensorboard文件的保存路径
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
-    :param log_system: bool, 是否记录gpu, cpu, 内存等系统信息
     '''
-    def __init__(self, log_dir, interval=100, prefix='Train', log_system=False, **kwargs):
+    def __init__(self, log_dir, interval=100, prefix='Train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         self.log_dir = log_dir
         self.interval = interval
         self.prefix_step = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
         self.prefix_epoch = prefix+'_epoch/' if len(prefix.strip()) > 0 else 'Epoch/'  # 控制默认的前缀，用于区分栏目
-        self.log_system = log_system
 
     def on_train_begin(self, logs=None):
         from tensorboardX import SummaryWriter
@@ -959,9 +957,6 @@ class Tensorboard(Callback):
     def on_batch_end(self, global_step, local_step, logs=None):
         if (global_step+1) % self.interval == 0:
             self.process(global_step+1, logs, self.prefix_step)
-            if self.log_system:
-                self.process(global_step+1, watch_process_state(), self.prefix_step)
-                self.process(global_step+1, watch_gpu_state(), self.prefix_step)
 
     def process(self, iteration, logs, prefix):
         logs = logs or {}
@@ -976,7 +971,6 @@ class WandbCallback(Callback):
     """从transformers迁移过来
     A :class:`~transformers.TrainerCallback` that sends the logs to `Weight and Biases <https://www.wandb.com/>`__.
 
-    :param method: str, 控制是按照epoch还是step来log，默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, log的的step间隔
     :param watch (:obj:`str`, `optional` defaults to :obj:`"gradients"`):
         Can be :obj:`"gradients"`, :obj:`"all"` or :obj:`"false"`. Set to :obj:`"false"` to disable gradient

@@ -450,63 +450,81 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
     return topk_idx_str
 
 
-def watch_gpu_state(gpu_id_list=None):
-    '''监控gpu的抓过你太'''
-    import pynvml
-    pynvml.nvmlInit()
-    tesorboard_info_list = []
-    if gpu_id_list is None:
-        deviceCount = pynvml.nvmlDeviceGetCount()
-        device_list = [i for i in range(deviceCount)]
-    else:
-        device_list = gpu_id_list
-    G = 1024*1024*1024
-
-    gpu_info = {}
-    tesorboard_info_list = []
-    for i in device_list:
-        tesorboard_info = {}
-        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-        tesorboard_info['gpu_name'] = pynvml.nvmlDeviceGetName(handle)
-        meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        tesorboard_info['gpu_mem_used'] = meminfo.used/G
-        UTIL = pynvml.nvmlDeviceGetUtilizationRates(handle)
-        tesorboard_info['gpu_gpu_util'] = UTIL.gpu
-        tesorboard_info['gpu_mem_util'] = UTIL.memory
-        tesorboard_info_list.append(copy.deepcopy(tesorboard_info))
-    for tesorboard_info,i in zip(tesorboard_info_list, device_list):
-        gpu_info[f'System/gpu{i}_mem_used_Gbyte'] = tesorboard_info['gpu_mem_used']
-        gpu_info[f'System/gpu{i}_gpu_util'] = tesorboard_info['gpu_gpu_util']
-        gpu_info[f'System/gpu{i}_mem_util'] = tesorboard_info['gpu_mem_util']
-    pynvml.nvmlShutdown()
-    return gpu_info
-
-
-def watch_process_state(pid=None):
-    ''' 查看进程相关信息 '''
+def watch_system_state(log_dir, gpu_id_list=None, pid=None):
+    '''监控system的状态
+    
+    :param log_dir: str, tensorboard的地址
+    :param gpu_id_list: List[int], 监控的gpu
+    :param pid: int, 监控的进程号
+    '''
     import psutil
-    p = psutil.Process(pid or os.getpid())
+    import pynvml
+    from tensorboardX import SummaryWriter
+
+    pynvml.nvmlInit()
+    os.makedirs(log_dir, exist_ok=True)
+    tb_writer = SummaryWriter(log_dir=str(log_dir))  # prepare summary writer
+
+    pre_time_int = int(time.time())
+    pre_time = time.time()
+    pid = None or os.getpid()
+    p = psutil.Process(pid)
     G = 1024*1024*1024
 
-    info = {}
-    # CPU
-    info[f"System/cpu_percent"] = p.cpu_percent(interval=0.5)
+    pre_read = p.io_counters().read_bytes
+    pre_write = p.io_counters().write_bytes
+    time_str_init = int(time.time())
 
-    # 内存
-    data = psutil.virtual_memory()
-    info["System/mem_used_Gbyte"] = (data.total - data.available)/G
-    info["System/mem_percent"] = data.percent
-    info[f"System/RSS_Gbyte"] = p.memory_info().rss/G
-    info[f"System/VMS_Gbyte"] = p.memory_info().vms/G
+    log_info("Watching System Info")
+    while True:
+        time.sleep(1)
+        now_time = time.time()
+        time_str = int(now_time) - time_str_init
+        p = psutil.Process(pid)
 
-    # 磁盘信息
-    data = psutil.disk_io_counters()
-    info[f"System/disk_read_Gbyte"] = data.read_bytes/G
-    info[f"System/disk_write_Gbyte"] = data.write_bytes/G
+        # CPU使用情况
+        tb_writer.add_scalar(f"CPU_pid_{pid}/cpu_percent", p.cpu_percent(interval=0.5), time_str)
 
-    # 网络
-    data = psutil.net_io_counters()
-    info["System/net_sent_Gbyte"] = data.bytes_sent/G
-    info["System/net_recv_Gbyte"] = data.bytes_recv/G
+        # 内存使用情况
+        tb_writer.add_scalar(f"Memory_pid_{pid}/memory_percent", p.memory_percent(), time_str)
+        tb_writer.add_scalar(f"Memory_pid_{pid}/RSS G_byte", p.memory_info().rss/G, time_str)
+        tb_writer.add_scalar(f"Memory_pid_{pid}/VMS G_byte", p.memory_info().vms/G, time_str)
 
-    return info
+        # 进程IO信息
+        data = p.io_counters()
+        tb_writer.add_scalar(f"IO_pid_{pid}/read M_byte", data.read_bytes/1024, time_str)
+        tb_writer.add_scalar(f"IO_pid_{pid}/write M_byte", data.write_bytes/1024, time_str)
+        if (time_str - pre_time_int)%5 == 0:
+            tb_writer.add_scalar(f"IO_pid_{pid}/readRate M_byte_s", (data.read_bytes - pre_read)/(now_time-pre_time)/1024, time_str)
+            tb_writer.add_scalar(f"IO_pid_{pid}/writeRate M_byte_s", (data.write_bytes - pre_write)/(now_time-pre_time)/1024, time_str)
+            pre_read = data.read_bytes
+            pre_write = data.write_bytes
+            pre_time = now_time
+
+        tesorboard_info_list = []
+        if gpu_id_list is None:
+            deviceCount = pynvml.nvmlDeviceGetCount()
+            device_list = [i for i in range(deviceCount)]
+        else:
+            device_list = gpu_id_list
+
+        tesorboard_info_list = []
+        for i in device_list:
+            tesorboard_info = {}
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            tesorboard_info['gpu_name'] = pynvml.nvmlDeviceGetName(handle)
+            meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            tesorboard_info['gpu_mem_used'] = meminfo.used/G
+            UTIL = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            tesorboard_info['gpu_gpu_util'] = UTIL.gpu
+            tesorboard_info['gpu_mem_util'] = UTIL.memory
+            tesorboard_info_list.append(copy.deepcopy(tesorboard_info))
+        for tesorboard_info,i in zip(tesorboard_info_list, device_list):
+            tb_writer.add_scalar(f'GPU{i}/gpu_mem_used unit_G', tesorboard_info['gpu_mem_used'], time_str)
+            tb_writer.add_scalar(f'GPU{i}/gpu_gpu_util', tesorboard_info['gpu_gpu_util'], time_str)
+            tb_writer.add_scalar(f'GPU{i}/gpu_mem_util', tesorboard_info['gpu_mem_util'], time_str)
+
+    tb_writer.close()
+    pynvml.nvmlShutdown()
+
+    return
