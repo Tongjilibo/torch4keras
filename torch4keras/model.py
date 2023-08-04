@@ -646,7 +646,7 @@ class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
     def __init__(self, module, config_path):
         super().__init__(module)
-        self.model = add_trainer(module)
+        self.model = module
         self.config = DottableDict(json.load(open(config_path)))
         self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印，防止进度条打印问题
 
@@ -696,10 +696,6 @@ class DeepSpeedTrainer(Trainer):
     
     def step(self):
         self.deepspeed_engine.step()
-
-    @torch.inference_mode()
-    def predict(self, *inputs, **input_kwargs):
-        return self.deepspeed_engine.module.predict(*inputs, **input_kwargs)
 
     def resume_from_checkpoint(self, *args, **kwargs):
         return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
