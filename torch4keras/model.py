@@ -682,7 +682,9 @@ class DeepSpeedTrainer(Trainer):
         }
         if self.config.get('zero_optimization', {}).get('offload_optimizer', {}).get('device') == 'cpu':
             kwargs.pop('optimizer')
-            log_warn('You may not use custom optimizer when offload_optimizer=`cpu`')
+            if self.optimizer is not None:
+                self.optimizer = None
+                log_warn('You may not use custom optimizer when offload_optimizer=`cpu`')
         self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
         self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
 
