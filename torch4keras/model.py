@@ -115,6 +115,7 @@ class Trainer:
 
     @device.setter
     def device(self, value):
+        """允许修改self.device"""
         self._device = value
         
     def _move_to_model_device(self, inputs, **input_kwargs):
