@@ -83,6 +83,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
+- **20230820**: 增加trainer.py文件
 - **20230812**: 修复DeepSpeedTrainer，修复DDP
 - **20230803**: 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION，默认对指标会进行平滑，修改tensorboard和wandb的callback, 允许跳过nan的指标, Tensorboard可以记录gpu等系统信息
 - **20230725**: 修复v0.1.0的bug，主要是进度条和log的标签平滑的问题
