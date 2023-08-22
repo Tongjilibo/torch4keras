@@ -545,7 +545,9 @@ class Trainer:
 
 
 class TrainerDP(nn.DataParallel, Trainer):
-    '''DataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
+    '''DataParallel模式使用多gpu的方法, 
+    1) 父类顺序颠倒也会出问题
+    2) 使用方式和nn.DataParallel一致，TrainerDP(net, *args, **kwargs)来使用
     '''
     def __init__(self, *args, **kwargs):
         Trainer.__init__(self)
@@ -553,7 +555,9 @@ class TrainerDP(nn.DataParallel, Trainer):
 
 
 class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
-    '''DistributedDataParallel模式使用多gpu的方法, 父类顺序颠倒也会出问题
+    '''DistributedDataParallel模式使用多gpu的方法,
+    1) 父类顺序颠倒也会出问题
+    2) 使用方式和DistributedDataParallel一致，TrainerDDP(net, *args, **kwargs)来使用
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
         Trainer.__init__(self)
