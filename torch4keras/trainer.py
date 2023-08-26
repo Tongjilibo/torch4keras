@@ -328,8 +328,8 @@ class Trainer:
             for local_step in range(resume_step, self.steps_per_epoch):
                 self.local_step = local_step
                 self.global_step = self.epoch * self.steps_per_epoch + self.local_step
-                logs = self._log_init()
-                self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
+                self.logs = self._log_init()
+                self.callbacks.on_batch_begin(self.global_step, self.local_step, self.logs)
 
                 # forward和backward
                 self.unwrap_model().train()  # 设置为train模式
@@ -348,7 +348,7 @@ class Trainer:
                 self.step()
 
                 # 添加loss至log打印
-                logs.update(dict({'loss': tr_loss}, **tr_loss_detail))
+                self.logs.update(dict({'loss': tr_loss}, **tr_loss_detail))
                 if self.verbose and (self.global_step == resume_step):
                     progbarlogger.add_metrics(list(tr_loss_detail.keys()), add_position=1)
                     
@@ -359,17 +359,17 @@ class Trainer:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.verbose and (self.global_step == resume_step):
                                 progbarlogger.add_metrics(list(perf.keys()))
-                            logs.update(perf)
+                            self.logs.update(perf)
                         elif isinstance(metric, str):  # 直接传入回调函数(有key)
-                            logs[metric] = perf
+                            self.logs[metric] = perf
 
-                self.callbacks.on_batch_end(self.global_step, self.local_step, logs)
+                self.callbacks.on_batch_end(self.global_step, self.local_step, self.logs)
 
-            self.callbacks.on_epoch_end(self.global_step, self.epoch, logs)
+            self.callbacks.on_epoch_end(self.global_step, self.epoch, self.logs)
             # TerminateOnNaN、EarlyStopping等停止训练策略
             if callback_trainer.stop_training:
                 break
-        self.callbacks.on_train_end(logs)
+        self.callbacks.on_train_end(self.logs)
         return history
 
     def _log_init(self):
