@@ -118,28 +118,26 @@ class Trainer:
         """允许修改self.device"""
         self._device = value
         
-    def _move_to_model_device(self, inputs, **input_kwargs):
+    def _move_to_model_device(self, inputs):
         '''遍历并转移到model.device上'''
-        def _to_device(tensor):
-            if isinstance(tensor, torch.Tensor) and hasattr(self, 'device') and (tensor.device != self.device):
-                return tensor.to(self.device)
-            else:
-                return tensor
-
         if self.move_to_model_device:
-            if isinstance(inputs, torch.Tensor):  # tensor不展开
-                inputs = _to_device(inputs)
+            if isinstance(inputs, torch.Tensor) and hasattr(self, 'device') and (inputs.device != self.device):
+                inputs = inputs.to(self.device)
             elif isinstance(inputs, (tuple, list)):
-                inputs = [_to_device(i) for i in inputs]
+                inputs = list(inputs) if isinstance(inputs, tuple) else inputs
+                for i, ts in enumerate(inputs):
+                    inputs[i] = self._move_to_model_device(ts)
+            elif isinstance(inputs, dict):
+                for k, v in inputs.items():
+                    inputs[k] = self._move_to_model_device(v)
             
-            input_kwargs = {k: _to_device(v) for k, v in input_kwargs.items()}
-        return inputs, input_kwargs
+        return inputs
 
-    def _log_first_step(self, resume_step):
+    def _log_first_step(self, resume_step, train_X):
         '''打印第一个step的数据'''
         if self.log_first_step and self.verbose and (self.global_step == resume_step):
-            print(colorful('[Train_data]: ', color='green'), + self.train_X)
-            print(colorful('[Label]: ', color='green'), + self.train_X)
+            print(colorful('[Train_data]: ', color='green'), + train_X)
+            print(colorful('[Label]: ', color='green'), + train_X)
 
     def _forward(self, *inputs, **input_kwargs):
         '''调用模型的forward
@@ -147,7 +145,6 @@ class Trainer:
         '''
         if (len(inputs)==1) and isinstance(inputs[0], (tuple,list)):  # 防止([])嵌套
             inputs = inputs[0]
-        inputs, input_kwargs = self._move_to_model_device(inputs, **input_kwargs)
         
         if isinstance(inputs, torch.Tensor):  # tensor不展开
             return self.unwrap_model().forward(inputs, **input_kwargs)
@@ -158,16 +155,14 @@ class Trainer:
 
     def train_step(self, train_X, train_y):
         ''' Perform a training step on a batch of inputs. '''
-        self.train_y, _ = self._move_to_model_device(train_y)  # TODO: train_y可否是dict
-
         # 计算loss
         if self.mixed_precision:
             with self.autocast(dtype=torch.float16 if self.mixed_precision=='fp16' else torch.bfloat16):
                 output = self._forward(train_X)
-                loss_detail = self.criterion(output, self.train_y)
+                loss_detail = self.criterion(output, train_y)
         else:
             output = self._forward(train_X)
-            loss_detail = self.criterion(output, self.train_y)
+            loss_detail = self.criterion(output, train_y)
 
         # 整理loss
         if isinstance(loss_detail, torch.Tensor):
@@ -298,6 +293,8 @@ class Trainer:
             self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
             self.batch_step = 0
             batch = next(self.train_dataloader_iter)
+
+        batch = self._move_to_model_device(batch)
         return batch
 
     def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
@@ -338,12 +335,12 @@ class Trainer:
                 self.unwrap_model().train()  # 设置为train模式
                 tr_loss, tr_loss_detail = 0, {}
                 for _ in range(self.grad_accumulation_steps):
-                    self.train_X, self.train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
-                    self._log_first_step(resume_step)  # log第一个step
-                    self.output, self.loss, self.loss_detail = self.train_step(self.train_X, self.train_y)
+                    train_X, train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
+                    self._log_first_step(resume_step, train_X)  # log第一个step
+                    output, loss, loss_detail = self.train_step(train_X, train_y)
                     self.callbacks.on_train_step_end()
-                    tr_loss += self.loss.item()
-                    for k, v in self.loss_detail.items():
+                    tr_loss += loss.item()
+                    for k, v in loss_detail.items():
                         tr_loss_detail[k] = tr_loss_detail.get(k, 0) + v
                 # TODO: 理论上梯度累积时需对output和train_y进行合并，主要是为了metric_mapping计算的准确
                 
@@ -357,7 +354,7 @@ class Trainer:
                     
                 # 添加metrics至log打印
                 for metric, func in self.metrics.items():
-                    perf = metric_mapping(metric, func, self.output, self.train_y)  # 内置的一些accuracy指标
+                    perf = metric_mapping(metric, func, output, train_y)  # 内置的一些accuracy指标
                     if perf is not None:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.verbose and (self.global_step == resume_step):
@@ -391,6 +388,8 @@ class Trainer:
     def predict(self, *inputs, **input_kwargs):
         '''模型预测，调用forward()'''
         self.unwrap_model().eval()
+        inputs = self._move_to_model_device(inputs)
+        input_kwargs = self._move_to_model_device(input_kwargs)
         return self._forward(*inputs, **input_kwargs)
         
     def load_steps_params(self, save_path):
