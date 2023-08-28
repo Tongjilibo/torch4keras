@@ -25,6 +25,9 @@ class Trainer:
         self.retain_graph = False  # loss.backward()是否保留计算图
         self.move_to_model_device = False  # 自动把tensor转到model所在的device
         self.log_first_step = False  # 是否打印第一个step的数据
+        self.criterion = None  # criterion
+        self.optimizer = None
+        self.scheduler = None
         self.callbacks = []
         # 传入Module实例方式
         if module is not None:
@@ -33,7 +36,7 @@ class Trainer:
         # 是否运行Callbacks，目前主要是在DDP模式下运用
         self.run_callbacks = True
 
-    def compile(self, loss, optimizer, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
+    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 grad_accumulation_steps=1, progbar_config=None, smooth_metrics_config=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
@@ -55,9 +58,9 @@ class Trainer:
 
         :return: None
         '''
-        self.criterion = loss
-        self.optimizer = optimizer
-        self.scheduler = scheduler
+        self.criterion = loss or self.criterion
+        self.optimizer = optimizer or self.optimizer
+        self.scheduler = scheduler or self.scheduler
         self.clip_grad_norm = clip_grad_norm
         assert mixed_precision in {True, False, 'fp16', 'bf16'}
         self.mixed_precision = 'fp16' if mixed_precision is True else mixed_precision

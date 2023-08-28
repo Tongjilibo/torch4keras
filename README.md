@@ -65,7 +65,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - 简单示例: [turorials_mnist](https://github.com/Tongjilibo/torch4keras/blob/master/examples/turorials_mnist.py)
 
 ## 4. 版本说明
-- **v0.1.3**: 20230828 interval不一致给warning, 去除部分self.vars, 调整move_to_model_device逻辑，方便下游集成
+- **v0.1.3**: 20230828 compile()可不传参，interval不一致给warning, 去除部分self.vars, 调整move_to_model_device逻辑，方便下游集成
 - **v0.1.2.post2**: 20230821 代码结构调整，增加trainer.py文件，方便下游集成
 - **v0.1.2**: 20230812 修复DeepSpeedTrainer，修复DDP
 - **v0.1.1**: 20230803 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION，默认对指标会进行平滑，修改tensorboard和wandb的callback, 允许跳过nan的指标, Tensorboard可以记录gpu等系统信息
@@ -85,7 +85,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20230828**: interval不一致给warning, 去除部分self.vars, 调整move_to_model_device逻辑，方便下游集成
+- **20230828**: compile()可不传参，interval不一致给warning, 去除部分self.vars, 调整move_to_model_device逻辑，方便下游集成
 - **20230821**: 代码结构调整，增加trainer.py文件，方便下游集成
 - **20230812**: 修复DeepSpeedTrainer，修复DDP
 - **20230803**: 增加指标平滑的SmoothMetricCallback，统一管理指标平滑的问题, 增加SKIP_METRICS，NO_SMOOTH_METRICS，ROUND_PRECISION，默认对指标会进行平滑，修改tensorboard和wandb的callback, 允许跳过nan的指标, Tensorboard可以记录gpu等系统信息
