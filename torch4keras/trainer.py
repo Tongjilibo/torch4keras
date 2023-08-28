@@ -49,7 +49,7 @@ class Trainer:
             bar: str, 默认为keras
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             width: int, keras进度条下表示进度条的长度
-        :param smooth_metrics_config: 指标平滑的配置，默认为None表示采取默认平滑设置
+        :param smooth_metrics_config: 指标平滑的配置，默认为None表示采取默认平滑设置；传入False表示不使用平滑
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
             interval: int, 表示指标平滑时候的累计步数，默认为100
 
@@ -262,9 +262,17 @@ class Trainer:
         # 指标平滑
         if self.smooth_metrics_config is not None:
             if any([isinstance(i, SmoothMetricsCallback) for i in callbacks]):
+                # 用户自定的callbacks中包含了SmoothMetricsCallback
                 log_warn(f'SmoothMetricsCallback already in use and args `smooth_metrics_config` will be ignored')
             else:
                 callbacks_.append(SmoothMetricsCallback(**self.smooth_metrics_config))
+
+            # 检查指标平滑的设置和后续callback的设置的interval是不是一致
+            smooth_callback = [callback for callback in callbacks_+callbacks if isinstance(callback, SmoothMetricsCallback)][0]
+            for callback in callbacks_+callbacks:
+                if hasattr(callback, 'interval') and (callback != smooth_callback) and (callback.interval is not None) and \
+                    (callback.interval != smooth_callback.interval):
+                    log_warn(f'{type(callback).__name__}.interval={callback.interval} while SmoothMetricsCallback.interval={smooth_callback.interval}')
 
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
