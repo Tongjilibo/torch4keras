@@ -288,8 +288,6 @@ class Trainer:
             'metrics': [i for i in self.metrics.keys() if isinstance(i, str)],
         }
         self.callbacks.set_all(trainer=callback_trainer, model=callback_model, optimizer=self.optimizer, scheduler=self.scheduler, params=params)
-        logs = {}
-        self.callbacks.on_train_begin(logs)
         callback_trainer.stop_training = False  # 在EarlyStopping中会重新设置
         return history, callback_trainer, progbarlogger
 
@@ -301,6 +299,10 @@ class Trainer:
             self.batch_step += 1
         except StopIteration:
             self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成self.train_dataloader的情况，如预训练
+            # DDP训练时候未避免每个epoch样本一致，修改随机种子
+            if isinstance(self.train_dataloader.sampler, torch.utils.data.distributed.DistributedSampler) and \
+                hasattr(self.train_dataloader.sampler, 'set_epoch'):
+                self.train_dataloader.sampler.set_epoch(self.epoch)
             self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
             self.batch_step = 0
             batch = next(self.train_dataloader_iter)
@@ -328,6 +330,7 @@ class Trainer:
         # global_step: 当前全局训练步数
         #  local_step: 当前epoch内的训练步数，不同epoch中相同local_step对应的batch数据不一定相同，在steps_per_epoch=None时相同
         #  batch_step: 在dataloader中的index，不同epoch中相同的bti对应的batch数据一般相同，除非重新生成dataloader
+        self.callbacks.on_train_begin()
         for epoch in range(self.resume_epoch, epochs):
             self.epoch = epoch
             # resume_step：判断local_step的起点，以及进度条的起始位置
