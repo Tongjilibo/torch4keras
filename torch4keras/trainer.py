@@ -427,6 +427,11 @@ class Trainer:
         os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
 
+    def from_pretrained(self, load_path, strict=True):
+        '''按照pretrained的格式来加载权重
+        '''
+        self.load_weights(load_path, strict, 'pretrained')
+
     def load_weights(self, load_path, strict=True, mapping={}):
         '''加载模型权重, 支持加载权重文件list
 
@@ -457,6 +462,11 @@ class Trainer:
                 k = mapping.get(k, k)
                 state_dict_raw[k] = v
             self.unwrap_model().load_state_dict(state_dict_raw, strict=strict)
+
+    def save_pretrained(self, save_path, trainable_only=False, verbose=1):
+        '''按照pretrained的格式来保存权重
+        '''
+        self.save_weights(save_path, 'pretrained', trainable_only, verbose)
 
     def save_weights(self, save_path, mapping={}, trainable_only=False, verbose=1):
         '''保存模型权重
