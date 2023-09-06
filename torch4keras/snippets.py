@@ -10,6 +10,7 @@ import os
 import random
 import traceback
 import copy
+import functools
 
 try:
     from sklearn.metrics import roc_auc_score
@@ -325,6 +326,7 @@ info_level_prefix = log_level
 
 
 def log_info(string, verbose=1):
+    '''[INFO]: message, 绿色前缀'''
     res = colorful('[INFO]', color='green') + ' ' + string.strip()
     if verbose != 0:
         print(res)
@@ -332,6 +334,7 @@ def log_info(string, verbose=1):
 
 
 def log_warn(string, verbose=1):
+    '''[WARNING]: message, 黄色前缀'''
     res = colorful('[WARNING]', color='yellow') + ' ' + string.strip()
     if verbose != 0:
         print(res)
@@ -339,10 +342,17 @@ def log_warn(string, verbose=1):
 
 
 def log_error(string, verbose=1):
+    '''[ERROR]: message, 红色前缀'''
     res = colorful('[ERROR]', color='red') + ' ' + string.strip()
     if verbose != 0:
         print(res)
     return res
+
+
+@functools.lru_cache(None)
+def log_warn_once(string, verbose=1):
+    ''' 单次warning '''
+    return log_warn(string, verbose)
 
 
 def print_trainable_parameters(module):
