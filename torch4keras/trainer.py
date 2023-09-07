@@ -23,7 +23,7 @@ class Trainer:
         self.global_step, self.local_step, self.total_steps, self.batch_step, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
-        self.move_to_model_device = False  # 自动把tensor转到model所在的device
+        self.move_to_model_device = True  # 自动把tensor转到model所在的device
         self.log_first_step = False  # 是否打印第一个step的数据
         self.criterion = None  # criterion
         self.optimizer = None
@@ -105,6 +105,11 @@ class Trainer:
             self.smooth_metrics_config = smooth_metrics_config or {}
             self.smooth_metrics_config.update({k:v for k, v in kwargs.items() if k in ['stateful_metrics', 'interval', 'verbose']})  # 直接传参
 
+        # 其他参数设置
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
     def print_trainable_parameters(self):
         """打印可训练的参数量"""
         print_trainable_parameters(self.unwrap_model())
@@ -122,7 +127,7 @@ class Trainer:
         self._device = value
         
     def _move_to_model_device(self, inputs):
-        '''遍历并转移到model.device上'''
+        '''遍历并转移到model.device上（递归）'''
         if self.move_to_model_device:
             if isinstance(inputs, torch.Tensor) and hasattr(self, 'device') and (inputs.device != self.device):
                 inputs = inputs.to(self.device)
