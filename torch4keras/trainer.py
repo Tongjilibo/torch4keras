@@ -148,6 +148,12 @@ class Trainer:
             print(colorful('[Label]: ', color='green'), + train_X)
 
     def _forward(self, *inputs, **input_kwargs):
+        '''调用模型的forward，方便下游继承的时候可以自定义使用哪个模型的forward
+        '''
+        return self._argparse_forward(self.unwrap_model(), *inputs, **input_kwargs)
+
+    @staticmethod
+    def _argparse_forward(model, *inputs, **input_kwargs):
         '''调用模型的forward
         如果传入了网络结构module，则调用module的forward；如果是继承方式，则调用自身的forward
         '''
@@ -155,11 +161,11 @@ class Trainer:
             inputs = inputs[0]
         
         if isinstance(inputs, torch.Tensor):  # tensor不展开
-            return self.unwrap_model().forward(inputs, **input_kwargs)
+            return model.forward(inputs, **input_kwargs)
         elif isinstance(inputs, (tuple, list)):
-            return self.unwrap_model().forward(*inputs, **input_kwargs)
+            return model.forward(*inputs, **input_kwargs)
         else:
-            return self.unwrap_model().forward(inputs, **input_kwargs)
+            return model.forward(inputs, **input_kwargs)
 
     def train_step(self, train_X, train_y):
         ''' Perform a training step on a batch of inputs. '''
