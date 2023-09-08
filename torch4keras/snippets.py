@@ -397,6 +397,14 @@ class DottableDict(dict):
             self.__dict__ = self
         else:
             self.__dict__ = dict()
+KwargsConfig = DottableDict
+
+
+class JsonConfig:
+    '''读取配置文件并返回可.操作符的字典'''
+    def __new__(self, json_path, encoding='utf-8'):
+        import json
+        return DottableDict(json.load(open(json_path, "r", encoding=encoding)))
 
 
 def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
