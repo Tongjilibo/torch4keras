@@ -8,7 +8,8 @@ from collections import deque
 import json
 import copy
 import os
-from torch4keras.snippets import log_info, log_error, log_warn, send_email
+from torch4keras.snippets import log_info, log_error, log_warn, send_email, set_precision
+import math
 
 # 忽略nan的指标
 IGNORE_NAN_VALUES = os.environ.get('IGNORE_NAN_VALUES', False)
@@ -546,6 +547,39 @@ class History(Callback):
         self.epoch.append(epoch+1)  # 这里和keras相比+1了
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
+
+    def plot(self, ncols=4, subplot_size=(4,3), save_path:str=None, show=True, plot_text=True):
+        import matplotlib.pyplot as plt
+        import traceback
+
+        nrows = math.ceil(len(self.history) / ncols)
+        if nrows <= 1:
+            ncols = len(self.history)
+        figsize = (subplot_size[0]*ncols, subplot_size[1]*nrows)
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, sharey=False, squeeze=False, figsize=figsize)
+        for i, fea in enumerate(self.history):
+            try:
+                ax = axes[int(i/ncols), i%ncols]
+                ax.plot(self.epoch, self.history[fea], 'bo--', clip_on=False)
+                ax.set_title(fea)
+                ax.set_xlabel('epoch')
+                ax.set_ylabel(fea)
+                if plot_text:
+                    for x, y in zip(self.epoch, self.history[fea]):
+                        ax.text(x, y, f'{set_precision(y)}', ha='center', va='bottom', color='red')
+            except:
+                log_error(f'Plot `{fea}` error: ' + traceback.format_exc())
+        plt.tight_layout()
+
+        if save_path:
+            # 保存文件
+            save_dir = '/'.join(save_path.split('/')[:-1])
+            save_file = save_path.split('/')[-1].split('.')[0] + '.jpg'
+            os.makedirs(save_dir, exist_ok=True)
+            plt.savefig(os.path.join(save_dir, save_file), dpi=100, bbox_inches='tight')
+        if show:
+            plt.show()
+            plt.close()
 
 
 class EarlyStopping(Callback):

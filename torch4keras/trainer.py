@@ -14,13 +14,14 @@ class Trainer:
 
     :param module: None/nn.Module，nn.Module()的模型实例
     """
-    def __init__(self, module=None):
+    def __init__(self, module:nn.Module=None):
         super(Trainer, self).__init__()
         self.initialize(module)
     
-    def initialize(self, module=None):
+    def initialize(self, module:nn.Module=None):
         # 这里主要是为了外面调用用到
-        self.global_step, self.local_step, self.total_steps, self.batch_step, self.epoch, self.steps_per_epoch, self.train_dataloader = 0, 0, 0, 0, 0, None, None
+        self.global_step, self.local_step, self.total_steps, self.batch_step = 0, 0, 0, 0
+        self.epoch, self.steps_per_epoch, self.train_dataloader = 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
         self.move_to_model_device = True  # 自动把tensor转到model所在的device
@@ -42,7 +43,7 @@ class Trainer:
         
         :param loss: loss
         :param optimizer: 优化器
-        :param scheduler: scheduler
+        :param scheduler: lr_scheduler
         :param clip_grad_norm: bool, 是否使用梯度裁剪, 默认为False
         :param mixed_precision: bool, 是否使用混合精度，默认为False
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
@@ -58,10 +59,13 @@ class Trainer:
 
         :return: None
         '''
-        self.criterion = loss or self.criterion
-        self.optimizer = optimizer or self.optimizer
-        self.scheduler = scheduler or self.scheduler
-        self.clip_grad_norm = clip_grad_norm
+        self.criterion = loss or self.criterion  # loss
+        self.optimizer = optimizer or self.optimizer  # 优化器
+        self.scheduler = scheduler or self.scheduler  # lr_scheduler
+        self.clip_grad_norm = clip_grad_norm  # 梯度裁剪
+        self.grad_accumulation_steps = grad_accumulation_steps  # 梯度累积
+
+        # 混合精度
         assert mixed_precision in {True, False, 'fp16', 'bf16'}
         self.mixed_precision = 'fp16' if mixed_precision is True else mixed_precision
         if self.mixed_precision:
@@ -74,7 +78,6 @@ class Trainer:
             metrics = []
         elif isinstance(metrics, (str, dict)) or isfunction(metrics):
             metrics = [metrics]
-
         for metric in metrics:
             # 字符类型，目前仅支持accuracy
             if isinstance(metric, str) and metric != 'loss':
@@ -87,9 +90,6 @@ class Trainer:
                 self.metrics.update({metric: metric})
             else:
                 raise ValueError('Args metrics only support `String, Dict, Callback, List[String, Dict, Callback]` format')
-
-        # 梯度累积
-        self.grad_accumulation_steps = grad_accumulation_steps
 
         # 进度条参数
         self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
@@ -138,14 +138,13 @@ class Trainer:
             elif isinstance(inputs, dict):
                 for k, v in inputs.items():
                     inputs[k] = self._move_to_model_device(v)
-            
         return inputs
 
-    def _log_first_step(self, resume_step, train_X):
+    def _log_first_step(self, resume_step, train_X, train_y):
         '''打印第一个step的数据'''
         if self.log_first_step and self.verbose and (self.global_step == resume_step):
             print(colorful('[Train_data]: ', color='green'), + train_X)
-            print(colorful('[Label]: ', color='green'), + train_X)
+            print(colorful('[Label]: ', color='green'), + train_y)
 
     def _forward(self, *inputs, **input_kwargs):
         '''调用模型的forward，方便下游继承的时候可以自定义使用哪个模型的forward
@@ -310,7 +309,7 @@ class Trainer:
             self.batch_step += 1
         except StopIteration:
             self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成self.train_dataloader的情况，如预训练
-            # DDP训练时候未避免每个epoch样本一致，修改随机种子
+            # DDP训练时候为了避免每个epoch样本一致，修改随机种子
             if isinstance(self.train_dataloader.sampler, torch.utils.data.distributed.DistributedSampler) and \
                 hasattr(self.train_dataloader.sampler, 'set_epoch'):
                 self.train_dataloader.sampler.set_epoch(self.epoch)
@@ -329,7 +328,7 @@ class Trainer:
         :param epochs: int, 训练的轮次, 默认为1
         :param callbacks: Callback/List[Callback], 回调函数，可调用预制的Callback或者自定义，默认为None 
         :param verbose: int, 是否打印，默认为1表示打印
-        :return: None
+        :return: History
         '''
         # 输入处理
         self._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
@@ -361,7 +360,7 @@ class Trainer:
                 tr_loss, tr_loss_detail = 0, {}
                 for _ in range(self.grad_accumulation_steps):
                     train_X, train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
-                    self._log_first_step(resume_step, train_X)  # log第一个step
+                    self._log_first_step(resume_step, train_X, train_y)  # log第一个step
                     output, loss, loss_detail = self.train_step(train_X, train_y)
                     self.callbacks.on_train_step_end()
                     tr_loss += loss.item()

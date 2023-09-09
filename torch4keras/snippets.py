@@ -355,6 +355,12 @@ def log_warn_once(string, verbose=1):
     return log_warn(string, verbose)
 
 
+@functools.lru_cache(None)
+def print_once(string):
+    '''单次打印'''
+    print(string)
+
+
 def print_trainable_parameters(module):
     """打印可训练的参数量"""
     trainable_params = 0
@@ -546,3 +552,18 @@ def watch_system_state(log_dir, gpu_id_list=None, pid=None):
     pynvml.nvmlShutdown()
 
     return
+
+
+def set_precision(num, dense_round=1):
+    '''设置数字的精度
+    '''
+    if np.isinf(num):
+        return num
+    if abs(num) >= 10:
+        return int(round(num))
+
+    precision = [1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
+    for len_, prec in enumerate(precision):
+        if abs(num) >= prec:
+            return round(num, len_ + dense_round)
+    return num
