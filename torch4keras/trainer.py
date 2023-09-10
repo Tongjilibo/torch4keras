@@ -685,7 +685,6 @@ def add_module(obj, include=None, exclude=None):
             continue
         if eval(f'isinstance(obj.unwrap_model().{k}, types.MethodType)'):
             exec(f'obj.{k} = obj.unwrap_model().{k}')
-            print(k)
 
 
 class AccelerateTrainer(Trainer):

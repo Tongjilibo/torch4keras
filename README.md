@@ -86,7 +86,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - **v0.0.1**：20221019 初始版本
 
 ## 5. 更新：
-- **20230910**: History增加plot()方法
+- **20230910**: History增加plot()方法, Trainer可以调用其中unwrap_model()的方法
 - **20230909**: 增加from_pretrained和save_pretrained方法，增加log_warn_once方法，compile()中可设置成员变量，默认move_to_model_device设置为True, 增加JsonConfig，增加_argparse_forward()方便下游继承改写Trainer
 - **20230901**: compile()可不传参，interval不一致报warning, 去除部分self.vars, 调整move_to_model_device逻辑，DDP每个epoch重新设置随机数，save_weights()和load_weights()可以按照`pretrained`格式
 - **20230821**: 代码结构调整，增加trainer.py文件，方便下游集成
