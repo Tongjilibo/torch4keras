@@ -10,10 +10,10 @@ import math
 
 
 class Trainer:
-    """Trainer, 传入Module实例
+    '''Trainer, 传入Module实例
 
     :param module: None/nn.Module，nn.Module()的模型实例
-    """
+    '''
     def __init__(self, module:nn.Module=None):
         super(Trainer, self).__init__()
         self.initialize(module)
@@ -36,7 +36,9 @@ class Trainer:
             self.module = module
         # 是否运行Callbacks，目前主要是在DDP模式下运用
         self.run_callbacks = True
-
+        # 增加nn.Module的成员方法
+        add_module(self)
+            
     def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 grad_accumulation_steps=1, progbar_config=None, smooth_metrics_config=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
@@ -111,21 +113,21 @@ class Trainer:
                 setattr(self, key, value)
 
     def print_trainable_parameters(self):
-        """打印可训练的参数量"""
+        '''打印可训练的参数量'''
         print_trainable_parameters(self.unwrap_model())
 
     @property
     def device(self) -> torch.device:
-        """获取model所在的device"""
+        '''获取model所在的device'''
         if hasattr(self, '_device'):
             return self._device
         return get_parameter_device(self.unwrap_model())
 
     @device.setter
     def device(self, value):
-        """允许修改self.device"""
+        '''允许修改self.device'''
         self._device = value
-        
+
     def _move_to_model_device(self, inputs):
         '''遍历并转移到model.device上（递归）'''
         if self.move_to_model_device:
@@ -625,8 +627,6 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
 def add_trainer(obj, include=None, exclude=None):
     '''为对象添加Triner对应的方法
     '''
-    include = include or []
-    exclude = exclude or []
     if isinstance(include, str):
         include = [include]
     if isinstance(exclude, str):
@@ -638,9 +638,9 @@ def add_trainer(obj, include=None, exclude=None):
     if isinstance(obj, nn.Module):
         import types
         for k in dir(Trainer):
-            if k in include:  # 必须包含的
-                pass
-            elif k in exclude:  # 必须屏蔽的
+            if (include is not None) and (k not in include):  # 必须包含的
+                continue
+            elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
                 continue
             elif k.startswith('__') and k.endswith('__'):
                 continue
@@ -655,6 +655,37 @@ def add_trainer(obj, include=None, exclude=None):
                 pass
         obj.initialize()
     return obj
+
+
+def add_module(obj, include=None, exclude=None):
+    '''为Trainer增加nn.Module的方法'''
+    import types
+    if isinstance(obj, nn.Module):
+        return
+    elif not isinstance(obj, Trainer):
+        log_warn('obj is not a Trainer obj')
+        return
+    elif not isinstance(obj.unwrap_model(), nn.Module):
+        log_warn('obj.unwrap_model() is not a nn.Module obj')
+        return
+    
+    if isinstance(include, str):
+        include = [include]
+    if isinstance(exclude, str):
+        exclude = [exclude]
+    
+    for k in dir(obj.unwrap_model()):
+        if (include is not None) and (k not in include):  # 必须包含的
+            continue
+        elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
+            continue
+        elif (k.startswith('__') and k.endswith('__')) or k.startswith('_'):
+            continue
+        elif hasattr(obj, k):  # 如果下游重新定义，则不继
+            continue
+        if eval(f'isinstance(obj.unwrap_model().{k}, types.MethodType)'):
+            exec(f'obj.{k} = obj.unwrap_model().{k}')
+            print(k)
 
 
 class AccelerateTrainer(Trainer):

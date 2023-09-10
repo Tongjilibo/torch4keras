@@ -44,8 +44,8 @@ def torch_div(input, other, rounding_mode=None):
 
 
 def softmax(x, axis=-1):
-    """numpy版softmax
-    """
+    '''numpy版softmax
+    '''
     x = x - x.max(axis=axis, keepdims=True)
     x = np.exp(x)
     return x / x.sum(axis=axis, keepdims=True)
@@ -217,7 +217,7 @@ def spend_time(func):
 
 
 def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_pwd=None, sender=None):
-    """ 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)
+    ''' 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)
 
     :param subject: str, 邮件主题
     :param msg: str, 邮件正文
@@ -226,7 +226,7 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
     :param mail_user: str, 发件人
     :param mail_pwd: str, smtp的第三方密码
     :param sender: str, 发件人邮箱
-    """
+    '''
     import smtplib
     from email.mime.text import MIMEText
 
@@ -255,14 +255,14 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
 
 
 def email_when_error(receivers, **configs):
-    """装饰器，异常则发邮件
+    '''装饰器，异常则发邮件
     Example:
     --------
     @email_when_error(receivers='tongjilibo@163.com')
     def test():
         return 1/0
     test()  # 调用
-    """
+    '''
     def actual_decorator(func):
         def new_func(*args, **kwargs):
             try:
@@ -362,7 +362,7 @@ def print_once(string):
 
 
 def print_trainable_parameters(module):
-    """打印可训练的参数量"""
+    '''打印可训练的参数量'''
     trainable_params = 0
     all_param = 0
     for _, param in module.named_parameters():
@@ -414,7 +414,7 @@ class JsonConfig:
 
 
 def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
-    """
+    '''
     这段代码是一个名为 auto_set_cuda_devices 的函数，它接受一个可选的整数参数 best_num。该函数用于自动设置环境变量 CUDA_VISIBLE_DEVICES，以便在多个 GPU 设备中选择最佳的 GPU 设备。
     首先，该函数检查环境变量 CUDA_VISIBLE_DEVICES 是否已经设置。如果已经设置，则发出警告并返回当前设置的值。
     如果 best_num 等于 -1，则将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
@@ -422,7 +422,7 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
     如果未指定 best_num，则从环境变量 LOCAL_WORLD_SIZE 中获取值。然后将其转换为整数。
     接下来，该函数解析 nvidia-smi 命令的输出，并计算每个 GPU 设备的得分。得分由 GPU 利用率和可用内存计算得出。
     最后，该函数选择得分最高的 best_num 个 GPU 设备，并将其索引作为字符串连接起来。然后将环境变量 CUDA_VISIBLE_DEVICES 设置为该字符串并返回。
-    """
+    '''
     import subprocess
 
     # 无需重复设置

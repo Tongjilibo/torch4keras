@@ -187,7 +187,7 @@ class Callback(object):
 
 
 def _process_stateful_metrics(stateful_metrics):
-    ''''''
+    '''对stateful_metrics进行处理'''
     if stateful_metrics is None:
         stateful_metrics_new = set()
     elif isinstance(stateful_metrics, str):
@@ -280,7 +280,7 @@ class SmoothMetricsCallback(Callback):
 
 
 class Progbar(object):
-    """进度条，直接从keras引入"""
+    '''进度条，直接从keras引入'''
     def __init__(self, target, width=30, verbose=1, time_interval=0.05, stateful_metrics=None):
         '''
         :param target: 进度条的step数量
@@ -300,7 +300,7 @@ class Progbar(object):
         self._last_update = 0
 
     def update(self, current, values=None):
-        """Updates the progress bar."""
+        '''Updates the progress bar.'''
         now = time.time()
         info = ' - %.0fs' % (now - self._start)
         if self.verbose == 1:
@@ -396,7 +396,7 @@ class Progbar(object):
 
 
 class KerasProgbar(Callback):
-    """ keras进度条 """
+    ''' keras进度条 '''
     def __init__(self, stateful_metrics=None, interval=None, width=30, **kwargs):
         super(KerasProgbar, self).__init__(**kwargs)
         self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
@@ -449,7 +449,7 @@ class KerasProgbar(Callback):
     
         
 class TqdmProgbar(KerasProgbar):
-    """ Tqdm进度条 """
+    ''' Tqdm进度条 '''
     def __init__(self, stateful_metrics=None, interval=None, width=None, **kwargs):
         super().__init__(stateful_metrics, interval, width, **kwargs)
 
@@ -495,7 +495,7 @@ class TqdmProgbar(KerasProgbar):
 
 
 class ProgressBar2Progbar(TqdmProgbar):
-    """ progressbar2进度条 """
+    ''' progressbar2进度条 '''
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             import progressbar
@@ -526,7 +526,7 @@ class ProgressBar2Progbar(TqdmProgbar):
 
 
 class TerminateOnNaN(Callback):
-    """Loss出现NAN停止训练"""
+    '''Loss出现NAN停止训练'''
     def on_batch_end(self, global_step, local_step, logs=None):
         logs = logs or {}
         loss = logs.get('loss')
@@ -537,7 +537,7 @@ class TerminateOnNaN(Callback):
 
 
 class History(Callback):
-    """指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标"""
+    '''指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标'''
     def on_train_begin(self, logs=None):
         self.epoch = []
         self.history = {}
@@ -673,7 +673,7 @@ class EarlyStopping(Callback):
 
 
 class ReduceLROnPlateau(Callback):
-    """当monitor指标不下降时候，降低学习率
+    '''当monitor指标不下降时候，降低学习率
 
     :param monitor: str, 监控指标，需要在logs中，默认为'loss'
     :param factor: float, 权重衰减系数，取值范围(0, 1)，默认为0.1
@@ -684,7 +684,7 @@ class ReduceLROnPlateau(Callback):
     :param min_delta: float, 最小变动，默认为0 
     :param cooldown: float
     :param min_lr: float, 最小学习率
-    """
+    '''
     def __init__(self, monitor='loss', factor=0.1, patience=10, method='epoch', 
                  verbose=0, mode='auto', min_delta=1e-4, cooldown=0, min_lr=0,
                  **kwargs):
@@ -711,8 +711,8 @@ class ReduceLROnPlateau(Callback):
         self._reset()
 
     def _reset(self):
-        """Resets wait counter and cooldown counter.
-        """
+        '''Resets wait counter and cooldown counter.
+        '''
         if self.mode not in ['auto', 'min', 'max']:
             warnings.warn('Learning Rate Plateau Reducing mode %s is unknown, fallback to auto mode.' % (self.mode), RuntimeWarning)
             self.mode = 'auto'
@@ -779,14 +779,14 @@ class ReduceLROnPlateau(Callback):
 
         
 class RemoteMonitor(Callback):
-    """Callback used to stream events to a server.
+    '''Callback used to stream events to a server.
 
     :param root: str, url+port
     :param path: str, router
     :param field: str, 字段名
     :param headers: header
     :param send_as_json: bool, 是否以json形式请求，默认为False
-    """
+    '''
     def __init__(self, root='http://localhost:9000', path='/publish/epoch/end/', field='data',
                  headers=None, send_as_json=False, **kwargs):
         super(RemoteMonitor, self).__init__(**kwargs)
@@ -1002,7 +1002,7 @@ class Tensorboard(Callback):
 
 
 class WandbCallback(Callback):
-    """从transformers迁移过来
+    '''从transformers迁移过来
     A :class:`~transformers.TrainerCallback` that sends the logs to `Weight and Biases <https://www.wandb.com/>`__.
 
     :param interval: int, log的的step间隔
@@ -1011,7 +1011,7 @@ class WandbCallback(Callback):
         logging or :obj:`"all"` to log gradients and parameters.
     :param project: str，wandb的project name, 默认为bert4torch
     :param 
-    """
+    '''
     def __init__(self, project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
                  interval=100, save_code=False, config=None):
         try:
@@ -1098,8 +1098,8 @@ class WandbCallback(Callback):
 
 
 class LambdaCallback(Callback):
-    """lambda表达式
-    """
+    '''lambda表达式
+    '''
     def __init__(self, on_epoch_begin=None, on_epoch_end=None, on_batch_begin=None, on_batch_end=None, 
                  on_train_begin=None, on_train_end=None, on_dataloader_end=None, **kwargs):
         super(LambdaCallback, self).__init__(**kwargs)
