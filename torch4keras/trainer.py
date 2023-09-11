@@ -37,7 +37,7 @@ class Trainer:
         # 是否运行Callbacks，目前主要是在DDP模式下运用
         self.run_callbacks = True
         # 增加nn.Module的成员方法
-        add_module(self)
+        # add_module(self)
             
     def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 grad_accumulation_steps=1, progbar_config=None, smooth_metrics_config=None, **kwargs):
