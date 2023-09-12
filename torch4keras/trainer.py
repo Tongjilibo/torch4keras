@@ -624,7 +624,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         self.verbose = (torch.distributed.get_rank() in master_rank)
     
 
-def add_trainer(obj, include=None, exclude=None):
+def add_trainer(obj, include=None, exclude=None, verbose=0):
     '''为对象添加Triner对应的方法
     '''
     if isinstance(include, str):
@@ -650,6 +650,8 @@ def add_trainer(obj, include=None, exclude=None):
             if eval(f'isfunction(Trainer.{k})'):
                  # 方法
                 exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
+                if verbose:
+                    log_info(f'Already add obj.{k} method')
             else:
                 # TODO 属性等其他
                 pass
@@ -657,7 +659,7 @@ def add_trainer(obj, include=None, exclude=None):
     return obj
 
 
-def add_module(obj, include=None, exclude=None):
+def add_module(obj, include=None, exclude=None, verbose=0):
     '''为Trainer增加nn.Module的方法'''
     import types
     if isinstance(obj, nn.Module):
@@ -685,6 +687,8 @@ def add_module(obj, include=None, exclude=None):
             continue
         if eval(f'isinstance(obj.unwrap_model().{k}, types.MethodType)'):
             exec(f'obj.{k} = obj.unwrap_model().{k}')
+            if verbose:
+                log_info(f'Already add obj.{k} method')
 
 
 class AccelerateTrainer(Trainer):
