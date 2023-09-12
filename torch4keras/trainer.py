@@ -657,9 +657,6 @@ def add_trainer(obj, include=None, exclude=None, verbose=0):
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
             if verbose:
                 log_info(f'Already add obj.{k} method')
-        else:
-            # TODO 属性等其他
-            pass
     obj.initialize()  # 这里初始化会得到一些其他的成员变量，不可缺省
     return obj
 
