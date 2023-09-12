@@ -19,7 +19,11 @@ class Trainer:
         self.initialize(module)
     
     def initialize(self, module:nn.Module=None):
-        # 这里主要是为了外面调用用到
+        # 传入Module实例方式
+        if module is not None:
+            assert isinstance(module, nn.Module), 'Args `module` only support nn.Module format'
+            self.module = module
+
         self.global_step, self.local_step, self.total_steps, self.batch_step = 0, 0, 0, 0
         self.epoch, self.steps_per_epoch, self.train_dataloader = 0, None, None
         self.resume_step, self.resume_epoch = 0, 0
@@ -27,18 +31,13 @@ class Trainer:
         self.move_to_model_device = True  # 自动把tensor转到model所在的device
         self.log_first_step = False  # 是否打印第一个step的数据
         self.criterion = None  # criterion
-        self.optimizer = None
-        self.scheduler = None
-        self.callbacks = []
-        # 传入Module实例方式
-        if module is not None:
-            assert isinstance(module, nn.Module), 'Args `module` only support nn.Module format'
-            self.module = module
-        # 是否运行Callbacks，目前主要是在DDP模式下运用
-        self.run_callbacks = True
-        # 增加nn.Module的成员方法
-        # add_module(self)
-            
+        self.optimizer = None  # optimizer
+        self.scheduler = None  # scheduler
+        self.callbacks = []  # 所有的Callbacks，如果fit中不传入，则默认为[progbarlogger, smoothmetrics, history]三项
+        self.run_callbacks = True  # 是否运行Callbacks，目前主要是在DDP模式下运用
+        self.loss2metrics = True  # 把loss_detail打印在进度条的metrics上
+        # add_module(self)  # 增加nn.Module的成员方法
+
     def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
                 grad_accumulation_steps=1, progbar_config=None, smooth_metrics_config=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
@@ -354,8 +353,8 @@ class Trainer:
             for local_step in range(resume_step, self.steps_per_epoch):
                 self.local_step = local_step
                 self.global_step = self.epoch * self.steps_per_epoch + self.local_step
-                self.logs = self._log_init()
-                self.callbacks.on_batch_begin(self.global_step, self.local_step, self.logs)
+                logs = self._log_init()
+                self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
                 # forward和backward
                 self.unwrap_model().train()  # 设置为train模式
@@ -374,8 +373,9 @@ class Trainer:
                 self.step()
 
                 # 添加loss至log打印
-                self.logs.update(dict({'loss': tr_loss}, **tr_loss_detail))
-                if self.verbose and (self.global_step == resume_step):
+                logs.update(dict({'loss': tr_loss}, **tr_loss_detail))
+                if self.verbose and self.loss2metrics and (self.global_step == resume_step):
+                    # 把loss_detail添加到进度条metrics中
                     progbarlogger.add_metrics(list(tr_loss_detail.keys()), add_position=1)
                     
                 # 添加metrics至log打印
@@ -385,17 +385,17 @@ class Trainer:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.verbose and (self.global_step == resume_step):
                                 progbarlogger.add_metrics(list(perf.keys()))
-                            self.logs.update(perf)
+                            logs.update(perf)
                         elif isinstance(metric, str):  # 直接传入回调函数(有key)
-                            self.logs[metric] = perf
+                            logs[metric] = perf
 
-                self.callbacks.on_batch_end(self.global_step, self.local_step, self.logs)
+                self.callbacks.on_batch_end(self.global_step, self.local_step, logs)
 
-            self.callbacks.on_epoch_end(self.global_step, self.epoch, self.logs)
+            self.callbacks.on_epoch_end(self.global_step, self.epoch, logs)
             # TerminateOnNaN、EarlyStopping等停止训练策略
             if callback_trainer.stop_training:
                 break
-        self.callbacks.on_train_end(self.logs)
+        self.callbacks.on_train_end(logs)
         return history
 
     def _log_init(self):
