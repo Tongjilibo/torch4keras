@@ -625,11 +625,13 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     
 
 def add_trainer(obj, include=None, exclude=None, verbose=0):
-    '''为对象添加Triner对应的方法
+    '''为nn.Module添加Triner对应的方法
     '''
     if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
+        log_warn('obj is not a Trainer object')
         return obj
-    elif isinstance(obj, nn.Module):
+    elif not isinstance(obj, nn.Module):
+        log_warn('obj is not a nn.Module object')
         return obj
 
     if isinstance(include, str):
@@ -667,10 +669,10 @@ def add_module(obj, include=None, exclude=None, verbose=0):
     if isinstance(obj, nn.Module):
         return obj
     elif not isinstance(obj, Trainer):
-        log_warn('obj is not a Trainer obj')
+        log_warn('obj is not a Trainer object')
         return obj
     elif not isinstance(obj.unwrap_model(), nn.Module):
-        log_warn('obj.unwrap_model() is not a nn.Module obj')
+        log_warn('obj.unwrap_model() is not a nn.Module object')
         return obj
     
     if isinstance(include, str):
