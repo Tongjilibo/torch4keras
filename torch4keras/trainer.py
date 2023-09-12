@@ -627,61 +627,66 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
 def add_trainer(obj, include=None, exclude=None, verbose=0):
     '''为对象添加Triner对应的方法
     '''
+    if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
+        return obj
+    elif isinstance(obj, nn.Module):
+        return obj
+
     if isinstance(include, str):
         include = [include]
     if isinstance(exclude, str):
         exclude = [exclude]
-    
-    if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
-        return obj
-    
-    if isinstance(obj, nn.Module):
-        import types
-        for k in dir(Trainer):
-            if (include is not None) and (k not in include):  # 必须包含的
-                continue
-            elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
-                continue
-            elif k.startswith('__') and k.endswith('__'):
-                continue
-            elif hasattr(obj, k):  # 如果下游重新定义，则不继
-                continue
-           
-            if eval(f'isfunction(Trainer.{k})'):
-                 # 方法
-                exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
-                if verbose:
-                    log_info(f'Already add obj.{k} method')
-            else:
-                # TODO 属性等其他
-                pass
-        obj.initialize()
+    if (include is not None) and (exclude is not None):
+        log_warn('Args `include` and `exclude` can not be valid at the same time')
+
+    import types
+    for k in dir(Trainer):
+        if (include is not None) and (k not in include):  # 必须包含的
+            continue
+        elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
+            continue
+        elif k.startswith('__') and k.endswith('__'):
+            continue
+        elif hasattr(obj, k):  # 如果下游重新定义，则不继
+            continue
+        
+        if eval(f'isfunction(Trainer.{k})'):
+                # 方法
+            exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
+            if verbose:
+                log_info(f'Already add obj.{k} method')
+        else:
+            # TODO 属性等其他
+            pass
+    obj.initialize()  # 这里初始化会得到一些其他的成员变量，不可缺省
     return obj
 
 
 def add_module(obj, include=None, exclude=None, verbose=0):
     '''为Trainer增加nn.Module的方法'''
-    import types
     if isinstance(obj, nn.Module):
-        return
+        return obj
     elif not isinstance(obj, Trainer):
         log_warn('obj is not a Trainer obj')
-        return
+        return obj
     elif not isinstance(obj.unwrap_model(), nn.Module):
         log_warn('obj.unwrap_model() is not a nn.Module obj')
-        return
+        return obj
     
     if isinstance(include, str):
         include = [include]
     if isinstance(exclude, str):
         exclude = [exclude]
-    
+    if (include is not None) and (exclude is not None):
+        log_warn('Args `include` and `exclude` can not be valid at the same time')
+
+    import types
     for k in dir(obj.unwrap_model()):
         if (include is not None) and (k not in include):  # 必须包含的
             continue
         elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
             continue
-        elif (k.startswith('__') and k.endswith('__')) or k.startswith('_'):
+        elif k.startswith('__') and k.endswith('__'):
             continue
         elif hasattr(obj, k):  # 如果下游重新定义，则不继
             continue
@@ -689,7 +694,7 @@ def add_module(obj, include=None, exclude=None, verbose=0):
             exec(f'obj.{k} = obj.unwrap_model().{k}')
             if verbose:
                 log_info(f'Already add obj.{k} method')
-
+    return obj
 
 class AccelerateTrainer(Trainer):
     '''accelerate来训练'''
