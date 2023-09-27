@@ -299,10 +299,18 @@ class Progbar(object):
         self._start = time.time()
         self._last_update = 0
 
+    @staticmethod
+    def format_time(eta):
+        if eta > 3600:
+            eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
+        else:
+            eta_format = '%d:%02d' % (eta // 60, eta % 60)
+        return eta_format
+
     def update(self, current, values=None):
         '''Updates the progress bar.'''
         now = time.time()
-        info = ' - %.0fs' % (now - self._start)
+        info = ' - %s' % self.format_time(now - self._start)
         if self.verbose == 1:
             if (now - self._last_update < self.time_interval and self.target is not None and current < self.target):
                 # 训练每个step太快了，则不更新进度条，累计达到一定的时间间隔再更新进度条
@@ -341,14 +349,7 @@ class Progbar(object):
                 time_per_unit = 0
             if self.target is not None and current < self.target:
                 eta = time_per_unit * (self.target - current)
-                if eta > 3600:
-                    eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
-                elif eta > 60:
-                    eta_format = '%d:%02d' % (eta // 60, eta % 60)
-                else:
-                    eta_format = '%ds' % eta
-
-                info = ' - ETA: %s' % eta_format
+                info = ' - ETA: %s' % self.format_time(now - self._start) + '<' + self.format_time(eta)
             else:
                 if time_per_unit >= 1:
                     info += ' %.0fs/step' % time_per_unit
