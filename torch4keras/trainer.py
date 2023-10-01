@@ -625,8 +625,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     
 
 def add_trainer(obj, include=None, exclude=None, verbose=0):
-    '''为nn.Module添加Triner对应的方法
-    '''
+    '''为nn.Module添加Triner对应的方法'''
     if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
         log_warn('obj is not a Trainer object')
         return obj
@@ -662,7 +661,9 @@ def add_trainer(obj, include=None, exclude=None, verbose=0):
 
 
 def add_module(obj, include=None, exclude=None, verbose=0):
-    '''为Trainer增加nn.Module的方法'''
+    '''为Trainer增加nn.Module的方法
+    方便外部访问, 如obj.parameters()可以直接访问到obj.module.parameters()
+    '''
     if isinstance(obj, nn.Module):
         return obj
     elif not isinstance(obj, Trainer):
@@ -694,6 +695,7 @@ def add_module(obj, include=None, exclude=None, verbose=0):
             if verbose:
                 log_info(f'Already add obj.{k} method')
     return obj
+
 
 class AccelerateTrainer(Trainer):
     '''accelerate来训练'''
