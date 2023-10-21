@@ -65,7 +65,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - 简单示例: [turorials_mnist](https://github.com/Tongjilibo/torch4keras/blob/master/examples/turorials_mnist.py)
 
 ## 4. 版本说明
-- **v0.1.5**: 20230912 进度条中显示已经训练的时间
+- **v0.1.5**: 20231021 进度条中显示已经训练的时间
 - **v0.1.4.post2**: 20230912 History增加plot()方法, 增加add_module()方法，修复0.1.4的_argparse_forward的bug, 增加loss2metrics方法
 - **v0.1.4**: 20230909 增加from_pretrained和save_pretrained方法，增加log_warn_once方法，compile()中可设置成员变量，默认move_to_model_device设置为True, 增加JsonConfig，增加_argparse_forward()方便下游继承改写Trainer
 - **v0.1.3**: 20230901 compile()可不传参，interval不一致报warning, 去除部分self.vars, 调整move_to_model_device逻辑，DDP每个epoch重新设置随机数，save_weights()和load_weights()可以按照`pretrained`格式
