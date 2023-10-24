@@ -117,6 +117,8 @@ class IterDataset(IterableDataset):
                     for line in file_obj:
                         yield line
         elif isinstance(file_path, str):
+            if verbose != 0:
+                print("Load data: ", file_path)
             with open(file_path, 'r') as file_obj:
                 for line in file_obj:
                     yield line
