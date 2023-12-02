@@ -257,7 +257,7 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
         return str(e)
 
 
-def monitor_run_by_email(func, receivers=None, mail_host=None, mail_user=None, mail_pwd=None, sender=None):
+def monitor_run_by_email(func, receivers=None, subject=None, mail_host=None, mail_user=None, mail_pwd=None, sender=None):
     """ 通过发邮件的形式监控运行，在程序出现异常的时候发邮件
     """
     @functools.wraps(func)
@@ -268,11 +268,12 @@ def monitor_run_by_email(func, receivers=None, mail_host=None, mail_user=None, m
             error_msg = traceback.format_exc()
             receivers_ = receivers or kwargs.get('receivers')
             if receivers_ is not None:
+                subject_ = subject or kwargs.get('subject') or "[ERROR] " + func.__name__
                 mail_host_ = mail_host or kwargs.get('mail_host')
                 mail_user_ = mail_user or kwargs.get('mail_user')
                 mail_pwd_ = receivers or kwargs.get('mail_pwd')
                 sender_ = receivers or kwargs.get('sender')
-                send_email(receivers_, "[ERROR] " + func.__name__, error_msg, mail_host=mail_host_, 
+                send_email(receivers_, subject_, error_msg, mail_host=mail_host_, 
                            mail_user=mail_user_, mail_pwd=mail_pwd_, sender=sender_)
             raise e
     return get_except
