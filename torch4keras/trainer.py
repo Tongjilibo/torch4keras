@@ -1,6 +1,7 @@
 from torch import nn
 import torch
-from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, print_trainable_parameters, colorful
+from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error
+from torch4keras.snippets import print_trainable_parameters, colorful, monitor_run_by_email
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from inspect import isfunction
@@ -321,7 +322,8 @@ class Trainer:
         batch = self._move_to_model_device(batch)
         return batch
 
-    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1):
+    @monitor_run_by_email
+    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1, **kwargs):
         '''模型训练
         
         :param train_dataloader: Dataloader, 训练数据集
