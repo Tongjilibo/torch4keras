@@ -218,16 +218,16 @@ def spend_time(func):
     return warpper
 
 
-def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_pwd=None, sender=None):
+def send_email(mail_receivers, mail_subject, mail_msg="", mail_host=None, mail_user=None, mail_pwd=None, mail_sender=None):
     ''' 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)
 
-    :param subject: str, 邮件主题
-    :param msg: str, 邮件正文
-    :param receivers: str/list, 收件人邮箱
+    :param mail_subject: str, 邮件主题
+    :param mail_msg: str, 邮件正文
+    :param mail_receivers: str/list, 收件人邮箱
     :param mail_host: str, 发件服务器host
     :param mail_user: str, 发件人
     :param mail_pwd: str, smtp的第三方密码
-    :param sender: str, 发件人邮箱
+    :param mail_sender: str, 发件人邮箱
     '''
     import smtplib
     from email.mime.text import MIMEText
@@ -235,21 +235,21 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
     mail_host = mail_host or 'smtp.163.com'
     mail_user = mail_user or 'bert4torch'
     mail_pwd = mail_pwd or 'VDSGQEHFXDZOCVEH'
-    sender = sender or 'bert4torch@163.com'
+    mail_sender = mail_sender or 'bert4torch@163.com'
 
     #构造邮件内容
-    message = MIMEText(msg,'plain','utf-8')
-    message['Subject'] = subject
-    message['From'] = sender
-    assert isinstance(receivers, (str, tuple, list)), 'Arg `receivers` only receive `str, tuple, list` format'
-    message['To'] = receivers if isinstance(receivers, str) else ';'.join(receivers)
+    message = MIMEText(mail_msg,'plain','utf-8')
+    message['Subject'] = mail_subject
+    message['From'] = mail_sender
+    assert isinstance(mail_receivers, (str, tuple, list)), 'Arg `receivers` only receive `str, tuple, list` format'
+    message['To'] = mail_receivers if isinstance(mail_receivers, str) else ';'.join(mail_receivers)
 
     #登录并发送邮件
     try:
         smtpObj = smtplib.SMTP() 
         smtpObj.connect(mail_host, 25)  # 连接到服务器
         smtpObj.login(mail_user, mail_pwd)  # 登录到服务器
-        smtpObj.sendmail(sender, receivers, message.as_string())  # 发送
+        smtpObj.sendmail(mail_sender, mail_receivers, message.as_string())  # 发送
         smtpObj.quit()  # 退出
         log_info('Send email success')
     except smtplib.SMTPException as e:
@@ -257,7 +257,7 @@ def send_email(receivers, subject, msg="", mail_host=None, mail_user=None, mail_
         return str(e)
 
 
-def monitor_run_by_email(func, receivers=None, subject=None, mail_host=None, mail_user=None, mail_pwd=None, sender=None):
+def monitor_run_by_email(func, mail_receivers=None, mail_subject=None, mail_host=None, mail_user=None, mail_pwd=None, mail_sender=None):
     """ 通过发邮件的形式监控运行，在程序出现异常的时候发邮件
     """
     @functools.wraps(func)
@@ -266,15 +266,15 @@ def monitor_run_by_email(func, receivers=None, subject=None, mail_host=None, mai
             return func(*args,**kwargs)
         except Exception as e:
             error_msg = traceback.format_exc()
-            receivers_ = receivers or kwargs.get('receivers')
-            if receivers_ is not None:
-                subject_ = subject or kwargs.get('subject') or "[ERROR] " + func.__name__
+            mail_receivers_ = mail_receivers or kwargs.get('mail_receivers')
+            if mail_receivers_ is not None:
+                mail_subject_ = mail_subject or kwargs.get('mail_subject') or "[ERROR] " + func.__name__
                 mail_host_ = mail_host or kwargs.get('mail_host')
                 mail_user_ = mail_user or kwargs.get('mail_user')
-                mail_pwd_ = receivers or kwargs.get('mail_pwd')
-                sender_ = receivers or kwargs.get('sender')
-                send_email(receivers_, subject_, error_msg, mail_host=mail_host_, 
-                           mail_user=mail_user_, mail_pwd=mail_pwd_, sender=sender_)
+                mail_pwd_ = mail_pwd or kwargs.get('mail_pwd')
+                mail_sender_ = mail_sender or kwargs.get('mail_sender')
+                send_email(mail_receivers_, mail_subject_, error_msg, mail_host=mail_host_, 
+                           mail_user=mail_user_, mail_pwd=mail_pwd_, mail_sender=mail_sender_)
             raise e
     return get_except
 

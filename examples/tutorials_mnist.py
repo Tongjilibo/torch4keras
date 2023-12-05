@@ -73,7 +73,7 @@ if __name__ == '__main__':
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
     logger = Logger('./ckpt/log.log')  # log文件
     ts_board = Tensorboard('./ckpt/tensorboard')  # tensorboard
-    email = EmailCallback(receivers='tongjilibo@163.com')  # 发送邮件
+    email = EmailCallback(mail_receivers='tongjilibo@163.com')  # 发送邮件
     wandb = WandbCallback(save_code=True)  # wandb
     hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, 
                      callbacks=[Summary(), evaluator, logger, ts_board, ckpt, early_stop])
