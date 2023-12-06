@@ -629,7 +629,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         self.verbose = (torch.distributed.get_rank() in master_rank)
     
 
-def add_trainer(obj, include:(str, tuple, list)=None, exclude:(str, tuple, list)=None, verbose=0, replace_func=False):
+def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
     '''为nn.Module添加Triner对应的方法'''
     if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
         log_warn('obj is not a Trainer object')
@@ -638,14 +638,12 @@ def add_trainer(obj, include:(str, tuple, list)=None, exclude:(str, tuple, list)
         log_warn('obj is not a nn.Module object')
         return obj
 
-    # 覆盖torch2.0后nn.Module中compile
     if include is None:
-        include = {'compile'}
+        include = set()
     elif isinstance(include, str):
-        include = set(include, 'compile')
+        include = set([include])
     elif isinstance(include, (tuple, list)):
         include = set(include)
-        include.add('compile')
     else:
         raise TypeError(f'Arg `include` only receive str/list format, not {type(include)}')
 
@@ -670,7 +668,6 @@ def add_trainer(obj, include:(str, tuple, list)=None, exclude:(str, tuple, list)
             set_func = True
 
         if set_func and eval(f'isfunction(Trainer.{k})'):
-            # 方法
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
             if verbose:
                 log_info(f'Already add obj.{k} method')
@@ -678,7 +675,7 @@ def add_trainer(obj, include:(str, tuple, list)=None, exclude:(str, tuple, list)
     return obj
 
 
-def add_module(obj, include:(str, list)=None, exclude:(str, list)=None, verbose=0, replace_func=False):
+def add_module(obj, include=None, exclude=None, verbose=0, replace_func=False):
     '''为Trainer增加nn.Module的方法
     方便外部访问, 如obj.parameters()可以直接访问到obj.module.parameters()
     '''
@@ -692,12 +689,11 @@ def add_module(obj, include:(str, list)=None, exclude:(str, list)=None, verbose=
         return obj
     
     if include is None:
-        include = {'compile'}
+        include = set()
     elif isinstance(include, str):
-        include = set(include, 'compile')
+        include = set([include])
     elif isinstance(include, (tuple, list)):
         include = set(include)
-        include.add('compile')
     else:
         raise TypeError(f'Arg `include` only receive str/list format, not {type(include)}')
 
