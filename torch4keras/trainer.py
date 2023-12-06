@@ -672,8 +672,8 @@ def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
             added_funcs.append(k)
     obj.initialize()  # 这里初始化会得到一些其他的成员变量，不可缺省
-    
-    if verbose:
+
+    if verbose and (len(added_funcs) > 0):
         log_info(f'Already add `{",".join(added_funcs)}` method')
     return obj
 
@@ -726,7 +726,7 @@ def add_module(obj, include=None, exclude=None, verbose=0, replace_func=False):
             exec(f'obj.{k} = obj.unwrap_model().{k}')
             added_funcs.append(k)
 
-    if verbose:
+    if verbose and (len(added_funcs) > 0):
         log_info(f'Already add `{",".join(added_funcs)}` method')
     return obj
 
