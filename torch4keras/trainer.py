@@ -600,6 +600,9 @@ class Trainer:
         return self.module if hasattr(self, 'module') else self
 
 
+Trainer.compile_training_components = Trainer.compile
+
+
 class TrainerDP(nn.DataParallel, Trainer):
     '''DataParallel模式使用多gpu的方法, 
     1) 父类顺序颠倒也会出问题
@@ -626,7 +629,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         self.verbose = (torch.distributed.get_rank() in master_rank)
     
 
-def add_trainer(obj, include=None, exclude=None, verbose=0):
+def add_trainer(obj, include:(str, tuple, list)=None, exclude:(str, tuple, list)=None, verbose=0, replace_func=False):
     '''为nn.Module添加Triner对应的方法'''
     if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
         log_warn('obj is not a Trainer object')
@@ -635,26 +638,39 @@ def add_trainer(obj, include=None, exclude=None, verbose=0):
         log_warn('obj is not a nn.Module object')
         return obj
 
-    if isinstance(include, str):
-        include = [include]
-    if isinstance(exclude, str):
-        exclude = [exclude]
-    if (include is not None) and (exclude is not None):
-        log_warn('Args `include` and `exclude` can not be valid at the same time')
+    # 覆盖torch2.0后nn.Module中compile
+    if include is None:
+        include = {'compile'}
+    elif isinstance(include, str):
+        include = set(include, 'compile')
+    elif isinstance(include, (tuple, list)):
+        include = set(include)
+        include.add('compile')
+    else:
+        raise TypeError(f'Arg `include` only receive str/list format, not {type(include)}')
+
+    if exclude is None:
+        exclude = set()
+    elif isinstance(exclude, (tuple, list)):
+        exclude = set(exclude)
 
     import types
     for k in dir(Trainer):
-        if (include is not None) and (k not in include):  # 必须包含的
-            continue
-        elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
-            continue
-        elif k.startswith('__') and k.endswith('__'):
-            continue
+        set_func = False
+        if k in include:  # 必须包含的
+            set_func = True
+        elif k in exclude:  # 必须屏蔽的
+            pass
+        elif k.startswith('__') and k.endswith('__'):  # 内部函数不执行
+            pass
         elif hasattr(obj, k):  # 如果下游重新定义，则不继
-            continue
-        
-        if eval(f'isfunction(Trainer.{k})'):
-                # 方法
+            if replace_func:
+                set_func = True
+        else:
+            set_func = True
+
+        if set_func and eval(f'isfunction(Trainer.{k})'):
+            # 方法
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
             if verbose:
                 log_info(f'Already add obj.{k} method')
@@ -662,7 +678,7 @@ def add_trainer(obj, include=None, exclude=None, verbose=0):
     return obj
 
 
-def add_module(obj, include=None, exclude=None, verbose=0):
+def add_module(obj, include:(str, list)=None, exclude:(str, list)=None, verbose=0, replace_func=False):
     '''为Trainer增加nn.Module的方法
     方便外部访问, 如obj.parameters()可以直接访问到obj.module.parameters()
     '''
@@ -675,24 +691,38 @@ def add_module(obj, include=None, exclude=None, verbose=0):
         log_warn('obj.unwrap_model() is not a nn.Module object')
         return obj
     
-    if isinstance(include, str):
-        include = [include]
-    if isinstance(exclude, str):
-        exclude = [exclude]
-    if (include is not None) and (exclude is not None):
-        log_warn('Args `include` and `exclude` can not be valid at the same time')
+    if include is None:
+        include = {'compile'}
+    elif isinstance(include, str):
+        include = set(include, 'compile')
+    elif isinstance(include, (tuple, list)):
+        include = set(include)
+        include.add('compile')
+    else:
+        raise TypeError(f'Arg `include` only receive str/list format, not {type(include)}')
+
+    if exclude is None:
+        exclude = set()
+    elif isinstance(exclude, (tuple, list)):
+        exclude = set(exclude)
+
 
     import types
     for k in dir(obj.unwrap_model()):
-        if (include is not None) and (k not in include):  # 必须包含的
-            continue
-        elif (exclude is not None) and (k in exclude):  # 必须屏蔽的
-            continue
+        set_func = False
+        if k in include:  # 必须包含的
+            set_func = True
+        elif k in exclude:  # 必须屏蔽的
+            pass
         elif k.startswith('__') and k.endswith('__'):
-            continue
+            pass
         elif hasattr(obj, k):  # 如果下游重新定义，则不继
-            continue
-        if eval(f'isinstance(obj.unwrap_model().{k}, types.MethodType)'):
+            if replace_func:
+                set_func = True
+        else:
+            set_func = True
+        
+        if set_func and eval(f'isinstance(obj.unwrap_model().{k}, types.MethodType)'):
             exec(f'obj.{k} = obj.unwrap_model().{k}')
             if verbose:
                 log_info(f'Already add obj.{k} method')
