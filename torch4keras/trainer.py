@@ -653,6 +653,7 @@ def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
         exclude = set(exclude)
 
     import types
+    added_funcs = []
     for k in dir(Trainer):
         set_func = False
         if k in include:  # 必须包含的
@@ -669,9 +670,11 @@ def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
 
         if set_func and eval(f'isfunction(Trainer.{k})'):
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
-            if verbose:
-                log_info(f'Already add obj.{k} method')
+            added_funcs.append(k)
     obj.initialize()  # 这里初始化会得到一些其他的成员变量，不可缺省
+    
+    if verbose:
+        log_info(f'Already add `{",".join(added_funcs)}` method')
     return obj
 
 
@@ -704,6 +707,7 @@ def add_module(obj, include=None, exclude=None, verbose=0, replace_func=False):
 
 
     import types
+    added_funcs = []
     for k in dir(obj.unwrap_model()):
         set_func = False
         if k in include:  # 必须包含的
@@ -720,8 +724,10 @@ def add_module(obj, include=None, exclude=None, verbose=0, replace_func=False):
         
         if set_func and eval(f'isinstance(obj.unwrap_model().{k}, types.MethodType)'):
             exec(f'obj.{k} = obj.unwrap_model().{k}')
-            if verbose:
-                log_info(f'Already add obj.{k} method')
+            added_funcs.append(k)
+
+    if verbose:
+        log_info(f'Already add `{",".join(added_funcs)}` method')
     return obj
 
 
