@@ -67,9 +67,9 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 ## 4. 版本历史
 |更新日期| 版本 | 版本说明 |
 |------| ----------------- |----------- |
+|20231207| 0.1.6     |监控fit过程，有报错则发送邮件提醒; 解决torch2.0的compile冲突问题|
 |20230928| 0.1.5     |进度条中显示已经训练的时间|
 |20230912|v0.1.4.post2|History增加plot()方法, 增加add_module()方法，修复0.1.4的_argparse_forward的bug, 增加loss2metrics方法|
-|20230909|v0.1.4|增加from_pretrained和save_pretrained方法，增加log_warn_once方法，compile()中可设置成员变量，默认move_to_model_device设置为True, 增加JsonConfig，增加_argparse_forward()方便下游继承改写Trainer|
 
 [更多版本](https://github.com/Tongjilibo/torch4keras/blob/master/docs/Update.md)
 
@@ -77,6 +77,5 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 - **20231207**: 监控fit过程，有报错则发送邮件提醒; 解决torch2.0的compile冲突问题
 - **20230928**: 进度条中显示已经训练的时间
 - **20230912**: History增加plot()方法, 增加add_module()方法，修复0.1.4的_argparse_forward的bug, 增加loss2metrics方法
-- **20230909**: 增加from_pretrained和save_pretrained方法，增加log_warn_once方法，compile()中可设置成员变量，默认move_to_model_device设置为True, 增加JsonConfig，增加_argparse_forward()方便下游继承改写Trainer
 
 [更多历史](https://github.com/Tongjilibo/torch4keras/blob/master/docs/History.md)
