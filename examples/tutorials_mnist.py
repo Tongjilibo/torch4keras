@@ -54,7 +54,7 @@ net = torch.nn.Sequential(
 model = Trainer(net.to(device))
 optimizer = optim.Adam(net.parameters())
 scheduler = get_linear_schedule_with_warmup(optimizer, steps_per_epoch, steps_per_epoch*epochs)
-model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'])
+model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'], clip_grad_norm=1.0)
 
 class MyEvaluator(Evaluator):
     # 重构评价函数

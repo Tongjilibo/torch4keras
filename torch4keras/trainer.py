@@ -217,13 +217,13 @@ class Trainer:
         if self.mixed_precision:
             self.scaler.unscale_(self.optimizer)
             if self.clip_grad_norm is not None:  # 梯度裁剪
-                torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.unwrap_model().parameters(), self.clip_grad_norm)
             self.scaler.step(self.optimizer)
             self.scaler.update()
             skip_scheduler = self.scaler.get_scale() != self.scale_before_step
         else:
             if self.clip_grad_norm is not None:  # 梯度裁剪
-                torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.unwrap_model().parameters(), self.clip_grad_norm)
             self.optimizer.step()
 
         self.optimizer.zero_grad()  # 清梯度
