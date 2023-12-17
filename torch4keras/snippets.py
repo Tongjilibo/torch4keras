@@ -597,17 +597,16 @@ def set_precision(num, dense_round=1):
     return num
 
 
-class SetLog(object):
+class StreamFileLog(object):
     '''同时在文件中和命令行中log文件'''
-    def __init__(self, file_name=None):
+    def __init__(self, file_name=None, dir_name=None):
         self.date = str(datetime.date.today()).replace('-','')
-        self.log_path = './Log/'+self.date
+        self.log_path = './Log/'+self.date if dir_name is None else dir_name
         os.makedirs(self.log_path, exist_ok=True)
         if file_name is None:
             file_name = 'Info.log'
         self.file_name = file_name
         self.file = os.path.join(self.log_path, file_name)
-        self.init()
 
     def init(self):
         # 创建日志器
@@ -615,7 +614,7 @@ class SetLog(object):
         # 日志器默认级别
         self.log.setLevel(logging.DEBUG)
         # 日志格式器
-        self.formatter = logging.Formatter("%(asctime)s| %(message)s")
+        self.formatter = logging.Formatter("%(asctime)s | %(message)s")
         self.setHandle()
         return self.log
         
