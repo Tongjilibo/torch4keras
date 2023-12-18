@@ -597,74 +597,53 @@ def set_precision(num, dense_round=1):
     return num
 
 
-class StreamFileLog(object):
+class LoggerHandler(logging.Logger):
     '''同时在文件中和命令行中log
-    会按照天进行切片，适用于部署一些服务的时候长时间log日志的情况
-    :param log_path: str, log文件的地址, 如'/home/logs/demo.log'
-    :param date_format: str, date在路径中的位置，可选subdir|prefix|suffix, subdir会以'/home/logs/20231218/demo.log'保存
+    适用于部署一些服务的时候长时间log日志的情况，可按照文件大小，日期进行切片
+    :param file: str, log到文件的路径
+    :param stream: bool, 是否输出到命令行
+    :param file_handle: str, file_handle的类型
+    :file_config: dict, file_handle使用到的config
+    :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL，指定log的level
     '''
-    def __init__(self, log_path, date_format='subdir', verbosity=1):
-        self.log_path = log_path
-        self.date_format = date_format
-        self.verbosity = verbosity
-
-        self.save_dir = os.path.dirname(log_path)
-        if self.save_dir:
-            os.makedirs(self.save_dir, exist_ok=True)
-        self.file_name = os.path.basename(log_path)
-        self.initialize()
-
-    def initialize(self):
-        self.date = str(datetime.date.today()).replace('-','')
-        # 保存路径
-        if self.date_format == 'subdir':
-            self.file = os.path.join(self.save_dir, self.date, self.file_name)
-        elif self.date_format == 'prefix':
-            self.file = os.path.join(self.save_dir, self.date + '_' + self.file_name)
-        elif self.date_format == 'suffix':
-            self.file = os.path.join(self.save_dir, self.file_name + '_' + self.date)
-        else:
-            raise ValueError('Args `date_format` only support subdir|prefix|suffix.')
-
-        if (save_dir := os.path.dirname(self.file)) != '':
-            os.makedirs(save_dir, exist_ok=True)
-
-        # 创建日志器
-        self.log = logging.getLogger(self.file_name)
-
+    def __init__(self, file=None, stream=True, file_handle='FileHander', file_config=None, name='root', level='DEBUG',
+                 format="[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s"):
+        super().__init__(name)
         # 日志器默认级别
-        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4:logging.CRITICAL}
-        self.log.setLevel(level_dict[self.verbosity])
+        level_dict = {'DEBUG': logging.DEBUG, 'INFO': logging.INFO, 'WARNING': logging.WARNING, 
+                      'ERROR': logging.ERROR, 'CRITICAL':logging.CRITICAL}
+        self.setLevel(level_dict[level])
 
         # 日志格式器
-        self.formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
-        self.log.handlers.clear()
+        formatter = logging.Formatter(format)
+        self.handlers.clear()
 
         # 终端流输出
-        stream_handle = logging.StreamHandler()
-        self.log.addHandler(stream_handle)
-        stream_handle.setLevel(level_dict[self.verbosity])
-        stream_handle.setFormatter(self.formatter)
+        if stream:
+            stream_handle = logging.StreamHandler()
+            self.addHandler(stream_handle)
+            stream_handle.setLevel(level_dict[level])
+            stream_handle.setFormatter(formatter)
 
         # 文件流输出
-        file_handle = logging.FileHandler(filename=self.file, mode='a', encoding='utf-8')
-        self.log.addHandler(file_handle)
-        file_handle.setLevel(level_dict[self.verbosity])
-        file_handle.setFormatter(self.formatter)
-        return self.log
-    
-    def reinitialize(self):
-        if str(datetime.date.today()).replace('-','') != self.date:
-            self.initialize()
-
-    def info(self, text):
-        self.reinitialize()
-        self.log.info(text)
-    
-    def warn(self, text):
-        self.reinitialize()
-        self.log.warn(text)
-    
-    def error(self, text):
-        self.reinitialize()
-        self.log.error(text)
+        if file is None:
+            return
+        if (dirname := os.path.dirname(file)) != '':
+            os.makedirs(dirname, exist_ok=True)
+        if file_handle == 'FileHander':
+            file_handle = logging.FileHandler(filename=file, mode='a', encoding='utf-8')
+        elif file_handle == 'RotatingFileHandler':
+            if file_config is None:
+                file_config = {'maxBytes': 1024*1024*10, 'backupCount': 30, 'encoding': 'utf-8'}
+            from logging.handlers import RotatingFileHandler
+            file_handle = RotatingFileHandler(file, **file_config)
+        elif file_handle == 'TimedRotatingFileHandler':
+            if file_config is None:
+                file_config = {'when': 'midnight', 'backupCount': 30, 'encoding': 'utf-8'}
+            from logging.handlers import TimedRotatingFileHandler
+            file_handle = TimedRotatingFileHandler(file, **file_config)
+        else:
+            return
+        self.addHandler(file_handle)
+        file_handle.setLevel(level_dict[level])
+        file_handle.setFormatter(formatter)

@@ -921,24 +921,24 @@ class Logger(Callback):
     :param interval: int, 保存log的间隔
     :param mode: str, log保存的模式, 默认为'a'表示追加
     :param separator: str, 指标间分隔符
-    :param verbosity: int, 可选[0,1,2]，指定log的level
-    :param name: str, 默认为None
+    :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL，指定log的level
     '''
-    def __init__(self, log_path, interval=100, mode='a', separator='\t', verbosity=1, name=None, **kwargs):
+    def __init__(self, log_path, interval=100, mode='a', separator='\t', level='DEBUG', name='root', **kwargs):
         super(Logger, self).__init__(**kwargs)
         self.log_path = log_path
         self.interval = interval
         self.mode = mode
         self.sep = separator
         self.name = name
-        self.verbosity = verbosity
+        self.level = level
 
     def on_train_begin(self, logs=None):
         import logging
-        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4:logging.CRITICAL}
+        level_dict = {'DEBUG': logging.DEBUG, 'INFO': logging.INFO, 'WARNING': logging.WARNING, 
+                      'ERROR': logging.ERROR, 'CRITICAL':logging.CRITICAL}
         formatter = logging.Formatter("[%(asctime)s] %(message)s")
         self.logger = logging.getLogger(self.name)
-        self.logger.setLevel(level_dict[self.verbosity])
+        self.logger.setLevel(level_dict[self.level])
         save_dir = os.path.dirname(self.log_path)
 
         os.makedirs(save_dir, exist_ok=True)

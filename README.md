@@ -74,6 +74,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 [更多版本](https://github.com/Tongjilibo/torch4keras/blob/master/docs/Update.md)
 
 ## 5. 更新历史：
+- **20231219**: 增加StreamFileLog, 修改Logger的格式
 - **20231208**: 监控fit过程，有报错则发送邮件提醒; 解决torch2.0的compile冲突问题; 修复clip_grad_norm的bug
 - **20230928**: 进度条中显示已经训练的时间
 - **20230912**: History增加plot()方法, 增加add_module()方法，修复0.1.4的_argparse_forward的bug, 增加loss2metrics方法
