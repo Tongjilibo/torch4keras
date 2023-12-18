@@ -598,35 +598,73 @@ def set_precision(num, dense_round=1):
 
 
 class StreamFileLog(object):
-    '''同时在文件中和命令行中log文件'''
-    def __init__(self, file_name=None, dir_name=None):
-        self.date = str(datetime.date.today()).replace('-','')
-        self.log_path = './Log/'+self.date if dir_name is None else dir_name
-        os.makedirs(self.log_path, exist_ok=True)
-        if file_name is None:
-            file_name = 'Info.log'
-        self.file_name = file_name
-        self.file = os.path.join(self.log_path, file_name)
+    '''同时在文件中和命令行中log
+    会按照天进行切片，适用于部署一些服务的时候长时间log日志的情况
+    :param log_path: str, log文件的地址, 如'/home/logs/demo.log'
+    :param date_format: str, date在路径中的位置，可选subdir|prefix|suffix, subdir会以'/home/logs/20231218/demo.log'保存
+    '''
+    def __init__(self, log_path, date_format='subdir', verbosity=1):
+        self.log_path = log_path
+        self.date_format = date_format
+        self.verbosity = verbosity
 
-    def init(self):
+        self.save_dir = os.path.dirname(log_path)
+        if self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
+        self.file_name = os.path.basename(log_path)
+        self.initialize()
+
+    def initialize(self):
+        self.date = str(datetime.date.today()).replace('-','')
+        # 保存路径
+        if self.date_format == 'subdir':
+            self.file = os.path.join(self.save_dir, self.date, self.file_name)
+        elif self.date_format == 'prefix':
+            self.file = os.path.join(self.save_dir, self.date + '_' + self.file_name)
+        elif self.date_format == 'suffix':
+            self.file = os.path.join(self.save_dir, self.file_name + '_' + self.date)
+        else:
+            raise ValueError('Args `date_format` only support subdir|prefix|suffix.')
+
+        if (save_dir := os.path.dirname(self.file)) != '':
+            os.makedirs(save_dir, exist_ok=True)
+
         # 创建日志器
         self.log = logging.getLogger(self.file_name)
+
         # 日志器默认级别
-        self.log.setLevel(logging.DEBUG)
+        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4:logging.CRITICAL}
+        self.log.setLevel(level_dict[self.verbosity])
+
         # 日志格式器
-        self.formatter = logging.Formatter("%(asctime)s | %(message)s")
-        self.setHandle()
-        return self.log
-        
-    def setHandle(self):
+        self.formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
         self.log.handlers.clear()
+
         # 终端流输出
         stream_handle = logging.StreamHandler()
         self.log.addHandler(stream_handle)
-        stream_handle.setLevel(logging.DEBUG)
+        stream_handle.setLevel(level_dict[self.verbosity])
         stream_handle.setFormatter(self.formatter)
+
         # 文件流输出
         file_handle = logging.FileHandler(filename=self.file, mode='a', encoding='utf-8')
         self.log.addHandler(file_handle)
-        file_handle.setLevel(logging.INFO)
+        file_handle.setLevel(level_dict[self.verbosity])
         file_handle.setFormatter(self.formatter)
+        return self.log
+    
+    def reinitialize(self):
+        if str(datetime.date.today()).replace('-','') != self.date:
+            self.initialize()
+
+    def info(self, text):
+        self.reinitialize()
+        self.log.info(text)
+    
+    def warn(self, text):
+        self.reinitialize()
+        self.log.warn(text)
+    
+    def error(self, text):
+        self.reinitialize()
+        self.log.error(text)

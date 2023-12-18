@@ -935,7 +935,7 @@ class Logger(Callback):
 
     def on_train_begin(self, logs=None):
         import logging
-        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING}
+        level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4:logging.CRITICAL}
         formatter = logging.Formatter("[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s")
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(level_dict[self.verbosity])
