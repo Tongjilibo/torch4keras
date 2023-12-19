@@ -940,8 +940,9 @@ class Logger(Callback):
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(level_dict[self.level])
         save_dir = os.path.dirname(self.log_path)
-
-        os.makedirs(save_dir, exist_ok=True)
+        if save_dir != '':
+            os.makedirs(save_dir, exist_ok=True)
+        
         fh = logging.FileHandler(self.log_path, self.mode)
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
