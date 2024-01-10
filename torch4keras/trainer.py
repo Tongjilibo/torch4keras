@@ -441,11 +441,6 @@ class Trainer:
         os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
 
-    def from_pretrained(self, load_path, strict=True):
-        '''按照pretrained的格式来加载权重
-        '''
-        self.load_weights(load_path, strict, 'pretrained')
-
     def load_weights(self, load_path, strict=True, mapping={}):
         '''加载模型权重, 支持加载权重文件list
 
@@ -453,8 +448,7 @@ class Trainer:
         :param strict: bool, torch.load()是否严格加载
         :param mapping: dict, 指定key的映射
             1. mapping={}, 表示按照模型自身结构加载，一般加载finetune后使用save_weights()保存出来的权重
-            2. mapping='pretrained', 表示按照预训练格式来加载，在bert4torch中一般是使用build_transformer_model来加载预训练权重
-            3. mapping自定义，根据用户自定义mapping来加载权重
+            2. mapping自定义，根据用户自定义mapping来加载权重
         '''
         state_dict_raw = {}
         if isinstance(load_path, (tuple, list)):
@@ -464,12 +458,6 @@ class Trainer:
         else:
             raise ValueError('Args `load_path` only support str/tuple/list format')
         
-        if mapping == 'pretrained':
-            if hasattr(self, 'variable_mapping'):
-                mapping = {v:k for k, v in self.variable_mapping().items()}
-            else:
-                 log_warn('Model do not have `variable_mapping()` function and will load_weights() using original keys')
-
         for load_path_i in load_path:
             state_dict = torch.load(load_path_i, map_location='cpu')
             for k, v in state_dict.items():
@@ -477,30 +465,18 @@ class Trainer:
                 state_dict_raw[k] = v
             self.unwrap_model().load_state_dict(state_dict_raw, strict=strict)
 
-    def save_pretrained(self, save_path, trainable_only=False, verbose=1):
-        '''按照pretrained的格式来保存权重
-        '''
-        self.save_weights(save_path, 'pretrained', trainable_only, verbose)
-
     def save_weights(self, save_path, mapping={}, trainable_only=False, verbose=1):
         '''保存模型权重
 
         :param save_path: str, 权重保存路径
-        :param mapping: dict/str, 指定key的映射, 如果mapping='pretrained', 则按照自带的mapping的reverse来保存
+        :param mapping: dict, 指定key的映射
             1. mapping={}, 表示按照模型自身结构的key来保存，后续可直接load_weights()加载
-            2. mapping='pretrained', 表示按照预训练格式来保存，后续在bert4torch中可使用build_transformer_model来加载，或者load_weights(mapping='pretrained')加载
-            3. mapping自定义，根据用户自定义mapping来保存权重
+            2. mapping自定义，根据用户自定义mapping来保存权重
         :param trainable_only: bool, 指定仅保存可训练参数
         '''
         state_dict_raw = {}
         state_dict = self.unwrap_model().state_dict()
         trainable_parameters = set(p for p,v in self.unwrap_model().named_parameters() if v.requires_grad)
-
-        if mapping == 'pretrained':
-            if hasattr(self, 'variable_mapping'):
-                mapping = self.variable_mapping()
-            else:
-                 log_warn('Model do not have `variable_mapping()` function and will save_weights() using original keys')
         
         for k, v in state_dict.items():
             # 只保存可训练的模型部分
