@@ -442,16 +442,15 @@ class Trainer:
         os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
 
-    def load_weights(self, load_path:Union[str,tuple,list], strict:bool=True, mapping:dict={}):
+    def load_weights(self, load_path:Union[str,tuple,list], strict:bool=True, mapping:dict=None):
         '''加载模型权重, 支持加载权重文件list
 
         :param save_path: str/tuple/list, 权重加载路径
         :param strict: bool, torch.load()是否严格加载
         :param mapping: dict, 指定key的映射
-            1. mapping={}, 表示按照模型自身结构加载，一般加载finetune后使用save_weights()保存出来的权重
+            1. mapping=None, 表示按照模型自身结构加载，一般加载finetune后使用save_weights()保存出来的权重
             2. mapping自定义，根据用户自定义mapping来加载权重
         '''
-        state_dict_raw = {}
         if isinstance(load_path, (tuple, list)):
             strict = False  # 加载多个权重文件时候，strict设置为False
         elif isinstance(load_path, str):
@@ -459,44 +458,53 @@ class Trainer:
         else:
             raise ValueError('Args `load_path` only support str/tuple/list format')
         
+        mapping = mapping or dict()
         for load_path_i in load_path:
             state_dict = load(load_path_i)
-            for k, v in state_dict.items():
-                k = mapping.get(k, k)
-                state_dict_raw[k] = v
-            self.unwrap_model().load_state_dict(state_dict_raw, strict=strict)
+            for k in list(state_dict.keys()):
+                if k in mapping:
+                    state_dict[mapping[k]] = state_dict.pop(k)
+            self.unwrap_model().load_state_dict(state_dict, strict=strict)
 
-    def save_weights(self, save_path, mapping={}, trainable_only=False, verbose=1):
+    def save_weights(self, save_path:str, mapping:dict=None, trainable_only:bool=False):
         '''保存模型权重
 
         :param save_path: str, 权重保存路径
         :param mapping: dict, 指定key的映射
-            1. mapping={}, 表示按照模型自身结构的key来保存，后续可直接load_weights()加载
+            1. mapping=None, 表示按照模型自身结构的key来保存，后续可直接load_weights()加载
             2. mapping自定义，根据用户自定义mapping来保存权重
         :param trainable_only: bool, 指定仅保存可训练参数
         '''
-        state_dict_raw = {}
         state_dict = self.unwrap_model().state_dict()
         trainable_parameters = set(p for p,v in self.unwrap_model().named_parameters() if v.requires_grad)
         
-        for k, v in state_dict.items():
+        mapping = mapping or dict()
+        for k in list(state_dict.keys()):
             # 只保存可训练的模型部分
             if trainable_only and (k not in trainable_parameters):
                 continue
-            k = mapping.get(k, k)
-            state_dict_raw[k] = v
+            if k in mapping:
+                state_dict[mapping[k]] = state_dict.pop(k)
         
         save_dir = os.path.dirname(save_path)
         os.makedirs(save_dir, exist_ok=True)
-        save(state_dict_raw, save_path)
-        if trainable_only and (verbose > 0):
+        save(state_dict, save_path)
+        if trainable_only:
             params_all = sum(p.numel() for p in self.unwrap_model().parameters())
             params_trainable = sum(p.numel() for p in self.unwrap_model().parameters() if p.requires_grad)
             ratio = params_trainable/params_all*100
             log_info(f"Only trainable parameters saved and occupy {params_trainable}/{params_all}={ratio:.2f}%")
 
-    def resume_from_checkpoint(self, save_dir=None, model_path=None, optimizer_path=None, scheduler_path=None, steps_params_path=None, 
-                               mapping={}, verbose=0, **kwargs):
+    def save_pretrained(self, save_path:str, weight_map:dict=None, mapping:dict=None):
+        '''按照预训练模型的key来保存模型, 可供transformers包加载'''
+        for name, child in self.unwrap_model().named_children():
+            if (name != '') and hasattr(child, 'save_pretrained'):
+                child.save_pretrained(save_path, weight_map, mapping)
+            else:
+                save(child.state_dict(), save_path)
+
+    def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
+                               steps_params_path:str=None, mapping:dict=None, verbose:int=0, strict:bool=True, **kwargs):
         '''同时加载模型、优化器、训练过程参数
 
         :param save_dir: str, 保存目录
@@ -514,7 +522,7 @@ class Trainer:
         verbose_str = ''
         # 加载模型权重
         if model_path:
-            self.load_weights(model_path, mapping=mapping)
+            self.load_weights(model_path, strict=strict, mapping=mapping)
             verbose_str += f'Model weights successfuly resumed from {model_path}\n'
         # 加载优化器，断点续训使用
         if optimizer_path:
@@ -533,8 +541,8 @@ class Trainer:
         if verbose == 1:
             print(verbose_str)
 
-    def save_to_checkpoint(self, save_dir=None, model_path=None, optimizer_path=None, scheduler_path=None, steps_params_path=None, 
-                           mapping={}, trainable_only=False, verbose=0, **kwargs):
+    def save_to_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
+                           steps_params_path:str=None, mapping:dict=None, trainable_only:bool=False, verbose:int=0, **kwargs):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param save_dir: str, 保存目录
