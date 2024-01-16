@@ -1,5 +1,6 @@
 ## 更新历史
 
+- **20240116**: 重新整理snippets
 - **20231219**: 增加SimpleStreamFileLogger和LoggerHandler, 修改Logger的格式
 - **20231208**: 监控fit过程，有报错则发送邮件提醒; 解决torch2.0的compile冲突问题
 - **20230928**: 进度条中显示已经训练的时间
