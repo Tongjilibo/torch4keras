@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error
-from torch4keras.snippets import print_trainable_parameters, colorful, monitor_run_by_email, load, save
+from torch4keras.snippets import print_trainable_parameters, colorful, monitor_run_by_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from typing import Union
@@ -460,7 +460,7 @@ class Trainer:
         
         mapping = mapping or dict()
         for load_path_i in load_path:
-            state_dict = load(load_path_i)
+            state_dict = load_checkpoint(load_path_i)
             for k in list(state_dict.keys()):
                 if k in mapping:
                     state_dict[mapping[k]] = state_dict.pop(k)
@@ -486,9 +486,7 @@ class Trainer:
             if k in mapping:
                 state_dict[mapping[k]] = state_dict.pop(k)
         
-        save_dir = os.path.dirname(save_path)
-        os.makedirs(save_dir, exist_ok=True)
-        save(state_dict, save_path)
+        save_checkpoint(state_dict, save_path)
         if trainable_only:
             params_all = sum(p.numel() for p in self.unwrap_model().parameters())
             params_trainable = sum(p.numel() for p in self.unwrap_model().parameters() if p.requires_grad)
@@ -497,12 +495,15 @@ class Trainer:
 
     def save_pretrained(self, save_path:str, weight_map:dict=None, mapping:dict=None):
         '''按照预训练模型的key来保存模型, 可供transformers包加载'''
+        state_dict = dict()
         for name, child in self.unwrap_model().named_children():
             if (name != '') and hasattr(child, 'save_pretrained'):
-                child.save_pretrained(save_path, weight_map, mapping)
+                tmp = child.save_pretrained(save_path, weight_map, mapping, write_to_disk=False)
+                state_dict.update(tmp if tmp else {})
             else:
-                save(child.state_dict(), save_path)
-
+                state_dict.update({f'{name}.{k}': v for k,v in child.state_dict().items()})
+        save_checkpoint(state_dict, save_path)
+    
     def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
                                steps_params_path:str=None, mapping:dict=None, verbose:int=0, strict:bool=True, **kwargs):
         '''同时加载模型、优化器、训练过程参数

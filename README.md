@@ -67,7 +67,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 ## 4. 版本历史
 |更新日期| 版本 | 版本说明 |
 |------| ----------------- |----------- |
-|20240116|v0.1.8           | 重新整理snippets|
+|20240116|v0.1.8           | 重新整理snippets, 重写save_pretrained|
 |20231219|v0.1.7           | 增加SimpleStreamFileLogger和LoggerHandler, 修改Logger的格式|
 |20231208|v0.1.6.post2     |监控fit过程，有报错则发送邮件提醒; 解决torch2.0的compile冲突问题; 修复clip_grad_norm的bug|
 |20230928|v0.1.5     |进度条中显示已经训练的时间|

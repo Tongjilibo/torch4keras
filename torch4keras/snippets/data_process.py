@@ -5,6 +5,8 @@ from packaging import version
 from torch.utils.data import Dataset, IterableDataset
 import inspect
 from .import_utils import is_safetensors_available, is_sklearn_available
+import os
+
 
 if is_safetensors_available():
     from safetensors import safe_open
@@ -196,7 +198,7 @@ def metric_mapping(metric, func, y_pred, y_true):
     return None
 
 
-def load(checkpoint:str, load_safetensors:bool=False):
+def load_checkpoint(checkpoint:str, load_safetensors:bool=False):
     '''加载ckpt，支持torch.load和safetensors
     '''
     if load_safetensors or checkpoint.endswith(".safetensors"):
@@ -218,9 +220,12 @@ def load(checkpoint:str, load_safetensors:bool=False):
         return torch.load(checkpoint, map_location='cpu')
 
 
-def save(state_dict:dict, save_path:str, save_safetensors:bool=False):
+def save_checkpoint(state_dict:dict, save_path:str, save_safetensors:bool=False):
     '''保存ckpt，支持torch.save和safetensors
     '''
+    save_dir = os.path.dirname(save_path)
+    os.makedirs(save_dir, exist_ok=True)
+
     if save_safetensors or save_path.endswith('.safetensors'):
         safe_save_file(state_dict, save_path, metadata={"format": "pt"})
     else:
