@@ -224,7 +224,8 @@ def save_checkpoint(state_dict:dict, save_path:str, save_safetensors:bool=False)
     '''保存ckpt，支持torch.save和safetensors
     '''
     save_dir = os.path.dirname(save_path)
-    os.makedirs(save_dir, exist_ok=True)
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
 
     if save_safetensors or save_path.endswith('.safetensors'):
         safe_save_file(state_dict, save_path, metadata={"format": "pt"})
