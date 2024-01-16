@@ -1,6 +1,5 @@
 import importlib.util
 from typing import Any, Tuple, Union
-import torch
 from packaging import version
 import sys
 if sys.version_info < (3, 8):

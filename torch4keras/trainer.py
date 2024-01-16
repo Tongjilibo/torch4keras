@@ -1,9 +1,10 @@
 from torch import nn
 import torch
 from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error
-from torch4keras.snippets import print_trainable_parameters, colorful, monitor_run_by_email
+from torch4keras.snippets import print_trainable_parameters, colorful, monitor_run_by_email, load, save
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
+from typing import Union
 from inspect import isfunction
 import os
 import json
@@ -441,7 +442,7 @@ class Trainer:
         os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
 
-    def load_weights(self, load_path, strict=True, mapping={}):
+    def load_weights(self, load_path:Union[str,tuple,list], strict:bool=True, mapping:dict={}):
         '''加载模型权重, 支持加载权重文件list
 
         :param save_path: str/tuple/list, 权重加载路径
@@ -459,7 +460,7 @@ class Trainer:
             raise ValueError('Args `load_path` only support str/tuple/list format')
         
         for load_path_i in load_path:
-            state_dict = torch.load(load_path_i, map_location='cpu')
+            state_dict = load(load_path_i)
             for k, v in state_dict.items():
                 k = mapping.get(k, k)
                 state_dict_raw[k] = v
@@ -487,7 +488,7 @@ class Trainer:
         
         save_dir = os.path.dirname(save_path)
         os.makedirs(save_dir, exist_ok=True)
-        torch.save(state_dict_raw, save_path)
+        save(state_dict_raw, save_path)
         if trainable_only and (verbose > 0):
             params_all = sum(p.numel() for p in self.unwrap_model().parameters())
             params_trainable = sum(p.numel() for p in self.unwrap_model().parameters() if p.requires_grad)

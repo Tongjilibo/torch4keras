@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from packaging import version
 from torch.utils.data import Dataset, IterableDataset
 import inspect
-from import_utils import is_safetensors_available, is_sklearn_available
+from .import_utils import is_safetensors_available, is_sklearn_available
 
 if is_safetensors_available():
     from safetensors import safe_open

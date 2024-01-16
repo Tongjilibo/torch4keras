@@ -4,7 +4,7 @@ from torch import nn, Tensor
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import os
 import random
-from log import log_info, log_warn, log_error
+from .log import log_info, log_warn, log_error
 
 
 def seed_everything(seed:int=None):

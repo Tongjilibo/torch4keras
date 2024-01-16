@@ -4,7 +4,7 @@ import os
 import traceback
 import copy
 import functools
-from log import log_info, log_warn, log_error
+from .log import log_info, log_warn, log_error
 
 
 def spend_time(func):
