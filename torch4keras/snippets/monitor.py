@@ -7,17 +7,38 @@ import functools
 from .log import log_info, log_warn, log_error
 
 
-def spend_time(func):
+def format_time(eta, hhmmss=True):
+    '''格式化显示时间
+    :param hhmmss: bool, 是否只以00:00:00格式显示
+    '''
+    if eta > 86400:
+        eta_d, eta_h = eta // 86400, eta % 86400
+        eta_format = f'{eta_d}d ' + ('%d:%02d:%02d' % (eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60))
+    elif eta > 3600:
+        eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
+    elif hhmmss:
+        eta_format = '%d:%02d' % (eta // 60, eta % 60)
+    elif (eta >= 1) and (eta < 60):
+        eta_format = '%.2fs' % eta
+    elif eta >= 1e-3:
+        eta_format = '%.0fms' % (eta * 1e3)
+    else:
+        eta_format = '%.0fus' % (eta * 1e6)
+    return eta_format
+
+
+def cost_time(func):
     '''装饰器，计算函数消耗的时间
     '''
-    start = time.time()
     def warpper(*args, **kwargs):
+        start = time.time()
         res = func(*args, **kwargs)
         end = time.time()
-        consume = end - start
+        consume = format_time(end - start, hhmmss=False)
         start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
         end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end))
-        print(f'{start1} ~ {end1}  spent {consume:.2f}s')
+
+        print(f'Cost {consume}\t{start1} ~ {end1}')
         return res
     return warpper
 

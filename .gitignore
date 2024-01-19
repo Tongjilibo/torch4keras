@@ -11,3 +11,4 @@ test
 *.pt
 *.log
 ckpt
+test_local

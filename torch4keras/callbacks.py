@@ -8,8 +8,10 @@ from collections import deque
 import json
 import copy
 import os
-from torch4keras.snippets import log_info, log_error, log_warn, send_email, set_precision
+from torch4keras.snippets import log_info, log_error, log_warn, send_email
+from torch4keras.snippets import set_precision, format_time
 import math
+
 
 # 忽略nan的指标
 IGNORE_NAN_VALUES = os.environ.get('IGNORE_NAN_VALUES', False)
@@ -299,13 +301,6 @@ class Progbar(object):
         self._start = time.time()
         self._last_update = 0
 
-    @staticmethod
-    def format_time(eta):
-        if eta > 3600:
-            eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
-        else:
-            eta_format = '%d:%02d' % (eta // 60, eta % 60)
-        return eta_format
 
     def update(self, current, values=None):
         '''Updates the progress bar.'''
@@ -348,9 +343,9 @@ class Progbar(object):
                 time_per_unit = 0
             if self.target is not None and current < self.target:
                 eta = time_per_unit * (self.target - current)
-                info = ' - ETA: %s' % self.format_time(now - self._start) + '<' + self.format_time(eta)
+                info = ' - ETA: %s' % format_time(now - self._start) + '<' + format_time(eta)
             else:
-                info = ' - %s' % self.format_time(now - self._start)
+                info = ' - %s' % format_time(now - self._start)
                 if time_per_unit >= 1:
                     info += ' %.0fs/step' % time_per_unit
                 elif time_per_unit >= 1e-3:
