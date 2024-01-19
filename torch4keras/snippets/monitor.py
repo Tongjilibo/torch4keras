@@ -38,7 +38,7 @@ def cost_time(func):
         start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
         end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end))
 
-        print(f'Cost {consume}\t{start1} ~ {end1}')
+        log_info(f'Cost {consume}\t{start1} ~ {end1}')
         return res
     return warpper
 
