@@ -27,8 +27,17 @@ def format_time(eta, hhmmss=True):
     return eta_format
 
 
-def cost_time(func):
+def timeit(func):
     '''装饰器，计算函数消耗的时间
+    
+    Example
+    --------------------------------------
+    @timeit
+    def main(n=10):
+        for i in range(n):
+            time.sleep(0.01)
+
+    main(10)
     '''
     def warpper(*args, **kwargs):
         start = time.time()
@@ -38,7 +47,7 @@ def cost_time(func):
         start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
         end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end))
 
-        log_info(f'Cost {consume}\t{start1} ~ {end1}')
+        log_info(f'Function `{func.__name__}` cost {consume} [{start1} < {end1}]')
         return res
     return warpper
 
