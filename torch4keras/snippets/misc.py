@@ -141,3 +141,61 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
 
     return topk_idx_str
 
+
+def find_tied_parameters(model: nn.Module, **kwargs):
+    """ copyed from accelerate
+    Find the tied parameters in a given model.
+
+    <Tip warning={true}>
+
+    The signature accepts keyword arguments, but they are for the recursive part of this function and you should ignore
+    them.
+
+    </Tip>
+
+    Args:
+        model (`torch.nn.Module`): The model to inspect.
+
+    Returns:
+        List[List[str]]: A list of lists of parameter names being all tied together.
+
+    Example:
+
+    ```py
+    >>> from collections import OrderedDict
+    >>> import torch.nn as nn
+
+    >>> model = nn.Sequential(OrderedDict([("linear1", nn.Linear(4, 4)), ("linear2", nn.Linear(4, 4))]))
+    >>> model.linear2.weight = model.linear1.weight
+    >>> find_tied_parameters(model)
+    [['linear1.weight', 'linear2.weight']]
+    ```
+    """
+    # Initialize result and named_parameters before recursing.
+    named_parameters = kwargs.get("named_parameters", None)
+    prefix = kwargs.get("prefix", "")
+    result = kwargs.get("result", {})
+
+    if named_parameters is None:
+        named_parameters = {n: p for n, p in model.named_parameters()}
+    else:
+        # A tied parameter will not be in the full `named_parameters` seen above but will be in the `named_parameters`
+        # of the submodule it belongs to. So while recursing we track the names that are not in the initial
+        # `named_parameters`.
+        for name, parameter in model.named_parameters():
+            full_name = name if prefix == "" else f"{prefix}.{name}"
+            if full_name not in named_parameters:
+                # When we find one, it has to be one of the existing parameters.
+                for new_name, new_param in named_parameters.items():
+                    if new_param is parameter:
+                        if new_name not in result:
+                            result[new_name] = []
+                        result[new_name].append(full_name)
+
+    # Once we have treated direct parameters, we move to the child modules.
+    for name, child in model.named_children():
+        child_name = name if prefix == "" else f"{prefix}.{name}"
+        find_tied_parameters(child, named_parameters=named_parameters, prefix=child_name, result=result)
+
+    # return FindTiedParametersResult([sorted([weight] + list(set(tied))) for weight, tied in result.items()])
+    return {weight: list(set(tied)) for weight, tied in result.items()}
