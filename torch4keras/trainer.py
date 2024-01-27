@@ -9,6 +9,7 @@ from inspect import isfunction
 import os
 import json
 import math
+import re
 
 
 class Trainer:
@@ -494,7 +495,10 @@ class Trainer:
             log_info(f"Only trainable parameters saved and occupy {params_trainable}/{params_all}={ratio:.2f}%")
 
     def save_pretrained(self, save_path:str, weight_map:dict=None, mapping:dict=None):
-        '''按照预训练模型的key来保存模型, 可供transformers包加载'''
+        '''按照预训练模型的key来保存模型, 可供transformers包加载
+
+        :param save_path: str, 保存的文件/文件夹路径
+        '''
         state_dict = dict()
         for name, child in self.unwrap_model().named_children():
             if (name != '') and hasattr(child, 'save_pretrained'):
@@ -502,7 +506,9 @@ class Trainer:
                 state_dict.update(tmp if tmp else {})
             else:
                 state_dict.update({f'{name}.{k}': v for k,v in child.state_dict().items()})
-        save_checkpoint(state_dict, save_path)
+        if len(state_dict) > 0:
+            save_dir = None if re.search('\.[a-zA-z0-9]+$', save_path) else save_path
+            save_checkpoint(state_dict, os.path.join(save_dir, 'pytorch_model.bin') if save_dir else save_path)
     
     def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
                                steps_params_path:str=None, mapping:dict=None, verbose:int=0, strict:bool=True, **kwargs):
