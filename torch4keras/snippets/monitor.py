@@ -52,6 +52,65 @@ def timeit(func):
     return warpper
 
 
+class Timeit:
+    '''上下文管理器, 记录耗时/平均耗时
+
+    Example
+    ----------------------
+    from torch4keras.snippets import Timeit
+    with Timeit() as ti:
+        for i in range(10):
+            time.sleep(0.1)
+            # ti.lap(prefix=i, restart=False)  # 统计累计耗时
+            # ti.lap(prefix=i, restart=True)  # 统计间隔耗时
+            # ti.lap(count=10, prefix=i, restart=True)  # 统计每段速度
+        # ti(10) # 统计速度
+    '''
+    def __enter__(self):
+        self.count = None
+        self.start_tm = time.time()
+        self.template = 'Average speed: {:.2f}/s'
+        return self
+
+    def __call__(self, count):
+        self.count = count
+
+    def restart(self):
+        '''自定义开始记录的地方'''
+        self.start_tm = time.time()
+    
+    def lap(self, count:int=None, prefix:str=None, restart=False):
+        '''
+        :params count: 需要计算平均生成速度中统计的次数
+        :params prefix: 打印时候自定义的前缀
+        :params restart: 是否重置start_tm, True只记录时间间隔，否则记录的是从一开始的累计时间
+        '''
+        if count is not None:
+            self.count = count
+        prefix = '' if prefix is None else str(prefix).strip() + ' - '
+
+        end_tm = time.time()
+        consume = end_tm - self.start_tm
+        if self.count is None:
+            consume = format_time(consume, hhmmss=False)
+            start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_tm))
+            end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
+            log_info(prefix + f'Cost {consume} [{start1} < {end1}]')
+        elif consume > 0:
+            speed = self.count / consume
+            log_info(prefix + self.template.format(speed))
+        else:
+            pass
+            # log_warn('Time duration = 0')
+        
+        if restart:
+            self.restart()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.lap()
+        print()
+
+
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 
                mail_user:str=None, mail_pwd:str=None, mail_sender:str=None):
     ''' 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)

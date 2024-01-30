@@ -6,7 +6,6 @@ torch4keras.egg-info/
 build/
 dist/
 backup
-test
 .DS_Store
 *.pt
 *.log
