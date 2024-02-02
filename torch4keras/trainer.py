@@ -560,23 +560,21 @@ class Trainer:
         :param mapping: dict, 模型文件的mapping
         :param trainable_only
         '''
-        model_path = model_path or os.path.join(save_dir, 'model.pt')
-        optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
-        scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
-        steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
+        model_path = model_path or os.path.join(save_dir or './', 'model.pt')
+        optimizer_path = optimizer_path or os.path.join(save_dir or './', 'optimizer.pt')
+        scheduler_path = scheduler_path or os.path.join(save_dir or './', 'scheduler.pt')
+        steps_params_path = steps_params_path or os.path.join(save_dir or './', 'steps_params.pt')
 
         verbose_str = ''
         if model_path:
             self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)
             verbose_str += f'Model weights successfuly saved to {model_path}\n'
         if optimizer_path:
-            save_dir = os.path.dirname(optimizer_path)
-            os.makedirs(save_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(optimizer_path), exist_ok=True)
             torch.save(self.optimizer.state_dict(), optimizer_path)
             verbose_str += f'Optimizer successfuly saved to {optimizer_path}\n'
         if scheduler_path and (self.scheduler is not None):
-            save_dir = os.path.dirname(scheduler_path)
-            os.makedirs(save_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(scheduler_path), exist_ok=True)
             torch.save(self.scheduler.state_dict(), scheduler_path)
             verbose_str += f'Scheduler successfuly saved to {scheduler_path}\n'
         if steps_params_path:
