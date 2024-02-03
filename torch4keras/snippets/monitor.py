@@ -142,22 +142,21 @@ class Timeit2:
         '''
         end_tm = time.time()
         consume = end_tm - self.start_tm
+        name = str(name)
         self.cost[name] = self.cost.get(name, 0) + consume
         self.count[name] = self.count.get(name, 0) + 1
         self.start_tm = time.time()
 
     def end(self):
-        log_info('Cost detail')
-        pprint(self.cost)
-
-        avg_cost = dict()
         for k, v in self.count.items():
             if v > 1:
-                avg_cost[k] = self.cost[k] / v
-        if len(avg_cost) > 1:
-            log_info('Average cost detail')
-            pprint(avg_cost)
+                self.cost['avg_' + k] = self.cost[k] / v
+        
+        log_info('Cost detail')
+        pprint(self.cost)
         self.reset()
+        print()
+        return self.cost
 
 
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 

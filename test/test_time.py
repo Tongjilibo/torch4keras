@@ -34,5 +34,9 @@ ti = Timeit2()
 for i in range(10):
     time.sleep(0.1)
     ti.lap(name=i)
+
+for i in range(10):
+    time.sleep(0.1)
+    ti.lap(name=i)
 ti.end() # 打印时长
 
