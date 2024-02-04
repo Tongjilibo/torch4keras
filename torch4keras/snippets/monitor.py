@@ -136,7 +136,7 @@ class Timeit2:
         self.count = dict()
         self.start_tm = time.time()
 
-    def reset_start(self):
+    def restart(self):
         self.start_tm = time.time()
 
     def lap(self, name:str):
