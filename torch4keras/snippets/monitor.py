@@ -150,15 +150,17 @@ class Timeit2:
         self.count[name] = self.count.get(name, 0) + 1
         self.start_tm = time.time()
 
-    def end(self):
+    def end(self, verbose=1):
         for k, v in self.count.items():
             if v > 1:
                 self.cost['avg_' + k] = self.cost[k] / v
         
-        log_info('Cost detail')
-        pprint(self.cost)
+        if verbose > 0:
+            log_info('Cost detail')
+            pprint(self.cost)
+            print()
+
         self.reset()
-        print()
         return self.cost
 
 
