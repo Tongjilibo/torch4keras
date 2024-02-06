@@ -60,7 +60,7 @@ class MyEvaluator(Evaluator):
     # 重构评价函数
     def evaluate(self):
         total, hit = 1e-5, 0
-        for X, y in tqdm(test_dataloader, desc='Evaluating'):
+        for X, y in tqdm(test_dataloader, desc='Evaluating', ncols=80):
             pred_y = model.predict(X).argmax(dim=-1)
             hit += pred_y.eq(y).sum().item()
             total += y.shape[0]

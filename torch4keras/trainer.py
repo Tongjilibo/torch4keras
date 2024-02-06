@@ -361,7 +361,9 @@ class Trainer:
                 self.callbacks.on_batch_begin(self.global_step, self.local_step, logs)
 
                 # forward和backward
-                self.unwrap_model().train()  # 设置为train模式
+                if not self.unwrap_model().training:
+                    self.unwrap_model().train()  # 设置为train模式
+                    
                 tr_loss, tr_loss_detail = 0, {}
                 for _ in range(self.grad_accumulation_steps):
                     train_X, train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
