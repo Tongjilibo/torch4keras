@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import os
 import random
 from .log import log_info, log_warn, log_error
+import json
 
 
 def seed_everything(seed:int=None):
@@ -77,7 +78,6 @@ KwargsConfig = DottableDict
 class JsonConfig:
     '''读取配置文件并返回可.操作符的字典'''
     def __new__(self, json_path, encoding='utf-8'):
-        import json
         return DottableDict(json.load(open(json_path, "r", encoding=encoding)))
 
 
