@@ -5,6 +5,7 @@ import traceback
 import copy
 import functools
 from .log import log_info, log_warn, log_error
+from pprint import pprint
 
 
 def format_time(eta, hhmmss=True):
@@ -61,54 +62,106 @@ class Timeit:
     with Timeit() as ti:
         for i in range(10):
             time.sleep(0.1)
-            # ti.lap(prefix=i, restart=False)  # 统计累计耗时
-            # ti.lap(prefix=i, restart=True)  # 统计间隔耗时
-            # ti.lap(count=10, prefix=i, restart=True)  # 统计每段速度
+            # ti.lap(name=i, restart=False)  # 统计累计耗时
+            # ti.lap(name=i, restart=True)  # 统计间隔耗时
+            # ti.lap(count=10, name=i, restart=True)  # 统计每段速度
         # ti(10) # 统计速度
     '''
-    def __enter__(self):
+    def __enter__(self, template='Average speed: {:.2f}/s'):
         self.count = None
         self.start_tm = time.time()
-        self.template = 'Average speed: {:.2f}/s'
+        self.template = template
         return self
 
     def __call__(self, count):
         self.count = count
 
-    def restart(self):
+    def reset(self):
         '''自定义开始记录的地方'''
         self.start_tm = time.time()
     
-    def lap(self, count:int=None, prefix:str=None, restart=False):
+    def lap(self, name:str=None, count:int=None, reset=False):
         '''
+        :params name: 打印时候自定义的前缀
         :params count: 需要计算平均生成速度中统计的次数
-        :params prefix: 打印时候自定义的前缀
-        :params restart: 是否重置start_tm, True只记录时间间隔，否则记录的是从一开始的累计时间
+        :params reset: 是否重置start_tm, True只记录时间间隔，否则记录的是从一开始的累计时间
         '''
         if count is not None:
             self.count = count
-        prefix = '' if prefix is None else str(prefix).strip() + ' - '
+        name = '' if name is None else str(name).strip() + ' - '
 
         end_tm = time.time()
         consume = end_tm - self.start_tm
         if self.count is None:
+            # 只log时间
             consume = format_time(consume, hhmmss=False)
             start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_tm))
             end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
-            log_info(prefix + f'Cost {consume} [{start1} < {end1}]')
+            log_info(name + f'Cost {consume} [{start1} < {end1}]')
         elif consume > 0:
             speed = self.count / consume
-            log_info(prefix + self.template.format(speed))
+            log_info(name + self.template.format(speed))
         else:
             pass
             # log_warn('Time duration = 0')
         
-        if restart:
-            self.restart()
+        if reset:
+            self.reset()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.lap()
         print()
+
+
+class Timeit2:
+    '''记录耗时
+
+    Example
+    ----------------------
+    ti = Timeit2()
+    for i in range(10):
+        time.sleep(0.1)
+        ti.lap(name=i)
+    ti.end() # 打印各个步骤时长
+    '''
+    def __init__(self):
+        self.reset()
+
+    def __call__(self, *args, **kwargs):
+        self.lap(*args, **kwargs)
+
+    def reset(self):
+        '''自定义开始记录的地方'''
+        self.cost = dict()
+        self.count = dict()
+        self.start_tm = time.time()
+
+    def restart(self):
+        self.start_tm = time.time()
+
+    def lap(self, name:str):
+        '''
+        :params name: 打印时候自定义的前缀
+        '''
+        end_tm = time.time()
+        consume = end_tm - self.start_tm
+        name = str(name)
+        self.cost[name] = self.cost.get(name, 0) + consume
+        self.count[name] = self.count.get(name, 0) + 1
+        self.start_tm = time.time()
+
+    def end(self, verbose=1):
+        for k, v in self.count.items():
+            if v > 1:
+                self.cost['avg_' + k] = self.cost[k] / v
+        
+        if verbose > 0:
+            log_info('Cost detail')
+            pprint(self.cost)
+            print()
+
+        self.reset()
+        return self.cost
 
 
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 

@@ -62,12 +62,24 @@ def log_info(string:str, verbose:int=1):
     return res
 
 
+@functools.lru_cache(None)
+def log_info_once(string:str, verbose=1):
+    ''' 单次warning '''
+    return log_info(string, verbose)
+
+
 def log_warn(string:str, verbose:int=1):
     '''[WARNING]: message, 黄色前缀'''
     res = colorful('[WARNING]', color='yellow') + ' ' + string.strip()
     if verbose != 0:
         print(res)
     return res
+
+
+@functools.lru_cache(None)
+def log_warn_once(string:str, verbose=1):
+    ''' 单次warning '''
+    return log_warn(string, verbose)
 
 
 def log_error(string:str, verbose:int=1):
@@ -79,9 +91,9 @@ def log_error(string:str, verbose:int=1):
 
 
 @functools.lru_cache(None)
-def log_warn_once(string:str, verbose=1):
+def log_error_once(string:str, verbose=1):
     ''' 单次warning '''
-    return log_warn(string, verbose)
+    return log_error(string, verbose)
 
 
 @functools.lru_cache(None)
