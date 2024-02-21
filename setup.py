@@ -14,6 +14,6 @@ setup(
     license='Apache License',
     url='https://github.com/Tongjilibo/torch4keras',
     author='Tongjilibo',
-    install_requires=[],
+    install_requires=['numpy', 'torch>1.6'],
     packages=find_packages()
 )
