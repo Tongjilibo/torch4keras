@@ -1,5 +1,6 @@
 ## 更新历史
 
+- **20240221**: fit中修改.train()逻辑减少耗时
 - **20240204**: 增加Timeit, Timeit2, timeid等时间/速度监控
 - **20240116**: 重新整理snippets, 重写save_pretrained
 - **20231219**: 增加SimpleStreamFileLogger和LoggerHandler, 修改Logger的格式

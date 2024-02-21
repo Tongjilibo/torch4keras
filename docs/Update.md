@@ -2,6 +2,9 @@
 
 |更新日期| 版本 | 版本说明 |
 |------| ----------------- |----------- |
+|20240221|v0.2.0           | fit中修改.train()逻辑减少耗时|
+|20240204|v0.1.9           | 增加Timeit, Timeit2, timeit等时间/速度监控|
+|20240116|v0.1.8           | 重新整理snippets, 重写save_pretrained|
 |20231219|v0.1.7           | 增加SimpleStreamFileLogger和LoggerHandler, 修改Logger的格式|
 |20231207|v0.1.6     |监控fit过程，有报错则发送邮件提醒; 解决torch2.0的compile冲突问题|
 |20230928|v0.1.5     |进度条中显示已经训练的时间|
