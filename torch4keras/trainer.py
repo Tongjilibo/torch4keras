@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error
-from torch4keras.snippets import print_trainable_parameters, colorful, monitor_run_by_email, load_checkpoint, save_checkpoint
+from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from typing import Union
@@ -10,6 +10,7 @@ import os
 import json
 import math
 import re
+import traceback
 
 
 class Trainer:
@@ -324,17 +325,42 @@ class Trainer:
         batch = self._move_to_model_device(batch)
         return batch
 
-    @monitor_run_by_email
-    def fit(self, train_dataloader, steps_per_epoch=None, epochs=1, callbacks=None, verbose=1, **kwargs):
-        '''模型训练
-        
+    def fit(self, train_dataloader, steps_per_epoch:int=None, epochs:int=1, callbacks:Union[list]=None, verbose:int=1, **kwargs):
+        ''' 模型训练
         :param train_dataloader: Dataloader, 训练数据集
         :param steps_per_epoch: int, 每个epoch训练的steps，默认为None表示自行计算 
         :param epochs: int, 训练的轮次, 默认为1
         :param callbacks: Callback/List[Callback], 回调函数，可调用预制的Callback或者自定义，默认为None 
         :param verbose: int, 是否打印，默认为1表示打印
+        
+        > 其他参数
+        :param mail_receivers: str, 发生异常的时候邮件通知
+        :param save_dir_when_error: str, 发生异常时候保存权重的路径
+        
         :return: History
         '''
+        try:
+            return self._fit(train_dataloader, steps_per_epoch, epochs, callbacks, verbose, **kwargs)
+        except Exception as e:
+            # 训练异常则发邮件
+            error_msg = traceback.format_exc()
+            mail_receivers_ = kwargs.get('mail_receivers')
+            if mail_receivers_ is not None:
+                mail_subject_ = kwargs.get('mail_subject') or "[ERROR] fit"
+                mail_host_ = kwargs.get('mail_host')
+                mail_user_ = kwargs.get('mail_user')
+                mail_pwd_ = kwargs.get('mail_pwd')
+                mail_sender_ = kwargs.get('mail_sender')
+                send_email(mail_receivers_, mail_subject_, error_msg, mail_host=mail_host_, 
+                           mail_user=mail_user_, mail_pwd=mail_pwd_, mail_sender=mail_sender_)
+
+            # 训练异常则保存权重
+            if (save_dir_when_error := kwargs.get('save_dir_when_error')) is not None:
+                self.save_to_checkpoint(save_dir_when_error, verbose=verbose, **kwargs)
+            raise e
+
+    def _fit(self, train_dataloader, steps_per_epoch:int=None, epochs:int=1, callbacks:Union[list]=None, verbose:int=1, **kwargs):
+        '''模型训练'''
         # 输入处理
         self._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
 

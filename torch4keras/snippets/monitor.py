@@ -14,7 +14,7 @@ def format_time(eta, hhmmss=True):
     '''
     if eta > 86400:
         eta_d, eta_h = eta // 86400, eta % 86400
-        eta_format = f'{eta_d}d ' + ('%d:%02d:%02d' % (eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60))
+        eta_format = '%dd ' % eta_d + ('%d:%02d:%02d' % (eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60))
     elif eta > 3600:
         eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
     elif hhmmss:
@@ -202,29 +202,6 @@ def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str=""
     except smtplib.SMTPException as e:
         log_error('Send email error : '+str(e))
         return str(e)
-
-
-def monitor_run_by_email(func, mail_receivers:Union[str,list]=None, mail_subject:str=None, mail_host:str=None, 
-                         mail_user:str=None, mail_pwd:str=None, mail_sender:str=None):
-    """ 通过发邮件的形式监控运行，在程序出现异常的时候发邮件
-    """
-    @functools.wraps(func)
-    def get_except(*args,**kwargs):
-        try:
-            return func(*args,**kwargs)
-        except Exception as e:
-            error_msg = traceback.format_exc()
-            mail_receivers_ = mail_receivers or kwargs.get('mail_receivers')
-            if mail_receivers_ is not None:
-                mail_subject_ = mail_subject or kwargs.get('mail_subject') or "[ERROR] " + func.__name__
-                mail_host_ = mail_host or kwargs.get('mail_host')
-                mail_user_ = mail_user or kwargs.get('mail_user')
-                mail_pwd_ = mail_pwd or kwargs.get('mail_pwd')
-                mail_sender_ = mail_sender or kwargs.get('mail_sender')
-                send_email(mail_receivers_, mail_subject_, error_msg, mail_host=mail_host_, 
-                           mail_user=mail_user_, mail_pwd=mail_pwd_, mail_sender=mail_sender_)
-            raise e
-    return get_except
 
 
 def email_when_error(receivers:Union[str,list], **configs):
