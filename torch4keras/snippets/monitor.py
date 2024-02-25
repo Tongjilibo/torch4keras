@@ -33,12 +33,12 @@ def timeit(func):
     
     Example
     --------------------------------------
-    @timeit
-    def main(n=10):
-        for i in range(n):
-            time.sleep(0.01)
+    >>> @timeit
+    >>> def main(n=10):
+    >>>     for i in range(n):
+    >>>         time.sleep(0.01)
 
-    main(10)
+    >>> main(10)
     '''
     def warpper(*args, **kwargs):
         start = time.time()
@@ -58,14 +58,14 @@ class Timeit:
 
     Example
     ----------------------
-    from torch4keras.snippets import Timeit
-    with Timeit() as ti:
-        for i in range(10):
-            time.sleep(0.1)
-            # ti.lap(name=i, restart=False)  # 统计累计耗时
-            # ti.lap(name=i, restart=True)  # 统计间隔耗时
-            # ti.lap(count=10, name=i, restart=True)  # 统计每段速度
-        # ti(10) # 统计速度
+    >>> from torch4keras.snippets import Timeit
+    >>> with Timeit() as ti:
+    >>>     for i in range(10):
+    >>>         time.sleep(0.1)
+    >>>         # ti.lap(name=i, restart=False)  # 统计累计耗时
+    >>>         # ti.lap(name=i, restart=True)  # 统计间隔耗时
+    >>>         # ti.lap(count=10, name=i, restart=True)  # 统计每段速度
+    >>>     # ti(10) # 统计速度
     '''
     def __enter__(self, template='Average speed: {:.2f}/s'):
         self.count = None
@@ -118,11 +118,11 @@ class Timeit2:
 
     Example
     ----------------------
-    ti = Timeit2()
-    for i in range(10):
-        time.sleep(0.1)
-        ti.lap(name=i)
-    ti.end() # 打印各个步骤时长
+    >>> ti = Timeit2()
+    >>> for i in range(10):
+    >>>     time.sleep(0.1)
+    >>>     ti.lap(name=i)
+    >>> ti.end() # 打印各个步骤时长
     '''
     def __init__(self):
         self.reset()
@@ -208,10 +208,10 @@ def email_when_error(receivers:Union[str,list], **configs):
     '''装饰器，异常则发邮件
     Example:
     --------
-    @email_when_error(receivers='tongjilibo@163.com')
-    def test():
-        return 1/0
-    test()  # 调用
+    >>> @email_when_error(receivers='tongjilibo@163.com')
+    >>> def test():
+    >>>     return 1/0
+    >>> test()  # 调用
     '''
     def actual_decorator(func):
         def new_func(*args, **kwargs):

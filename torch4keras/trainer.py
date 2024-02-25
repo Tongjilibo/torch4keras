@@ -4,7 +4,7 @@ from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_dev
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
-from typing import Union
+from typing import Union, List
 from inspect import isfunction
 import os
 import json
@@ -42,8 +42,9 @@ class Trainer:
         self.loss2metrics = True  # 把loss_detail打印在进度条的metrics上
         # add_module(self)  # 增加nn.Module的成员方法
 
-    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm=None, mixed_precision=False, metrics=None, 
-                grad_accumulation_steps=1, progbar_config=None, smooth_metrics_config=None, **kwargs):
+    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:bool=None, mixed_precision:bool=False, 
+                metrics:Union[str, List[str], dict]=None, grad_accumulation_steps:int=1, progbar_config:dict=None, 
+                smooth_metrics_config:dict=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -131,7 +132,7 @@ class Trainer:
         '''允许修改self.device'''
         self._device = value
 
-    def _move_to_model_device(self, inputs):
+    def _move_to_model_device(self, inputs:Union[torch.Tensor, tuple, list, dict]):
         '''遍历并转移到model.device上（递归）'''
         if self.move_to_model_device:
             if isinstance(inputs, torch.Tensor) and hasattr(self, 'device') and (inputs.device != self.device):
@@ -237,7 +238,7 @@ class Trainer:
             else:
                 self.scheduler.step()
 
-    def _prepare_inputs(self, train_dataloader, steps_per_epoch, epochs, verbose):
+    def _prepare_inputs(self, train_dataloader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
         '''对fit的输入进行类型检查并置为成员变量'''
         if not hasattr(train_dataloader, '__len__'):
             assert steps_per_epoch is not None, 'Either train_dataloader has attr `__len__` or steps_per_epoch is not None'
@@ -252,7 +253,7 @@ class Trainer:
         self.train_dataloader_iter = iter(self.train_dataloader)  # 循环epoch时不重生成
         self.verbose = self.verbose if hasattr(self, 'verbose') else verbose
 
-    def _prepare_callbacks(self, callbacks):
+    def _prepare_callbacks(self, callbacks:Union[Callback, List[Callback]]=None):
         '''callbacks设置'''
         if callbacks is None:
             callbacks = []
@@ -449,7 +450,7 @@ class Trainer:
         input_kwargs = self._move_to_model_device(input_kwargs)
         return self._forward(*inputs, **input_kwargs)
         
-    def load_steps_params(self, save_path):
+    def load_steps_params(self, save_path:str):
         '''导入训练过程参数
         
         :param save_path: str, 训练过程参数保存路径
@@ -459,7 +460,7 @@ class Trainer:
         self.resume_epoch = step_params['resume_epoch']
         return step_params
 
-    def save_steps_params(self, save_path):
+    def save_steps_params(self, save_path:str):
         '''保存训练过程参数
 
         :param save_path: str, 训练过程参数保存路径

@@ -11,6 +11,7 @@ import os
 from torch4keras.snippets import log_info, log_error, log_warn, send_email
 from torch4keras.snippets import set_precision, format_time
 import math
+from typing import Literal, Union
 
 
 # 忽略nan的指标
@@ -75,7 +76,7 @@ class CallbackList(object):
             callback.set_scheduler(scheduler)
             callback.set_params(params)
 
-    def on_epoch_begin(self, global_step, epoch, logs=None):
+    def on_epoch_begin(self, global_step:int, epoch:int, logs:dict=None):
         # 如果是分布式DDP训练，则仅masker_rank可以callback
         if not self.run_callbacks: return
         logs = logs or {}
@@ -86,14 +87,14 @@ class CallbackList(object):
         self._delta_ts_batch_begin = deque([], maxlen=self.queue_length)
         self._delta_ts_batch_end = deque([], maxlen=self.queue_length)
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_epoch_end(global_step, epoch, logs)
 
-    def on_batch_begin(self, global_step, local_step, logs=None):
+    def on_batch_begin(self, global_step:int, local_step:int, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         t_before_callbacks = time.time()
@@ -106,7 +107,7 @@ class CallbackList(object):
             warnings.warn(f'Method on_batch_begin() is slow compared to the batch update {delta_t_median}. Check your callbacks.')
         self._t_enter_batch = time.time()
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         if not hasattr(self, '_t_enter_batch'):
@@ -121,28 +122,28 @@ class CallbackList(object):
         if (self._delta_t_batch > 0. and (delta_t_median > 0.95 * self._delta_t_batch and delta_t_median > 0.1)):
             warnings.warn(f'Method on_batch_end() is slow compared to the batch update {delta_t_median}. Check your callbacks.')
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_train_begin(logs)
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_train_end(logs)
 
-    def on_dataloader_end(self, logs=None):
+    def on_dataloader_end(self, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
             if hasattr(callback, 'run_callback') and (not callback.run_callback): return
             callback.on_dataloader_end(logs)
 
-    def on_train_step_end(self, logs=None):
+    def on_train_step_end(self, logs:int=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
@@ -170,25 +171,25 @@ class Callback(object):
         self.optimizer = optimizer
     def set_scheduler(self, scheduler):
         self.scheduler = scheduler
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         pass
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         pass
-    def on_epoch_begin(self, global_step, epoch, logs=None):
+    def on_epoch_begin(self, global_step:int, epoch:int, logs:dict=None):
         pass
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         pass
-    def on_batch_begin(self, global_step, local_step, logs=None):
+    def on_batch_begin(self, global_step:int, local_step:int, logs:dict=None):
         pass
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         pass
-    def on_dataloader_end(self, logs=None):
+    def on_dataloader_end(self, logs:dict=None):
         pass
-    def on_train_step_end(self, logs=None):
+    def on_train_step_end(self, logs:int=None):
         pass
 
 
-def _process_stateful_metrics(stateful_metrics):
+def _process_stateful_metrics(stateful_metrics:Union[str, set, tuple, list]):
     '''对stateful_metrics进行处理'''
     if stateful_metrics is None:
         stateful_metrics_new = set()
@@ -204,13 +205,13 @@ def _process_stateful_metrics(stateful_metrics):
 
 class SmoothMetric:
     '''指标平滑'''
-    def __init__(self, interval=None, stateful_metrics=None) -> None:
+    def __init__(self, interval:int=None, stateful_metrics:Union[str, set, tuple, list]=None) -> None:
         self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
         self.interval = interval
         self.stateful_metrics = stateful_metrics or set()
         self._seen_so_far = 0
     
-    def update(self, current, logs:dict):
+    def update(self, current:int, logs:dict):
         if (self.interval is not None) and (current % self.interval == 1):
             # 如果定义了累积interval，则需要重新累计
             self.reset()
@@ -235,7 +236,7 @@ class SmoothMetric:
     def reset(self):
         self._values = collections.OrderedDict()
 
-    def get_smooth_logs(self, logs=None):
+    def get_smooth_logs(self, logs:dict=None):
         smooth_logs = {k: v[0]/v[1] for k, v in self._values.items() if k not in SKIP_METRICS}
         
         if logs is not None:
@@ -258,7 +259,7 @@ class SmoothMetricsCallback(Callback):
     :param interval: int, 平滑时候使用的的step个数
     :param stateful_metrics: list, 以状态量记录指标的格式
     '''
-    def __init__(self, interval=100, stateful_metrics=None, verbose=0, **kwargs):
+    def __init__(self, interval:int=100, stateful_metrics:Union[str, set, tuple, list]=None, verbose:int=0, **kwargs):
         super(SmoothMetricsCallback, self).__init__(**kwargs)
         self.interval = interval
         self.stateful_metrics = stateful_metrics
@@ -266,15 +267,15 @@ class SmoothMetricsCallback(Callback):
         if verbose != 0:
             log_info(f'SmoothMetricCallback calculate {interval} steps average metrics')
 
-    def on_epoch_begin(self, global_step, epoch, logs=None):
+    def on_epoch_begin(self, global_step:int, epoch:int, logs:dict=None):
         self.smooth_metric_epoch = SmoothMetric(stateful_metrics=self.stateful_metrics)
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         self.smooth_metric_epoch.get_smooth_logs(logs)
         smooth_logs = self.smooth_metric_epoch.get_smooth_logs()
         logs.update(smooth_logs)
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         self.smooth_metric_step.update(global_step+1, logs)
         self.smooth_metric_epoch.update(local_step+1, logs)
         smooth_logs = self.smooth_metric_step.get_smooth_logs()
@@ -283,7 +284,7 @@ class SmoothMetricsCallback(Callback):
 
 class Progbar(object):
     '''进度条，直接从keras引入'''
-    def __init__(self, target, width=30, verbose=1, time_interval=0.05, stateful_metrics=None):
+    def __init__(self, target:int, width:int=30, verbose:int=1, time_interval:float=0.05, stateful_metrics:Union[str, set, tuple, list]=None):
         '''
         :param target: 进度条的step数量
         :param width: 进度条的宽度
@@ -302,7 +303,7 @@ class Progbar(object):
         self._last_update = 0
 
 
-    def update(self, current, values=None):
+    def update(self, current:int, values=None):
         '''Updates the progress bar.'''
         now = time.time()
         if self.verbose == 1:
@@ -393,13 +394,13 @@ class Progbar(object):
 
 class KerasProgbar(Callback):
     ''' keras进度条 '''
-    def __init__(self, stateful_metrics=None, interval=None, width=30, **kwargs):
+    def __init__(self, stateful_metrics:Union[str, set, tuple, list]=None, interval:int=None, width:int=30, **kwargs):
         super(KerasProgbar, self).__init__(**kwargs)
         self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
         self.interval = interval
         self.width = width
 
-    def add_metrics(self, metrics, stateful_metrics=None, add_position=None):
+    def add_metrics(self, metrics:Union[str, list], stateful_metrics:Union[str, set, tuple, list]=None, add_position:bool=None):
         '''在指定位置插入metrics指标
         '''
         if add_position is None:
@@ -416,14 +417,14 @@ class KerasProgbar(Callback):
                 add_metrics.append(metric)
         self.params['metrics'] = self.params['metrics'][:add_position] + add_metrics + self.params['metrics'][add_position:]
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         self.verbose = self.params['verbose']
         self.epochs = self.params['epochs']
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('%s - Start Training' % (time_start))
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('\n%s - Finish Training' % (time_start))
@@ -436,7 +437,7 @@ class KerasProgbar(Callback):
             self.progbar = Progbar(target=self.target, width=self.width, verbose=self.verbose, stateful_metrics=self.stateful_metrics)
             self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
-    def on_batch_end(self, global_step=None, local_step=None, logs=None):
+    def on_batch_end(self, global_step:int=None, local_step:int=None, logs:dict=None):
         logs = logs or {}
         log_values = {k:logs[k] for k in self.params['metrics'] if k in logs}
         if self.verbose:
@@ -446,7 +447,7 @@ class KerasProgbar(Callback):
         
 class TqdmProgbar(KerasProgbar):
     ''' Tqdm进度条 '''
-    def __init__(self, stateful_metrics=None, interval=None, width=None, **kwargs):
+    def __init__(self, stateful_metrics:Union[str, set, tuple, list]=None, interval:int=None, width:int=None, **kwargs):
         super().__init__(stateful_metrics, interval, width, **kwargs)
 
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
@@ -458,7 +459,7 @@ class TqdmProgbar(KerasProgbar):
             self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0, ncols=self.width)
         self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
-    def on_batch_end(self, global_step=None, local_step=None, logs=None):
+    def on_batch_end(self, global_step:int=None, local_step:int=None, logs:dict=None):
         logs_new = self.smooth_values(local_step+1, logs)
         log_values = [(k, logs_new[k]) for k in self.params['metrics'] if k in logs_new]
 
@@ -469,10 +470,10 @@ class TqdmProgbar(KerasProgbar):
             self.progbar.refresh()
             self.progbar.set_postfix(log_values)
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         self.progbar.close()
     
-    def smooth_values(self, current, values=None):
+    def smooth_values(self, current:int, values:dict=None):
         '''从Progbar迁移过来'''
         _values = self.smooth_metric.update(current, values)
 
@@ -492,7 +493,7 @@ class TqdmProgbar(KerasProgbar):
 
 class ProgressBar2Progbar(TqdmProgbar):
     ''' progressbar2进度条 '''
-    def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
+    def on_epoch_begin(self, global_step:int=None, epoch:int=None, logs:dict=None):
         if self.verbose:
             import progressbar
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -508,7 +509,7 @@ class ProgressBar2Progbar(TqdmProgbar):
                                                        redirect_stdout=True, redirect_stderr=True)
         self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
-    def on_batch_end(self, global_step=None, local_step=None, logs=None):
+    def on_batch_end(self, global_step:int=None, local_step:int=None, logs:dict=None):
         logs_new = self.smooth_values(local_step+1, logs or {})
         logs_new = {k:logs_new[k].strip() for k in self.params['metrics'] if k in logs_new}
 
@@ -517,13 +518,13 @@ class ProgressBar2Progbar(TqdmProgbar):
         if self.verbose:
             self.progbar.update(local_step+1, **logs_new)
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         self.progbar.finish()
 
 
 class TerminateOnNaN(Callback):
     '''Loss出现NAN停止训练'''
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         logs = logs or {}
         loss = logs.get('loss')
         if loss is not None:
@@ -534,17 +535,17 @@ class TerminateOnNaN(Callback):
 
 class History(Callback):
     '''指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标'''
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         self.epoch = []
         self.history = {}
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         logs = logs or {}
         self.epoch.append(epoch+1)  # 这里和keras相比+1了
         for k, v in logs.items():
             self.history.setdefault(k, []).append(v)
 
-    def plot(self, ncols=4, subplot_size=(4,3), save_path:str=None, show=True, plot_text=True):
+    def plot(self, ncols:int=4, subplot_size:tuple=(4,3), save_path:str=None, show:bool=True, plot_text:bool=True):
         import matplotlib.pyplot as plt
         import traceback
 
@@ -591,7 +592,8 @@ class EarlyStopping(Callback):
        :param baseline: None/float, 基线, 默认为None 
        :param restore_best_weights: bool, stopping时候是否恢复最优的权重，默认为False
     '''
-    def __init__(self, monitor='loss', min_delta=0, patience=0, verbose=0, mode='auto', method='epoch', baseline=None, restore_best_weights=False, **kwargs):
+    def __init__(self, monitor:str='loss', min_delta:float=0, patience:int=0, verbose:int=0, mode:Literal['auto', 'min', 'max']='auto', 
+                 method:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
         super(EarlyStopping, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method  # 默认的epoch和原版一样
@@ -617,7 +619,7 @@ class EarlyStopping(Callback):
             self.monitor_op = np.greater if 'acc' in self.monitor else np.less
         self.min_delta = self.min_delta if self.monitor_op == np.greater else -self.min_delta
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         # Allow instances to be re-used
         self.wait = 0
         self.stopped_iteration = 0
@@ -626,15 +628,15 @@ class EarlyStopping(Callback):
         else:
             self.best = np.Inf if self.monitor_op == np.less else -np.Inf
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if self.method == 'step':
             return self.process(global_step, logs)
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if self.method == 'epoch':
             self.process(epoch, logs)
 
-    def process(self, iteration, logs=None):
+    def process(self, iteration:int, logs:dict=None):
         logs =  logs or {}
         current = self.get_monitor_value(logs)
         if current is None:
@@ -656,11 +658,11 @@ class EarlyStopping(Callback):
                         print('Restoring model weights from the end of the best iteration')
                     self.model.load_state_dict(self.best_weights, strict=True)
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         if self.stopped_iteration > 0 and self.verbose > 0:
             print(f'Iteration {self.stopped_iteration+1}: early stopping\n')
 
-    def get_monitor_value(self, logs):
+    def get_monitor_value(self, logs:dict):
         monitor_value = logs.get(self.monitor)
         if monitor_value is None:
             warnings.warn('Early stopping conditioned on metric `%s` which is not available. Available metrics are: %s' %
@@ -681,8 +683,8 @@ class ReduceLROnPlateau(Callback):
     :param cooldown: float
     :param min_lr: float, 最小学习率
     '''
-    def __init__(self, monitor='loss', factor=0.1, patience=10, method='epoch', 
-                 verbose=0, mode='auto', min_delta=1e-4, cooldown=0, min_lr=0,
+    def __init__(self, monitor:str='loss', factor:float=0.1, patience:int=10, method:Literal['epoch', 'step']='epoch', 
+                 verbose:int=0, mode:Literal['auto', 'min', 'max']='auto', min_delta:float=1e-4, cooldown:float=0, min_lr:float=0,
                  **kwargs):
         super(ReduceLROnPlateau, self).__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
@@ -722,18 +724,18 @@ class ReduceLROnPlateau(Callback):
         self.cooldown_counter = 0
         self.wait = 0
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         self._reset()
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if self.method == 'step':
             return self.process(global_step, logs)
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if self.method == 'epoch':
             self.process(epoch, logs)
 
-    def process(self, iteration, logs=None):
+    def process(self, iteration:int, logs:dict=None):
         logs = logs or {}
         for i, params in enumerate(self.optimizer.param_groups):
             if i == 0:
@@ -783,8 +785,8 @@ class RemoteMonitor(Callback):
     :param headers: header
     :param send_as_json: bool, 是否以json形式请求，默认为False
     '''
-    def __init__(self, root='http://localhost:9000', path='/publish/epoch/end/', field='data',
-                 headers=None, send_as_json=False, **kwargs):
+    def __init__(self, root:str='http://localhost:9000', path:str='/publish/epoch/end/', field:str='data',
+                 headers=None, send_as_json:bool=False, **kwargs):
         super(RemoteMonitor, self).__init__(**kwargs)
         self.root = root
         self.path = path
@@ -794,7 +796,7 @@ class RemoteMonitor(Callback):
         import requests
         self.requests = requests
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         logs = logs or {}
         send = {}
         send['epoch'] = epoch
@@ -820,8 +822,8 @@ class Checkpoint(Callback):
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, save_dir=None, model_path=None, optimizer_path=None, scheduler_path=None, steps_params_path=None,
-                 method='epoch', interval=100, verbose=0, **kwargs):
+    def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
+                 steps_params_path:str=None, method:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, **kwargs):
         super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
@@ -834,17 +836,17 @@ class Checkpoint(Callback):
         self.verbose = verbose
         self.kwargs = kwargs
     
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         logs = logs or {}
         if self.method == 'epoch':
             self.process(epoch+1, logs)
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         logs = logs or {}
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
             self.process(global_step+1, logs)
 
-    def process(self, suffix, logs):
+    def process(self, suffix:int, logs:dict):
         file_paths = []
         for filepath in [self.save_dir, self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
             if filepath:
@@ -869,8 +871,9 @@ class Evaluator(Checkpoint):
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
     '''
-    def __init__(self, monitor='perf', mode='max', verbose=2, save_dir=None, model_path=None, optimizer_path=None, scheduler_path=None,
-                 steps_params_path=None, method='epoch', interval=100, **kwargs):
+    def __init__(self, monitor:str='perf', mode:Literal['max', 'min']='max', verbose:int=2, 
+                 save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None,
+                 steps_params_path:str=None, method:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
         super().__init__(save_dir, model_path, optimizer_path, scheduler_path, steps_params_path, method, interval, **kwargs)
         self.monitor = monitor
         assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
@@ -878,7 +881,7 @@ class Evaluator(Checkpoint):
         self.verbose = verbose
         self.best_perf = np.inf if mode == 'min' else -np.inf
 
-    def process(self, suffix, logs):
+    def process(self, suffix:int, logs:dict):
         perf = self.evaluate()
         # 如果evaluate返回的是字典则使用字典，如果返回的是数值则套上{'perf': perf}
         perf = perf if isinstance(perf, dict) else {'perf': perf}
@@ -918,7 +921,8 @@ class Logger(Callback):
     :param separator: str, 指标间分隔符
     :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL，指定log的level
     '''
-    def __init__(self, log_path, interval=100, mode='a', separator='\t', level='DEBUG', name='root', **kwargs):
+    def __init__(self, log_path:str, interval:int=100, mode:Literal['a', 'w']='a', separator:str='\t', 
+                 level:Literal['DEBUG','INFO','WARNING','ERROR','CRITICAL']='DEBUG', name:str='root', **kwargs):
         super(Logger, self).__init__(**kwargs)
         self.log_path = log_path
         self.interval = interval
@@ -927,7 +931,7 @@ class Logger(Callback):
         self.name = name
         self.level = level
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         import logging
         level_dict = {'DEBUG': logging.DEBUG, 'INFO': logging.INFO, 'WARNING': logging.WARNING, 
                       'ERROR': logging.ERROR, 'CRITICAL':logging.CRITICAL}
@@ -943,17 +947,17 @@ class Logger(Callback):
         self.logger.addHandler(fh)
         self.logger.info('Start Training'.center(40, '='))
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         self.logger.info('Finish Training'.center(40, '=') + '\n')
 
-    def on_epoch_begin(self, global_step, epoch, logs=None):
+    def on_epoch_begin(self, global_step:int, epoch:int, logs:dict=None):
         self.logger.info(f'Epoch {epoch+1}'.center(40, '='))
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         log_str = f'{self.sep}'.join([f'{k}={round(v)}' for k, v in logs.items() if k not in SKIP_METRICS])
         self.logger.info(f'epoch={epoch+1}{self.sep}{log_str}')
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if (global_step+1) % self.interval == 0:
             log_str = f'{self.sep}'.join([f'{k}={round(v)}' for k, v in logs.items() if k not in SKIP_METRICS])
             self.logger.info(f'step={global_step+1}{self.sep}{log_str}')
@@ -969,27 +973,27 @@ class Tensorboard(Callback):
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀，默认为'train'
     '''
-    def __init__(self, log_dir, interval=100, prefix='Train', **kwargs):
+    def __init__(self, log_dir:str, interval:int=100, prefix:str='Train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         self.log_dir = log_dir
         self.interval = interval
         self.prefix_step = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
         self.prefix_epoch = prefix+'_epoch/' if len(prefix.strip()) > 0 else 'Epoch/'  # 控制默认的前缀，用于区分栏目
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         from tensorboardX import SummaryWriter
         os.makedirs(self.log_dir, exist_ok=True)
         self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if hasattr(self.trainer, 'epochs') and self.trainer.epochs > 1:
             self.process(epoch+1, logs, self.prefix_epoch)
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if (global_step+1) % self.interval == 0:
             self.process(global_step+1, logs, self.prefix_step)
 
-    def process(self, iteration, logs, prefix):
+    def process(self, iteration:int, logs:dict, prefix:str):
         logs = logs or {}
         for k, v in logs.items():
             if k in SKIP_METRICS:
@@ -1009,8 +1013,8 @@ class WandbCallback(Callback):
     :param project: str，wandb的project name, 默认为bert4torch
     :param 
     '''
-    def __init__(self, project='bert4torch', trial_name=None, run_name=None, watch='gradients', 
-                 interval=100, save_code=False, config=None):
+    def __init__(self, project:str='bert4torch', trial_name:str=None, run_name:str=None, watch:str='gradients', 
+                 interval:int=100, save_code:bool=False, config:dict=None):
         try:
             import wandb
             self._wandb = wandb
@@ -1032,25 +1036,25 @@ class WandbCallback(Callback):
         self.run_id = None
         self.metrics = set()
 
-    def define_metric(self, step_metric, logs=None):
+    def define_metric(self, step_metric:str, logs:dict=None):
         if getattr(self._wandb, "define_metric", None):
             for m in logs.keys():
                 if m not in self.metrics:
                     self._wandb.define_metric(name=m, step_metric=step_metric, hidden=True if m in SKIP_METRICS else False)
                     self.metrics.add(m)
 
-    def adjust_logs(self, logs, **kwargs):
+    def adjust_logs(self, logs:dict, **kwargs):
         logs_new = {**logs, **kwargs}
         return {k:v for k,v in logs_new.items() if k not in SKIP_METRICS}
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if self._wandb is None:
             return
         if hasattr(self.trainer, 'epochs') and self.trainer.epochs > 1:
             self.define_metric('epoch', logs)
             self._wandb.log(self.adjust_logs(logs, epoch=epoch+1))
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if self._wandb is None:
             return
         
@@ -1058,7 +1062,7 @@ class WandbCallback(Callback):
             self.define_metric('step', logs)
             self._wandb.log(self.adjust_logs(logs, step=global_step+1))
         
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         if self._wandb is None:
             return
 
@@ -1085,7 +1089,7 @@ class WandbCallback(Callback):
         if self.watch != "false":
             self._wandb.watch(self.model, log=self.watch, log_freq=max(100, self.interval))
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         if self._wandb is None:
             return
 
@@ -1140,7 +1144,7 @@ class LambdaCallback(Callback):
 class Summary(Callback):
     '''调用torchinfo的summary
     '''
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs:dict=None):
         from torchinfo import summary
         print()
         summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
@@ -1158,7 +1162,8 @@ class EmailCallback(Callback):
     :param mail_pwd: str, smtp的第三方密码
     :param mail_sender: str, 发件人邮箱
     '''
-    def __init__(self, mail_receivers, mail_subject='', method='epoch', interval=100, mail_host=None, mail_user=None, mail_pwd=None, mail_sender=None, **kwargs):
+    def __init__(self, mail_receivers:Union[str,list], mail_subject:str='', method:str='epoch', interval:int=100, 
+                 mail_host:str=None, mail_user:str=None, mail_pwd:str=None, mail_sender:str=None, **kwargs):
         super(EmailCallback, self).__init__(**kwargs)
         self.method = method
         self.interval = interval
@@ -1169,7 +1174,7 @@ class EmailCallback(Callback):
         self.mail_pwd = mail_pwd
         self.mail_sender = mail_sender
 
-    def on_epoch_end(self, global_step, epoch, logs=None):
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if self.method == 'epoch':
             msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
             subject = f'[INFO] Epoch {epoch+1} performance'
@@ -1177,7 +1182,7 @@ class EmailCallback(Callback):
                 subject = self.mail_subject + ' | ' + subject
             self._email(subject, msg)
 
-    def on_batch_end(self, global_step, local_step, logs=None):
+    def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         if (self.method == 'step') and ((global_step+1) % self.interval == 0):
             msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
             subject = f'[INFO] Step {global_step} performance'
@@ -1185,14 +1190,13 @@ class EmailCallback(Callback):
                 subject = self.mail_subject + ' | ' + subject
             self._email(subject, msg)
 
-    def on_train_end(self, logs=None):
+    def on_train_end(self, logs:dict=None):
         msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
         subject = f'[INFO] Finish training'
         if self.mail_subject != '':
             subject = self.mail_subject + ' | ' + subject
         self._email(subject, msg)
 
-    def _email(self, subject, msg):
+    def _email(self, subject:str, msg:str):
         send_email(self.mail_receivers, mail_subject=subject, mail_msg=msg, mail_host=self.mail_host,
                    mail_user=self.mail_user, mail_pwd=self.mail_pwd, mail_sender=self.mail_sender)
-
