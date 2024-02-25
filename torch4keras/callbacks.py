@@ -8,10 +8,11 @@ from collections import deque
 import json
 import copy
 import os
-from torch4keras.snippets import log_info, log_error, log_warn, send_email
+from torch4keras.snippets import log_info, log_error, log_warn, send_email, log_warn_once
 from torch4keras.snippets import set_precision, format_time
 import math
 from typing import Literal, Union
+import shutil
 
 
 # 忽略nan的指标
@@ -812,7 +813,7 @@ class RemoteMonitor(Callback):
 
 
 class Checkpoint(Callback):
-    '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存
+    '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存, 也可以保存最近/最优的ckpt
 
     :param save_dir: str, 保存的文件夹，只定义即可按照默认的文件名保存
     :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
@@ -821,9 +822,13 @@ class Checkpoint(Callback):
     :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
     :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
+    :param max_save_count: int, 最大保存的权重的个数
+    :param monitor: str, 跟踪的指标
+    :param mode: str, 指示指标的优化方向
     '''
-    def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                 steps_params_path:str=None, method:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, **kwargs):
+    def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, steps_params_path:str=None, 
+                 method:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, monitor:str=None, 
+                 mode:Literal['max', 'min']='min', **kwargs):
         super().__init__(**kwargs)
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
@@ -834,6 +839,11 @@ class Checkpoint(Callback):
         self.steps_params_path = steps_params_path  # 是否保存训练步数
         self.interval = interval  # method='step'时候生效
         self.verbose = verbose
+        self.max_save_count = max_save_count  # 最大保存的权重的个数
+        self.monitor = monitor
+        self.mode = mode
+        self.save_history = []
+        self.save_history_monitor = []
         self.kwargs = kwargs
     
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
@@ -854,10 +864,49 @@ class Checkpoint(Callback):
             file_paths.append(filepath)
 
         self.trainer.save_to_checkpoint(*file_paths, verbose=self.verbose, **self.kwargs)
+        if self.max_save_count is not None:
+            file_paths = tuple(file_paths)
+            if file_paths not in self.save_history:
+                self.save_history.append(file_paths)
+                if self.monitor is not None:
+                    if self.monitor in logs:
+                        self.save_history_monitor.append(logs.get(self.monitor))
+                    else:
+                        log_warn_once(f'Args `monitor`={self.monitor} not in logs')
+            self.remove_oversize_checkpoints()
+    
+    def remove_oversize_checkpoints(self):
+        '''删除超出size的文件'''
+        if len(self.save_history) > self.max_save_count:
+            # 删除oldest的ckpt
+            split_index = len(self.save_history)-self.max_save_count
+            if len(self.save_history_monitor) == 0:
+                drop_list = list(range(0, split_index))
+            # 删除指标最差的ckpt
+            else:
+                sorted_idx = np.argsort(self.save_history_monitor)  # 从小到大
+                if self.mode == 'max':
+                    drop_list = sorted_idx[0:split_index]  # 删除最小的
+                else:
+                    drop_list = sorted_idx[split_index:][::-1]  # 删除指标最大的
+
+            for item in [self.save_history[i] for i in drop_list]:
+                for i in item:
+                    if i is None:
+                        continue
+                    try:
+                        if os.path.isdir(i):
+                            shutil.rmtree(i)
+                        elif os.path.isfile(i):
+                            os.remove(i)
+                    except:
+                        log_warn(f'Remove {i} error')
+            self.save_history = [v for i,v in enumerate(self.save_history) if i not in drop_list]
+            self.save_history_monitor = [v for i,v in enumerate(self.save_history_monitor) if i not in drop_list]
 
 
 class Evaluator(Checkpoint):
-    '''评估并保存最优Checkpoint, 也可以只评估
+    '''评估: 可以每个epoch或者每隔一定的steps进行评估，并可保存最优Checkpoint
 
     :param monitor: str, 监控指标，需要在logs中，默认为'perf'
     :param verbose: int, 是否打印，默认为2表示打印
@@ -884,8 +933,11 @@ class Evaluator(Checkpoint):
     def process(self, suffix:int, logs:dict):
         perf = self.evaluate()
         # 如果evaluate返回的是字典则使用字典，如果返回的是数值则套上{'perf': perf}
-        perf = perf if isinstance(perf, dict) else {'perf': perf}
-        logs.update(perf)  # 评估的指标后续可能会用到
+        if perf is None:
+            perf = logs.copy()
+        else:
+            perf = perf if isinstance(perf, dict) else {'perf': perf}
+            logs.update(perf)  # 评估的指标后续可能会用到
         
         # 不存在
         if perf.get(self.monitor) is None:
@@ -904,7 +956,7 @@ class Evaluator(Checkpoint):
             print(print_str + f'. best_{self.monitor}: {round(self.best_perf)}')
         
     # 定义评价函数
-    def evaluate(self):
+    def evaluate(self) -> Union[int, float, dict]:
         # 需要返回一个字典，且self.monitor在字典key中
         # 如果返回的是一个数值型，则默认使用'perf'作为指标名
         return None
