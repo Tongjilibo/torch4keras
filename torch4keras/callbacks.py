@@ -588,19 +588,19 @@ class EarlyStopping(Callback):
        :param min_delta: float, 最小变动, 默认为0 
        :param patience: int, 最长等候的次数, 默认为0
        :param verbose: int, 是否打印, 默认为0表示不打印
-       :param mode: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
-       :param method: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
+       :param min_max: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
+       :param epoch_or_step: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
        :param baseline: None/float, 基线, 默认为None 
        :param restore_best_weights: bool, stopping时候是否恢复最优的权重, 默认为False
     '''
-    def __init__(self, monitor:str='loss', min_delta:float=0, patience:int=0, verbose:int=0, mode:Literal['auto', 'min', 'max']='auto', 
-                 method:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
+    def __init__(self, monitor:str='perf', min_delta:float=0, patience:int=0, verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', 
+                 epoch_or_step:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
         super(EarlyStopping, self).__init__(**kwargs)
-        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
-        self.method = method  # 默认的epoch和原版一样
+        assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
+        self.epoch_or_step = epoch_or_step  # 默认的epoch和原版一样
         self.monitor = monitor
         self.baseline = baseline
-        self.patience = patience  # method=step时候表示最多wait的训练步数
+        self.patience = patience  # epoch_or_step=step时候表示最多wait的训练步数
         self.verbose = verbose
         self.min_delta = min_delta
         self.wait = 0
@@ -608,13 +608,13 @@ class EarlyStopping(Callback):
         self.restore_best_weights = restore_best_weights
         self.best_weights = None
 
-        if mode not in {'auto', 'min', 'max'}:
-            warnings.warn('EarlyStopping mode %s is unknown, fallback to auto mode.' % mode, RuntimeWarning)
-            mode = 'auto'
+        if min_max not in {'auto', 'min', 'max'}:
+            warnings.warn('EarlyStopping `min_max` %s is unknown, fallback to auto.' % min_max, RuntimeWarning)
+            min_max = 'auto'
 
-        if mode == 'min':
+        if min_max == 'min':
             self.monitor_op = np.less
-        elif mode == 'max':
+        elif min_max == 'max':
             self.monitor_op = np.greater
         else:
             self.monitor_op = np.greater if 'acc' in self.monitor else np.less
@@ -630,11 +630,11 @@ class EarlyStopping(Callback):
             self.best = np.Inf if self.monitor_op == np.less else -np.Inf
 
     def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
-        if self.method == 'step':
+        if self.epoch_or_step == 'step':
             return self.process(global_step, logs)
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
-        if self.method == 'epoch':
+        if self.epoch_or_step == 'epoch':
             self.process(epoch, logs)
 
     def process(self, iteration:int, logs:dict=None):
@@ -677,19 +677,19 @@ class ReduceLROnPlateau(Callback):
     :param monitor: str, 监控指标, 需要在logs中, 默认为'loss'
     :param factor: float, 权重衰减系数, 取值范围(0, 1), 默认为0.1
     :param patience: int, 最长等候的次数, 默认为0
-    :param method: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
+    :param epoch_or_step: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
     :param verbose: int, 是否打印, 默认为0表示不打印
-    :param mode: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
+    :param min_max: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
     :param min_delta: float, 最小变动, 默认为0 
     :param cooldown: float
     :param min_lr: float, 最小学习率
     '''
-    def __init__(self, monitor:str='loss', factor:float=0.1, patience:int=10, method:Literal['epoch', 'step']='epoch', 
-                 verbose:int=0, mode:Literal['auto', 'min', 'max']='auto', min_delta:float=1e-4, cooldown:float=0, min_lr:float=0,
+    def __init__(self, monitor:str='loss', factor:float=0.1, patience:int=10, epoch_or_step:Literal['epoch', 'step']='epoch', 
+                 verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', min_delta:float=1e-4, cooldown:float=0, min_lr:float=0,
                  **kwargs):
         super(ReduceLROnPlateau, self).__init__(**kwargs)
-        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
-        self.method = method  # 默认的epoch和原版一样
+        assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
+        self.epoch_or_step = epoch_or_step  # 默认的epoch和原版一样
         self.monitor = monitor
         if factor >= 1.0:
             raise ValueError('ReduceLROnPlateau does not support a factor >= 1.0.')
@@ -699,24 +699,24 @@ class ReduceLROnPlateau(Callback):
         self.factor = factor
         self.min_lr = min_lr
         self.min_delta = min_delta
-        self.patience = patience  # method=step时候表示最多wait的训练步数
+        self.patience = patience  # epoch_or_step=step时候表示最多wait的训练步数
         self.verbose = verbose
         self.cooldown = cooldown
         self.cooldown_counter = 0  # Cooldown counter.
         self.wait = 0
         self.best = 0
-        self.mode = mode
+        self.min_max = min_max
         self.monitor_op = None
         self._reset()
 
     def _reset(self):
         '''Resets wait counter and cooldown counter.
         '''
-        if self.mode not in ['auto', 'min', 'max']:
-            warnings.warn('Learning Rate Plateau Reducing mode %s is unknown, fallback to auto mode.' % (self.mode), RuntimeWarning)
-            self.mode = 'auto'
-        if (self.mode == 'min' or
-           (self.mode == 'auto' and 'acc' not in self.monitor)):
+        if self.min_max not in ['auto', 'min', 'max']:
+            warnings.warn('Learning Rate Plateau Reducing min_max %s is unknown, fallback to auto.' % (self.min_max), RuntimeWarning)
+            self.min_max = 'auto'
+        if (self.min_max == 'min' or
+           (self.min_max == 'auto' and 'acc' not in self.monitor)):
             self.monitor_op = lambda a, b: np.less(a, b - self.min_delta)
             self.best = np.Inf
         else:
@@ -729,11 +729,11 @@ class ReduceLROnPlateau(Callback):
         self._reset()
 
     def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
-        if self.method == 'step':
+        if self.epoch_or_step == 'step':
             return self.process(global_step, logs)
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
-        if self.method == 'epoch':
+        if self.epoch_or_step == 'epoch':
             self.process(epoch, logs)
 
     def process(self, iteration:int, logs:dict=None):
@@ -820,47 +820,47 @@ class Checkpoint(Callback):
     :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
-    :param method: str, 按照轮次保存还是按照步数保存, 默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
-    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
+    :param epoch_or_step: str, 按照轮次保存还是按照步数保存, 默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
+    :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     :param max_save_count: int, 最大保存的权重的个数
     :param monitor: str, 跟踪的指标
-    :param mode: str, 指示指标的优化方向
+    :param momin_maxde: str, 指示指标的优化方向
     '''
     def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, steps_params_path:str=None, 
-                 method:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, monitor:str=None, 
-                 mode:Literal['max', 'min']='min', **kwargs):
+                 epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, monitor:str=None, 
+                 min_max:Literal['max', 'min']='min', **kwargs):
         super().__init__(**kwargs)
-        assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
-        self.method = method
+        assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
+        self.epoch_or_step = epoch_or_step
         self.save_dir = save_dir  # 保存文件夹
         self.model_path = model_path  # 保存路径, 可设置{epoch}{step}{loss}等占位符
         self.optimizer_path = optimizer_path  # 是否保存优化器
         self.scheduler_path = scheduler_path  # 是否保存scheduler
         self.steps_params_path = steps_params_path  # 是否保存训练步数
-        self.interval = interval  # method='step'时候生效
+        self.interval = interval  # epoch_or_step='step'时候生效
         self.verbose = verbose
         self.max_save_count = max_save_count  # 最大保存的权重的个数
         self.monitor = monitor
-        self.mode = mode
+        self.min_max = min_max
         self.save_history = []
         self.save_history_monitor = []
         self.kwargs = kwargs
     
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         logs = logs or {}
-        if self.method == 'epoch':
+        if self.epoch_or_step == 'epoch':
             self.process(epoch+1, logs)
 
     def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
         logs = logs or {}
-        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+        if (self.epoch_or_step == 'step') and ((global_step+1) % self.interval == 0):
             self.process(global_step+1, logs)
 
     def process(self, suffix:int, logs:dict):
         file_paths = []
         for filepath in [self.save_dir, self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
             if filepath:
-                filepath = filepath.format(epoch=suffix, **logs) if self.method == 'epoch' else filepath.format(step=suffix, **logs)
+                filepath = filepath.format(epoch=suffix, **logs) if self.epoch_or_step == 'epoch' else filepath.format(step=suffix, **logs)
             file_paths.append(filepath)
 
         self.trainer.save_to_checkpoint(*file_paths, verbose=self.verbose, **self.kwargs)
@@ -885,7 +885,7 @@ class Checkpoint(Callback):
             # 删除指标最差的ckpt
             else:
                 sorted_idx = np.argsort(self.save_history_monitor)  # 从小到大
-                if self.mode == 'max':
+                if self.min_max == 'max':
                     drop_list = sorted_idx[0:split_index]  # 删除最小的
                 else:
                     drop_list = sorted_idx[split_index:][::-1]  # 删除指标最大的
@@ -910,25 +910,25 @@ class Evaluator(Checkpoint):
 
     :param monitor: str, 监控指标, 需要在logs中, 默认为'perf'
     :param verbose: int, 是否打印, 默认为2表示打印
-    :param mode: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
-    :param method: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
+    :param min_max: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
+    :param epoch_or_step: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
     :param baseline: None/float, 基线, 默认为None 
     :param save_dir: str, 保存的文件夹, 只定义即可按照默认的文件名保存
     :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
-    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
+    :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     '''
-    def __init__(self, monitor:str='perf', mode:Literal['max', 'min']='max', verbose:int=2, 
+    def __init__(self, monitor:str='perf', min_max:Literal['max', 'min']='max', verbose:int=2, 
                  save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None,
-                 steps_params_path:str=None, method:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
-        super().__init__(save_dir, model_path, optimizer_path, scheduler_path, steps_params_path, method, interval, **kwargs)
+                 steps_params_path:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
+        super().__init__(save_dir, model_path, optimizer_path, scheduler_path, steps_params_path, epoch_or_step, interval, **kwargs)
         self.monitor = monitor
-        assert mode in {'max', 'min'}, 'Compare performance only support `max/min` mode'
-        self.mode = mode
+        assert min_max in {'max', 'min'}, 'Compare performance only support `max/min`'
+        self.min_max = min_max
         self.verbose = verbose
-        self.best_perf = np.inf if mode == 'min' else -np.inf
+        self.best_perf = np.inf if min_max == 'min' else -np.inf
 
     def process(self, suffix:int, logs:dict):
         perf = self.evaluate()
@@ -946,7 +946,7 @@ class Evaluator(Checkpoint):
             return
 
         # 满足条件
-        if ((self.mode == 'max') and (perf[self.monitor] >= self.best_perf)) or ((self.mode == 'min') and (perf[self.monitor] <= self.best_perf)):
+        if ((self.min_max == 'max') and (perf[self.monitor] >= self.best_perf)) or ((self.min_max == 'min') and (perf[self.monitor] <= self.best_perf)):
             self.best_perf = perf[self.monitor]
             # 保存ckpt
             super().process(suffix, logs)
@@ -1207,17 +1207,17 @@ class EmailCallback(Callback):
     '''发送Email
 
     :param mail_receivers: str/list, 收件人邮箱
-    :param method: str, 控制是按照epoch还是step来发送邮件, 默认为'epoch', 可选{'step', 'epoch'}
+    :param epoch_or_step: str, 控制是按照epoch还是step来发送邮件, 默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 发送邮件的的step间隔
     :param mail_host: str, 发件服务器host
     :param mail_user: str, 发件人
     :param mail_pwd: str, smtp的第三方密码
     :param mail_sender: str, 发件人邮箱
     '''
-    def __init__(self, mail_receivers:Union[str,list], mail_subject:str='', method:str='epoch', interval:int=100, 
+    def __init__(self, mail_receivers:Union[str,list], mail_subject:str='', epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, 
                  mail_host:str=None, mail_user:str=None, mail_pwd:str=None, mail_sender:str=None, **kwargs):
         super(EmailCallback, self).__init__(**kwargs)
-        self.method = method
+        self.epoch_or_step = epoch_or_step
         self.interval = interval
         self.mail_receivers = mail_receivers
         self.mail_subject = mail_subject
@@ -1227,7 +1227,7 @@ class EmailCallback(Callback):
         self.mail_sender = mail_sender
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
-        if self.method == 'epoch':
+        if self.epoch_or_step == 'epoch':
             msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
             subject = f'[INFO] Epoch {epoch+1} performance'
             if self.mail_subject != '':
@@ -1235,7 +1235,7 @@ class EmailCallback(Callback):
             self._email(subject, msg)
 
     def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
-        if (self.method == 'step') and ((global_step+1) % self.interval == 0):
+        if (self.epoch_or_step == 'step') and ((global_step+1) % self.interval == 0):
             msg = json.dumps({k:f'{round(v)}' for k,v in logs.items() if k not in SKIP_METRICS}, indent=2, ensure_ascii=False)
             subject = f'[INFO] Step {global_step} performance'
             if self.mail_subject != '':
