@@ -42,8 +42,9 @@ class Trainer:
         self.loss2metrics = True  # 把loss_detail打印在进度条的metrics上
         # add_module(self)  # 增加nn.Module的成员方法
 
-    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:float=None, mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, 
-                metrics:Union[str, List[str], dict]=None, grad_accumulation_steps:int=1, progbar_config:dict=None, smooth_metrics_config:dict=None, **kwargs):
+    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:float=None, 
+                mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, List[str], dict]=None, 
+                grad_accumulation_steps:int=1, progbar_config:dict=None, smooth_metrics_config:Union[dict, bool]=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -289,7 +290,7 @@ class Trainer:
             smooth_callback = [callback for callback in callbacks_+callbacks if isinstance(callback, SmoothMetricsCallback)][0]
             for callback in callbacks_+callbacks:
                 if hasattr(callback, 'interval') and (callback != smooth_callback) and (callback.interval is not None) and \
-                    (callback.interval != smooth_callback.interval):
+                    (callback.interval % smooth_callback.interval != 0):
                     log_warn(f'{type(callback).__name__}.interval={callback.interval} while SmoothMetricsCallback.interval={smooth_callback.interval}')
 
         callbacks_  += callbacks + [history]
@@ -589,24 +590,24 @@ class Trainer:
         '''
         verbose_str = ''
         if model_path or save_dir:
-            model_path = model_path or os.path.join(save_dir or './', 'model.pt')
+            model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)
             verbose_str += f'Model weights successfuly saved to {model_path}\n'
 
         if optimizer_path or save_dir:
-            optimizer_path = optimizer_path or os.path.join(save_dir or './', 'optimizer.pt')
+            optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
             os.makedirs(os.path.dirname(optimizer_path), exist_ok=True)
             torch.save(self.optimizer.state_dict(), optimizer_path)
             verbose_str += f'Optimizer successfuly saved to {optimizer_path}\n'
 
         if (scheduler_path or save_dir) and (self.scheduler is not None):
-            scheduler_path = scheduler_path or os.path.join(save_dir or './', 'scheduler.pt')
+            scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
             os.makedirs(os.path.dirname(scheduler_path), exist_ok=True)
             torch.save(self.scheduler.state_dict(), scheduler_path)
             verbose_str += f'Scheduler successfuly saved to {scheduler_path}\n'
 
         if steps_params_path or save_dir:
-            steps_params_path = steps_params_path or os.path.join(save_dir or './', 'steps_params.pt')
+            steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
             self.save_steps_params(steps_params_path)
             verbose_str += f'Steps_params successfuly saved to {steps_params_path}'
 

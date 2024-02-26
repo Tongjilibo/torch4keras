@@ -592,9 +592,10 @@ class EarlyStopping(Callback):
        :param epoch_or_step: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
        :param baseline: None/float, 基线, 默认为None 
        :param restore_best_weights: bool, stopping时候是否恢复最优的权重, 默认为False
+        :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor:str='perf', min_delta:float=0, patience:int=0, verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', 
-                 epoch_or_step:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
+                 epoch_or_step:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, interval:str=100, **kwargs):
         super(EarlyStopping, self).__init__(**kwargs)
         assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
         self.epoch_or_step = epoch_or_step  # 默认的epoch和原版一样
@@ -606,6 +607,7 @@ class EarlyStopping(Callback):
         self.wait = 0
         self.stopped_iteration = 0
         self.restore_best_weights = restore_best_weights
+        self.interval = interval
         self.best_weights = None
 
         if min_max not in {'auto', 'min', 'max'}:
@@ -630,7 +632,7 @@ class EarlyStopping(Callback):
             self.best = np.Inf if self.monitor_op == np.less else -np.Inf
 
     def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
-        if self.epoch_or_step == 'step':
+        if (self.epoch_or_step == 'step') and ((global_step+1) % self.interval == 0):
             return self.process(global_step, logs)
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
@@ -683,10 +685,11 @@ class ReduceLROnPlateau(Callback):
     :param min_delta: float, 最小变动, 默认为0 
     :param cooldown: float
     :param min_lr: float, 最小学习率
+    :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor:str='loss', factor:float=0.1, patience:int=10, epoch_or_step:Literal['epoch', 'step']='epoch', 
-                 verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', min_delta:float=1e-4, cooldown:float=0, min_lr:float=0,
-                 **kwargs):
+                 verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', min_delta:float=1e-4, cooldown:float=0, 
+                 min_lr:float=0, interval:int=100, **kwargs):
         super(ReduceLROnPlateau, self).__init__(**kwargs)
         assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
         self.epoch_or_step = epoch_or_step  # 默认的epoch和原版一样
@@ -706,6 +709,7 @@ class ReduceLROnPlateau(Callback):
         self.wait = 0
         self.best = 0
         self.min_max = min_max
+        self.interval = interval
         self.monitor_op = None
         self._reset()
 
@@ -729,7 +733,7 @@ class ReduceLROnPlateau(Callback):
         self._reset()
 
     def on_batch_end(self, global_step:int, local_step:int, logs:dict=None):
-        if self.epoch_or_step == 'step':
+        if (self.epoch_or_step == 'step') and ((global_step+1) % self.interval == 0):
             return self.process(global_step, logs)
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
@@ -886,9 +890,9 @@ class Checkpoint(Callback):
             else:
                 sorted_idx = np.argsort(self.save_history_monitor)  # 从小到大
                 if self.min_max == 'max':
-                    drop_list = sorted_idx[0:split_index]  # 删除最小的
+                    drop_list = sorted_idx[:split_index]  # 删除最小的
                 else:
-                    drop_list = sorted_idx[split_index:][::-1]  # 删除指标最大的
+                    drop_list = sorted_idx[::-1][:split_index]  # 删除指标最大的
 
             for item in [self.save_history[i] for i in drop_list]:
                 for i in item:
