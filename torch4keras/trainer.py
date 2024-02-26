@@ -648,6 +648,29 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
             master_rank = [master_rank]
         self.verbose = (torch.distributed.get_rank() in master_rank)
     
+    def _prepare_inputs(self, *args):
+        super()._prepare_inputs(*args)
+        if self.train_dataloader.sampler is None:
+            from torch.utils.data.distributed import DistributedSampler 
+            self.train_dataloader.sampler = DistributedSampler(self.train_dataloader.dataset)
+            self.train_dataloader_iter = iter(self.train_dataloader)
+
+    @classmethod
+    def init_process_group(master_rank=0):
+        if os.name == 'nt':
+            # windows: Diff between backends: https://pytorch.org/docs/stable/distributed.html
+            torch.distributed.init_process_group(backend="gloo")
+        else:  # linux
+            torch.distributed.init_process_group(backend='nccl')
+        
+        ddp = DottableDict()
+        ddp.rank = int(os.environ["RANK"])
+        ddp.local_rank = int(os.getenv('LOCAL_RANK'))
+        ddp.device = torch.device('cuda', ddp.local_rank)
+        ddp.world_size = int(os.environ["WORLD_SIZE"])
+        ddp.master_process = ddp.rank == master_rank
+        torch.cuda.set_device(ddp.local_rank)
+        return ddp
 
 def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
     '''为nn.Module添加Triner对应的方法'''
