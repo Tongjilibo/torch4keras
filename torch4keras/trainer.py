@@ -4,7 +4,7 @@ from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_dev
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
-from typing import Union, List
+from typing import Union, List, Literal
 from inspect import isfunction
 import os
 import json
@@ -16,7 +16,7 @@ import traceback
 class Trainer:
     '''Trainer, 传入Module实例
 
-    :param module: None/nn.Module，nn.Module()的模型实例
+    :param module: None/nn.Module, nn.Module()的模型实例
     '''
     def __init__(self, module:nn.Module=None):
         super(Trainer, self).__init__()
@@ -37,31 +37,30 @@ class Trainer:
         self.criterion = None  # criterion
         self.optimizer = None  # optimizer
         self.scheduler = None  # scheduler
-        self.callbacks = []  # 所有的Callbacks，如果fit中不传入，则默认为[progbarlogger, smoothmetrics, history]三项
-        self.run_callbacks = True  # 是否运行Callbacks，目前主要是在DDP模式下运用
+        self.callbacks = []  # 所有的Callbacks, 如果fit中不传入, 则默认为[progbarlogger, smoothmetrics, history]三项
+        self.run_callbacks = True  # 是否运行Callbacks, 目前主要是在DDP模式下运用
         self.loss2metrics = True  # 把loss_detail打印在进度条的metrics上
         # add_module(self)  # 增加nn.Module的成员方法
 
-    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:bool=None, mixed_precision:bool=False, 
-                metrics:Union[str, List[str], dict]=None, grad_accumulation_steps:int=1, progbar_config:dict=None, 
-                smooth_metrics_config:dict=None, **kwargs):
+    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:float=None, mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, 
+                metrics:Union[str, List[str], dict]=None, grad_accumulation_steps:int=1, progbar_config:dict=None, smooth_metrics_config:dict=None, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
         :param optimizer: 优化器
         :param scheduler: lr_scheduler
-        :param clip_grad_norm: bool, 是否使用梯度裁剪, 默认为False
-        :param mixed_precision: bool, 是否使用混合精度，默认为False
-        :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric，形式为{key: func}
-        :param grad_accumulation_steps: int, 梯度累积步数，默认为1
-        :param bar: str, 使用进度条的种类，从kwargs中解析，默认为keras, 可选keras, tqdm, progressbar2
-        :param progbar_config: 进度条的配置，默认是对整个epoch计算均值指标
+        :param clip_grad_norm: float, 是否使用梯度裁剪, 默认为False
+        :param mixed_precision: bool, 是否使用混合精度, 默认为False
+        :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric, 形式为{key: func}
+        :param grad_accumulation_steps: int, 梯度累积步数, 默认为1
+        :param bar: str, 使用进度条的种类, 从kwargs中解析, 默认为keras, 可选keras, tqdm, progressbar2
+        :param progbar_config: 进度条的配置, 默认是对整个epoch计算均值指标
             bar: str, 默认为keras
-            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
+            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric, 指标抖动会更加明显, 默认为None表示使用指标平滑
             width: int, keras进度条下表示进度条的长度
-        :param smooth_metrics_config: 指标平滑的配置，默认为None表示采取默认平滑设置；传入False表示不使用平滑
-            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric，指标抖动会更加明显，默认为None表示使用指标平滑
-            interval: int, 表示指标平滑时候的累计步数，默认为100
+        :param smooth_metrics_config: 指标平滑的配置, 默认为None表示采取默认平滑设置; 传入False表示不使用平滑
+            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric, 指标抖动会更加明显, 默认为None表示使用指标平滑
+            interval: int, 表示指标平滑时候的累计步数, 默认为100
 
         :return: None
         '''
@@ -85,13 +84,13 @@ class Trainer:
         elif isinstance(metrics, (str, dict)) or isfunction(metrics):
             metrics = [metrics]
         for metric in metrics:
-            # 字符类型，目前仅支持accuracy
+            # 字符类型, 目前仅支持accuracy
             if isinstance(metric, str) and metric != 'loss':
                 self.metrics[metric] = None
             # 字典形式 {metric: func}
             elif isinstance(metric, dict):
                 self.metrics.update(metric)
-            # 函数形式，key和value都赋值metric
+            # 函数形式, key和value都赋值metric
             elif isfunction(metric):
                 self.metrics.update({metric: metric})
             else:
@@ -153,14 +152,14 @@ class Trainer:
             print(colorful('[Label]: ', color='green'), + train_y)
 
     def _forward(self, *inputs, **input_kwargs):
-        '''调用模型的forward，方便下游继承的时候可以自定义使用哪个模型的forward
+        '''调用模型的forward, 方便下游继承的时候可以自定义使用哪个模型的forward
         '''
         return self._argparse_forward(self.unwrap_model(), *inputs, **input_kwargs)
 
     def _argparse_forward(self, model, *inputs, **input_kwargs):
         '''调用模型的forward
-        如果传入了网络结构module，则调用module的forward；如果是继承方式，则调用自身的forward
-        这里声明为staticmethod的话，使用add_trainer会有问题
+        如果传入了网络结构module, 则调用module的forward; 如果是继承方式, 则调用自身的forward
+        这里声明为staticmethod的话, 使用add_trainer会有问题
         '''
         if (len(inputs)==1) and isinstance(inputs[0], (tuple,list)):  # 防止([])嵌套
             inputs = inputs[0]
@@ -188,7 +187,7 @@ class Trainer:
             loss = loss_detail
             loss_detail = {}
         elif isinstance(loss_detail, dict):
-            loss = loss_detail['loss']  # 还存在其他loss，仅用于打印
+            loss = loss_detail['loss']  # 还存在其他loss, 仅用于打印
             del loss_detail['loss']
         elif isinstance(loss_detail, (tuple, list)):
             loss = loss_detail[0]
@@ -249,7 +248,7 @@ class Trainer:
         self.batch_size = train_dataloader.batch_size
         self.epochs = epochs
         self.total_steps = self.steps_per_epoch * epochs
-        self.train_dataloader = train_dataloader  # 设置为成员变量，可由外部的callbacks进行修改
+        self.train_dataloader = train_dataloader  # 设置为成员变量, 可由外部的callbacks进行修改
         self.train_dataloader_iter = iter(self.train_dataloader)  # 循环epoch时不重生成
         self.verbose = self.verbose if hasattr(self, 'verbose') else verbose
 
@@ -309,17 +308,17 @@ class Trainer:
 
     def _prepare_nextbatch(self):
         '''准备下一个batch数据'''
-        # 循环dataloader, 不要试用itertools的cycle，遇到过变量不释放的问题
+        # 循环dataloader, 不要试用itertools的cycle, 遇到过变量不释放的问题
         try:
             batch = next(self.train_dataloader_iter)
             self.batch_step += 1
         except StopIteration:
-            self.callbacks.on_dataloader_end()  # 适用于数据量较大时，动态读取文件并重新生成self.train_dataloader的情况，如预训练
-            # DDP训练时候为了避免每个epoch样本一致，修改随机种子
+            self.callbacks.on_dataloader_end()  # 适用于数据量较大时, 动态读取文件并重新生成self.train_dataloader的情况, 如预训练
+            # DDP训练时候为了避免每个epoch样本一致, 修改随机种子
             if isinstance(self.train_dataloader.sampler, torch.utils.data.distributed.DistributedSampler) and \
                 hasattr(self.train_dataloader.sampler, 'set_epoch'):
                 self.train_dataloader.sampler.set_epoch(self.epoch)
-            self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候，其实顺序也重新生成了
+            self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候, 其实顺序也重新生成了
             self.batch_step = 0
             batch = next(self.train_dataloader_iter)
 
@@ -329,10 +328,10 @@ class Trainer:
     def fit(self, train_dataloader, steps_per_epoch:int=None, epochs:int=1, callbacks:Union[list]=None, verbose:int=1, **kwargs):
         ''' 模型训练
         :param train_dataloader: Dataloader, 训练数据集
-        :param steps_per_epoch: int, 每个epoch训练的steps，默认为None表示自行计算 
+        :param steps_per_epoch: int, 每个epoch训练的steps, 默认为None表示自行计算 
         :param epochs: int, 训练的轮次, 默认为1
-        :param callbacks: Callback/List[Callback], 回调函数，可调用预制的Callback或者自定义，默认为None 
-        :param verbose: int, 是否打印，默认为1表示打印
+        :param callbacks: Callback/List[Callback], 回调函数, 可调用预制的Callback或者自定义, 默认为None 
+        :param verbose: int, 是否打印, 默认为1表示打印
         
         > 其他参数
         :param mail_receivers: str, 发生异常的时候邮件通知
@@ -370,16 +369,16 @@ class Trainer:
 
         #       epoch: 当前epoch
         # global_step: 当前全局训练步数
-        #  local_step: 当前epoch内的训练步数，不同epoch中相同local_step对应的batch数据不一定相同，在steps_per_epoch=None时相同
-        #  batch_step: 在dataloader中的index，不同epoch中相同的bti对应的batch数据一般相同，除非重新生成dataloader
+        #  local_step: 当前epoch内的训练步数, 不同epoch中相同local_step对应的batch数据不一定相同, 在steps_per_epoch=None时相同
+        #  batch_step: 在dataloader中的index, 不同epoch中相同的bti对应的batch数据一般相同, 除非重新生成dataloader
         self.callbacks.on_train_begin()
         for epoch in range(self.resume_epoch, epochs):
             self.epoch = epoch
-            # resume_step：判断local_step的起点，以及进度条的起始位置
+            # resume_step：判断local_step的起点, 以及进度条的起始位置
             resume_step = self.resume_step if epoch==self.resume_epoch else 0
             self.callbacks.on_epoch_begin(self.global_step, self.epoch)
             if self.verbose:
-                progbarlogger.seen = resume_step  # 这里设置进度条的seen，在callbacks中也会修改
+                progbarlogger.seen = resume_step  # 这里设置进度条的seen, 在callbacks中也会修改
             
             for local_step in range(resume_step, self.steps_per_epoch):
                 self.local_step = local_step
@@ -399,7 +398,7 @@ class Trainer:
                     tr_loss += loss.item()
                     for k, v in loss_detail.items():
                         tr_loss_detail[k] = tr_loss_detail.get(k, 0) + v
-                # TODO: 理论上梯度累积时需对output和train_y进行合并，主要是为了metric_mapping计算的准确
+                # TODO: 理论上梯度累积时需对output和train_y进行合并, 主要是为了metric_mapping计算的准确
                 
                 # 参数更新
                 self.step()
@@ -431,7 +430,7 @@ class Trainer:
         return history
 
     def _log_init(self):
-        '''获取batch_size，主要是用于callback中的BaseLogger和Callback
+        '''获取batch_size, 主要是用于callback中的BaseLogger和Callback
         '''
         logs = {}
 
@@ -444,7 +443,7 @@ class Trainer:
 
     @torch.no_grad()
     def predict(self, *inputs, **input_kwargs):
-        '''模型预测，调用forward()'''
+        '''模型预测, 调用forward()'''
         self.unwrap_model().eval()
         inputs = self._move_to_model_device(inputs)
         input_kwargs = self._move_to_model_device(input_kwargs)
@@ -477,11 +476,11 @@ class Trainer:
         :param save_path: str/tuple/list, 权重加载路径
         :param strict: bool, torch.load()是否严格加载
         :param mapping: dict, 指定key的映射
-            1. mapping=None, 表示按照模型自身结构加载，一般加载finetune后使用save_weights()保存出来的权重
-            2. mapping自定义，根据用户自定义mapping来加载权重
+            1. mapping=None, 表示按照模型自身结构加载, 一般加载finetune后使用save_weights()保存出来的权重
+            2. mapping自定义, 根据用户自定义mapping来加载权重
         '''
         if isinstance(load_path, (tuple, list)):
-            strict = False  # 加载多个权重文件时候，strict设置为False
+            strict = False  # 加载多个权重文件时候, strict设置为False
         elif isinstance(load_path, str):
             load_path = [load_path]
         else:
@@ -500,8 +499,8 @@ class Trainer:
 
         :param save_path: str, 权重保存路径
         :param mapping: dict, 指定key的映射
-            1. mapping=None, 表示按照模型自身结构的key来保存，后续可直接load_weights()加载
-            2. mapping自定义，根据用户自定义mapping来保存权重
+            1. mapping=None, 表示按照模型自身结构的key来保存, 后续可直接load_weights()加载
+            2. mapping自定义, 根据用户自定义mapping来保存权重
         :param trainable_only: bool, 指定仅保存可训练参数
         '''
         state_dict = self.unwrap_model().state_dict()
@@ -559,17 +558,17 @@ class Trainer:
         if model_path:
             self.load_weights(model_path, strict=strict, mapping=mapping)
             verbose_str += f'Model weights successfuly resumed from {model_path}\n'
-        # 加载优化器，断点续训使用
+        # 加载优化器, 断点续训使用
         if optimizer_path:
             state_dict = torch.load(optimizer_path, map_location='cpu')
             self.optimizer.load_state_dict(state_dict)
             verbose_str += f'Optimizer successfuly resumed from {optimizer_path}\n'
-        # 加载优化器，断点续训使用
+        # 加载优化器, 断点续训使用
         if scheduler_path:
             state_dict = torch.load(scheduler_path, map_location='cpu')
             self.scheduler.load_state_dict(state_dict)
             verbose_str += f'Scheduler successfuly resumed from {scheduler_path}\n'
-        # 加载训练进度参数，断点续训使用
+        # 加载训练进度参数, 断点续训使用
         if steps_params_path:
             self.load_steps_params(steps_params_path)
             verbose_str += f'Steps_params successfuly resumed from {steps_params_path}'
@@ -627,7 +626,7 @@ Trainer.compile_training_components = Trainer.compile
 class TrainerDP(nn.DataParallel, Trainer):
     '''DataParallel模式使用多gpu的方法, 
     1) 父类顺序颠倒也会出问题
-    2) 使用方式和nn.DataParallel一致，TrainerDP(net, *args, **kwargs)来使用
+    2) 使用方式和nn.DataParallel一致, TrainerDP(net, *args, **kwargs)来使用
     '''
     def __init__(self, *args, **kwargs):
         Trainer.__init__(self)
@@ -637,7 +636,7 @@ class TrainerDP(nn.DataParallel, Trainer):
 class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     '''DistributedDataParallel模式使用多gpu的方法,
     1) 父类顺序颠倒也会出问题
-    2) 使用方式和DistributedDataParallel一致，TrainerDDP(net, *args, **kwargs)来使用
+    2) 使用方式和DistributedDataParallel一致, TrainerDDP(net, *args, **kwargs)来使用
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
         Trainer.__init__(self)
@@ -683,7 +682,7 @@ def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
             pass
         elif k.startswith('__') and k.endswith('__'):  # 内部函数不执行
             pass
-        elif hasattr(obj, k):  # 如果下游重新定义，则不继
+        elif hasattr(obj, k):  # 如果下游重新定义, 则不继
             if replace_func:
                 set_func = True
         else:
@@ -692,7 +691,7 @@ def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
         if set_func and eval(f'isfunction(Trainer.{k})'):
             exec(f'obj.{k} = types.MethodType(Trainer.{k}, obj)')
             added_funcs.append(k)
-    obj.initialize()  # 这里初始化会得到一些其他的成员变量，不可缺省
+    obj.initialize()  # 这里初始化会得到一些其他的成员变量, 不可缺省
 
     if verbose and (len(added_funcs) > 0):
         log_info(f'Already add `{",".join(added_funcs)}` method')
@@ -737,7 +736,7 @@ def add_module(obj, include=None, exclude=None, verbose=0, replace_func=False):
             pass
         elif k.startswith('__') and k.endswith('__'):
             pass
-        elif hasattr(obj, k):  # 如果下游重新定义，则不继
+        elif hasattr(obj, k):  # 如果下游重新定义, 则不继
             if replace_func:
                 set_func = True
         else:
@@ -774,7 +773,7 @@ class AccelerateTrainer(Trainer):
         self.train_dataloader_iter = iter(self.train_dataloader)
 
     def prepare(self, *args, **kwargs):
-        '''调用acclerate的prepare，如在外面评估时候需要对dev_dataloader使用'''
+        '''调用acclerate的prepare, 如在外面评估时候需要对dev_dataloader使用'''
         return self.accelerator.prepare(*args, **kwargs)
 
     def unwrap_model(self):
@@ -794,7 +793,7 @@ class DeepSpeedTrainer(Trainer):
         super().__init__(module)
         self.model = module
         self.config = DottableDict(json.load(open(config_path)))
-        self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印，防止进度条打印问题
+        self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
 
     def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)

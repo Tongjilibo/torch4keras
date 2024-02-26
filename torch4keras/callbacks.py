@@ -38,7 +38,7 @@ def round(v, mode='f'):
 
 
 class CallbackList(object):
-    '''把原来在model.py中的callback_fun移植出来，参考Keras的CallbackList重构
+    '''把原来在model.py中的callback_fun移植出来, 参考Keras的CallbackList重构
     '''
     def __init__(self, callbacks=None, queue_length=10, run_callbacks=True):
         callbacks = callbacks or []
@@ -78,7 +78,7 @@ class CallbackList(object):
             callback.set_params(params)
 
     def on_epoch_begin(self, global_step:int, epoch:int, logs:dict=None):
-        # 如果是分布式DDP训练，则仅masker_rank可以callback
+        # 如果是分布式DDP训练, 则仅masker_rank可以callback
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
@@ -159,7 +159,7 @@ class Callback(object):
     '''Callback基类'''
     def __init__(self, run_callback=True, **kwargs):
         self.trainer = None  # trainer
-        self.model = None  # nn.Module模型，或者包含Trainer的nn.Module
+        self.model = None  # nn.Module模型, 或者包含Trainer的nn.Module
         self.optimizer = None  # 优化器
         self.run_callback = run_callback  # 是否运行该callback
     def set_params(self, params):
@@ -214,7 +214,7 @@ class SmoothMetric:
     
     def update(self, current:int, logs:dict):
         if (self.interval is not None) and (current % self.interval == 1):
-            # 如果定义了累积interval，则需要重新累计
+            # 如果定义了累积interval, 则需要重新累计
             self.reset()
         
         for k, v in logs.items():
@@ -252,10 +252,10 @@ class SmoothMetric:
 
 
 class SmoothMetricsCallback(Callback):
-    '''指标平滑的callback，会inplace修改log，影响后续的callback中log
-    1）适用情形：希望Logger, Tensorboard，Wandb, EarlyStopping等callbacks中使用的累计平滑的指标
-    2）使用方法：初始化后，放在fit()中靠前的位置来对log进行修改
-    3）step的平滑是全局来看的（跨epoch不中断），epoch平滑是对每个epoch分别累计计算
+    '''指标平滑的callback, 会inplace修改log, 影响后续的callback中log
+    1）适用情形：希望Logger, Tensorboard, Wandb, EarlyStopping等callbacks中使用的累计平滑的指标
+    2）使用方法：初始化后, 放在fit()中靠前的位置来对log进行修改
+    3）step的平滑是全局来看的（跨epoch不中断）, epoch平滑是对每个epoch分别累计计算
 
     :param interval: int, 平滑时候使用的的step个数
     :param stateful_metrics: list, 以状态量记录指标的格式
@@ -284,7 +284,7 @@ class SmoothMetricsCallback(Callback):
 
 
 class Progbar(object):
-    '''进度条，直接从keras引入'''
+    '''进度条, 直接从keras引入'''
     def __init__(self, target:int, width:int=30, verbose:int=1, time_interval:float=0.05, stateful_metrics:Union[str, set, tuple, list]=None):
         '''
         :param target: 进度条的step数量
@@ -309,7 +309,7 @@ class Progbar(object):
         now = time.time()
         if self.verbose == 1:
             if (now - self._last_update < self.time_interval and self.target is not None and current < self.target):
-                # 训练每个step太快了，则不更新进度条，累计达到一定的时间间隔再更新进度条
+                # 训练每个step太快了, 则不更新进度条, 累计达到一定的时间间隔再更新进度条
                 return
 
             prev_total_width = self._total_width
@@ -365,7 +365,7 @@ class Progbar(object):
                         info += f' %.{ROUND_PRECISION}e' % avg
                 else:
                     info += ' %s' % values[k]
-            info += ' '  # 最后加个空格，防止中途有别的打印
+            info += ' '  # 最后加个空格, 防止中途有别的打印
             self._total_width += len(info)
             if prev_total_width > self._total_width:
                 info += (' ' * (prev_total_width - self._total_width))
@@ -535,7 +535,7 @@ class TerminateOnNaN(Callback):
 
 
 class History(Callback):
-    '''指标历史，默认是fit的返回项, 这里仅记录epoch_end的指标'''
+    '''指标历史, 默认是fit的返回项, 这里仅记录epoch_end的指标'''
     def on_train_begin(self, logs:dict=None):
         self.epoch = []
         self.history = {}
@@ -582,16 +582,16 @@ class History(Callback):
 
 class EarlyStopping(Callback):
     '''Stop training策略, 从keras中移植
-       使用时候需要保证monitor在logs中，因此如果以valid指标评估需要在EarlyStopping前进行评估并设置logs[monitor]
+       使用时候需要保证monitor在logs中, 因此如果以valid指标评估需要在EarlyStopping前进行评估并设置logs[monitor]
 
-       :param monitor: str, 监控指标，需要在logs中，默认为'loss', 
-       :param min_delta: float, 最小变动，默认为0 
-       :param patience: int, 最长等候的次数，默认为0
-       :param verbose: int, 是否打印，默认为0表示不打印
-       :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
-       :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
+       :param monitor: str, 监控指标, 需要在logs中, 默认为'loss', 
+       :param min_delta: float, 最小变动, 默认为0 
+       :param patience: int, 最长等候的次数, 默认为0
+       :param verbose: int, 是否打印, 默认为0表示不打印
+       :param mode: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
+       :param method: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
        :param baseline: None/float, 基线, 默认为None 
-       :param restore_best_weights: bool, stopping时候是否恢复最优的权重，默认为False
+       :param restore_best_weights: bool, stopping时候是否恢复最优的权重, 默认为False
     '''
     def __init__(self, monitor:str='loss', min_delta:float=0, patience:int=0, verbose:int=0, mode:Literal['auto', 'min', 'max']='auto', 
                  method:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
@@ -672,15 +672,15 @@ class EarlyStopping(Callback):
 
 
 class ReduceLROnPlateau(Callback):
-    '''当monitor指标不下降时候，降低学习率
+    '''当monitor指标不下降时候, 降低学习率
 
-    :param monitor: str, 监控指标，需要在logs中，默认为'loss'
-    :param factor: float, 权重衰减系数，取值范围(0, 1)，默认为0.1
-    :param patience: int, 最长等候的次数，默认为0
-    :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
-    :param verbose: int, 是否打印，默认为0表示不打印
-    :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
-    :param min_delta: float, 最小变动，默认为0 
+    :param monitor: str, 监控指标, 需要在logs中, 默认为'loss'
+    :param factor: float, 权重衰减系数, 取值范围(0, 1), 默认为0.1
+    :param patience: int, 最长等候的次数, 默认为0
+    :param method: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
+    :param verbose: int, 是否打印, 默认为0表示不打印
+    :param mode: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
+    :param min_delta: float, 最小变动, 默认为0 
     :param cooldown: float
     :param min_lr: float, 最小学习率
     '''
@@ -784,7 +784,7 @@ class RemoteMonitor(Callback):
     :param path: str, router
     :param field: str, 字段名
     :param headers: header
-    :param send_as_json: bool, 是否以json形式请求，默认为False
+    :param send_as_json: bool, 是否以json形式请求, 默认为False
     '''
     def __init__(self, root:str='http://localhost:9000', path:str='/publish/epoch/end/', field:str='data',
                  headers=None, send_as_json:bool=False, **kwargs):
@@ -815,13 +815,13 @@ class RemoteMonitor(Callback):
 class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存, 也可以保存最近/最优的ckpt
 
-    :param save_dir: str, 保存的文件夹，只定义即可按照默认的文件名保存
-    :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
-    :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param scheduler_path: str, scheduler保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param method: str, 按照轮次保存还是按照步数保存，默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
-    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
+    :param save_dir: str, 保存的文件夹, 只定义即可按照默认的文件名保存
+    :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
+    :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param method: str, 按照轮次保存还是按照步数保存, 默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
+    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     :param max_save_count: int, 最大保存的权重的个数
     :param monitor: str, 跟踪的指标
     :param mode: str, 指示指标的优化方向
@@ -833,7 +833,7 @@ class Checkpoint(Callback):
         assert method in {'step', 'epoch'}, 'Args `method` only support `step` or `epoch`'
         self.method = method
         self.save_dir = save_dir  # 保存文件夹
-        self.model_path = model_path  # 保存路径，可设置{epoch}{step}{loss}等占位符
+        self.model_path = model_path  # 保存路径, 可设置{epoch}{step}{loss}等占位符
         self.optimizer_path = optimizer_path  # 是否保存优化器
         self.scheduler_path = scheduler_path  # 是否保存scheduler
         self.steps_params_path = steps_params_path  # 是否保存训练步数
@@ -906,19 +906,19 @@ class Checkpoint(Callback):
 
 
 class Evaluator(Checkpoint):
-    '''评估: 可以每个epoch或者每隔一定的steps进行评估，并可保存最优Checkpoint
+    '''评估: 可以每个epoch或者每隔一定的steps进行评估, 并可保存最优Checkpoint
 
-    :param monitor: str, 监控指标，需要在logs中，默认为'perf'
-    :param verbose: int, 是否打印，默认为2表示打印
-    :param mode: str, 控制监控指标monitor的大小方向，默认为'auto', 可选{'auto', 'min', 'max'}
-    :param method: str, 控制是按照epoch还是step来计算，默认为'epoch', 可选{'step', 'epoch'}
+    :param monitor: str, 监控指标, 需要在logs中, 默认为'perf'
+    :param verbose: int, 是否打印, 默认为2表示打印
+    :param mode: str, 控制监控指标monitor的大小方向, 默认为'auto', 可选{'auto', 'min', 'max'}
+    :param method: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
     :param baseline: None/float, 基线, 默认为None 
-    :param save_dir: str, 保存的文件夹，只定义即可按照默认的文件名保存
-    :param model_path: str, 模型保存路径(含文件名)，可以使用{epoch}和{step}占位符
-    :param optimizer_path: str, 优化器保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param scheduler_path: str, scheduler保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param steps_params_path: str, 模型训练进度保存路径(含文件名)，可以使用{epoch}和{step}占位符，默认为None表示不保存
-    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型，默认为100表示每隔100步保存一次
+    :param save_dir: str, 保存的文件夹, 只定义即可按照默认的文件名保存
+    :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
+    :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param interval: int, method设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     '''
     def __init__(self, monitor:str='perf', mode:Literal['max', 'min']='max', verbose:int=2, 
                  save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None,
@@ -932,7 +932,7 @@ class Evaluator(Checkpoint):
 
     def process(self, suffix:int, logs:dict):
         perf = self.evaluate()
-        # 如果evaluate返回的是字典则使用字典，如果返回的是数值则套上{'perf': perf}
+        # 如果evaluate返回的是字典则使用字典, 如果返回的是数值则套上{'perf': perf}
         if perf is None:
             perf = logs.copy()
         else:
@@ -957,21 +957,21 @@ class Evaluator(Checkpoint):
         
     # 定义评价函数
     def evaluate(self) -> Union[int, float, dict]:
-        # 需要返回一个字典，且self.monitor在字典key中
-        # 如果返回的是一个数值型，则默认使用'perf'作为指标名
+        # 需要返回一个字典, 且self.monitor在字典key中
+        # 如果返回的是一个数值型, 则默认使用'perf'作为指标名
         return None
 
 
 class Logger(Callback):
     '''默认logging
-    对于valid/dev和test的日志需要在evaluate之后对log进行赋值，如log['dev_f1']=f1，并在Evaluator之后调用
-    若每隔一定steps对验证集评估，则Logger的interval设置成和Evaluater一致或者约数，保证日志能记录到
+    对于valid/dev和test的日志需要在evaluate之后对log进行赋值, 如log['dev_f1']=f1, 并在Evaluator之后调用
+    若每隔一定steps对验证集评估, 则Logger的interval设置成和Evaluater一致或者约数, 保证日志能记录到
 
     :param log_path: str, log文件的保存路径
     :param interval: int, 保存log的间隔
     :param mode: str, log保存的模式, 默认为'a'表示追加
     :param separator: str, 指标间分隔符
-    :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL，指定log的level
+    :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL, 指定log的level
     '''
     def __init__(self, log_path:str, interval:int=100, mode:Literal['a', 'w']='a', separator:str='\t', 
                  level:Literal['DEBUG','INFO','WARNING','ERROR','CRITICAL']='DEBUG', name:str='root', **kwargs):
@@ -1017,20 +1017,20 @@ class Logger(Callback):
 
 class Tensorboard(Callback):
     '''默认Tensorboard
-    对于valid/dev和test的Tensorboard需要在evaluate之后对log进行赋值，如log['dev/f1']=f1，并在Evaluator之后调用
+    对于valid/dev和test的Tensorboard需要在evaluate之后对log进行赋值, 如log['dev/f1']=f1, 并在Evaluator之后调用
     赋值需要分栏目的用'/'进行分隔
-    若每隔一定steps对验证集评估，则Tensorboard的interval设置成和Evaluater一致或者约数，保证Tensorboard能记录到
+    若每隔一定steps对验证集评估, 则Tensorboard的interval设置成和Evaluater一致或者约数, 保证Tensorboard能记录到
 
     :param log_dir: str, tensorboard文件的保存路径
     :param interval: int, 保存tensorboard的间隔
-    :param prefix: str, tensorboard分栏的前缀，默认为'train'
+    :param prefix: str, tensorboard分栏的前缀, 默认为'train'
     '''
     def __init__(self, log_dir:str, interval:int=100, prefix:str='Train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
         self.log_dir = log_dir
         self.interval = interval
-        self.prefix_step = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀，用于区分栏目
-        self.prefix_epoch = prefix+'_epoch/' if len(prefix.strip()) > 0 else 'Epoch/'  # 控制默认的前缀，用于区分栏目
+        self.prefix_step = prefix+'/' if len(prefix.strip()) > 0 else ''  # 控制默认的前缀, 用于区分栏目
+        self.prefix_epoch = prefix+'_epoch/' if len(prefix.strip()) > 0 else 'Epoch/'  # 控制默认的前缀, 用于区分栏目
 
     def on_train_begin(self, logs:dict=None):
         from tensorboardX import SummaryWriter
@@ -1062,7 +1062,7 @@ class WandbCallback(Callback):
     :param watch (:obj:`str`, `optional` defaults to :obj:`"gradients"`):
         Can be :obj:`"gradients"`, :obj:`"all"` or :obj:`"false"`. Set to :obj:`"false"` to disable gradient
         logging or :obj:`"all"` to log gradients and parameters.
-    :param project: str，wandb的project name, 默认为bert4torch
+    :param project: str, wandb的project name, 默认为bert4torch
     :param 
     '''
     def __init__(self, project:str='bert4torch', trial_name:str=None, run_name:str=None, watch:str='gradients', 
@@ -1207,7 +1207,7 @@ class EmailCallback(Callback):
     '''发送Email
 
     :param mail_receivers: str/list, 收件人邮箱
-    :param method: str, 控制是按照epoch还是step来发送邮件，默认为'epoch', 可选{'step', 'epoch'}
+    :param method: str, 控制是按照epoch还是step来发送邮件, 默认为'epoch', 可选{'step', 'epoch'}
     :param interval: int, 发送邮件的的step间隔
     :param mail_host: str, 发件服务器host
     :param mail_user: str, 发件人

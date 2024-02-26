@@ -25,7 +25,7 @@ def take_along_dim(input_tensor, indices, dim=None):
     if version.parse(torch.__version__) > version.parse('1.8.1'):
         return torch.take_along_dim(input_tensor, indices, dim)
     else:
-        # 该逻辑仅在少量数据上测试，如有bug，欢迎反馈
+        # 该逻辑仅在少量数据上测试, 如有bug, 欢迎反馈
         if dim is None:
             res = input_tensor.flatten()[indices]
         else:
@@ -69,10 +69,10 @@ def search_layer(model, layer_name, retrun_first=True):
 
 
 class ListDataset(Dataset):
-    '''数据是List格式Dataset，支持传入file_path或者外部已读入的data(List格式)
+    '''数据是List格式Dataset, 支持传入file_path或者外部已读入的data(List格式)
 
-    :param file_path: str, 待读取的文件的路径，若无可以为None
-    :param data: List[Any], list格式的数据，和file_path至少有一个不为None
+    :param file_path: str, 待读取的文件的路径, 若无可以为None
+    :param data: List[Any], list格式的数据, 和file_path至少有一个不为None
     '''
     def __init__(self, file_path=None, data=None, **kwargs):
         self.kwargs = kwargs
@@ -95,9 +95,9 @@ class ListDataset(Dataset):
 
 
 class IterDataset(IterableDataset):
-    '''流式读取文件，用于大数据量、多小文件使用时候需要注意steps_per_epoch != None
+    '''流式读取文件, 用于大数据量、多小文件使用时候需要注意steps_per_epoch != None
 
-    :param file_path: str, 待读取的文件的路径，若无可以为None
+    :param file_path: str, 待读取的文件的路径, 若无可以为None
     '''
     def __init__(self, file_path=None, **kwargs):
         self.kwargs = kwargs
@@ -153,20 +153,20 @@ def metric_mapping(metric, func, y_pred, y_true):
     if inspect.isfunction(func):
         metric_res = func(y_pred, y_true)
         if inspect.isfunction(metric):
-            # 如果直接传入回调函数（无key），要求回调函数返回Dict[String: Int/Float]类型
+            # 如果直接传入回调函数（无key）, 要求回调函数返回Dict[String: Int/Float]类型
             assert isinstance(metric_res, dict), 'Custom metrics callbacks should return `Dict[String: Int/Float]` value'
         elif isinstance(metric, str):
-            # 如果直接传入回调函数（有key），要求回调函数返回Int/Float类型
+            # 如果直接传入回调函数（有key）, 要求回调函数返回Int/Float类型
             assert isinstance(metric_res, (int, float)), 'Custom metrics callbacks should return `Int/Float value'
         return metric_res
     elif metric == 'loss':
         pass
     # 自带metrics
     elif isinstance(metric, str):
-        # 如果forward返回了list, tuple，则选取第一项
+        # 如果forward返回了list, tuple, 则选取第一项
         y_pred_tmp = y_pred[0] if isinstance(y_pred, (list, tuple)) else y_pred
         y_true_tmp = y_true[0] if isinstance(y_true, (list, tuple)) else y_true
-        y_pred_tmp = y_pred_tmp.detach()  # 训练过程中评估，detach不进入计算图
+        y_pred_tmp = y_pred_tmp.detach()  # 训练过程中评估, detach不进入计算图
 
         # 根据shape做预处理
         if len(y_pred_tmp.shape) == len(y_true_tmp.shape) + 1:
@@ -199,7 +199,7 @@ def metric_mapping(metric, func, y_pred, y_true):
 
 
 def load_checkpoint(checkpoint:str, load_safetensors:bool=False):
-    '''加载ckpt，支持torch.load和safetensors
+    '''加载ckpt, 支持torch.load和safetensors
     '''
     if load_safetensors or checkpoint.endswith(".safetensors"):
         # 加载safetensors格式
@@ -221,7 +221,7 @@ def load_checkpoint(checkpoint:str, load_safetensors:bool=False):
 
 
 def save_checkpoint(state_dict:dict, save_path:str, save_safetensors:bool=False):
-    '''保存ckpt，支持torch.save和safetensors
+    '''保存ckpt, 支持torch.save和safetensors
     '''
     save_dir = os.path.dirname(save_path)
     if save_dir:

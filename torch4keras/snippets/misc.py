@@ -83,13 +83,13 @@ class JsonConfig:
 
 def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
     '''
-    这段代码是一个名为 auto_set_cuda_devices 的函数，它接受一个可选的整数参数 best_num。该函数用于自动设置环境变量 CUDA_VISIBLE_DEVICES，以便在多个 GPU 设备中选择最佳的 GPU 设备。
-    首先，该函数检查环境变量 CUDA_VISIBLE_DEVICES 是否已经设置。如果已经设置，则发出警告并返回当前设置的值。
-    如果 best_num 等于 -1，则将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
-    接下来，该函数尝试使用 nvidia-smi 命令查询 GPU 设备的信息。如果命令不存在，则发出警告并将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
-    如果未指定 best_num，则从环境变量 LOCAL_WORLD_SIZE 中获取值。然后将其转换为整数。
-    接下来，该函数解析 nvidia-smi 命令的输出，并计算每个 GPU 设备的得分。得分由 GPU 利用率和可用内存计算得出。
-    最后，该函数选择得分最高的 best_num 个 GPU 设备，并将其索引作为字符串连接起来。然后将环境变量 CUDA_VISIBLE_DEVICES 设置为该字符串并返回。
+    这段代码是一个名为 auto_set_cuda_devices 的函数, 它接受一个可选的整数参数 best_num。该函数用于自动设置环境变量 CUDA_VISIBLE_DEVICES, 以便在多个 GPU 设备中选择最佳的 GPU 设备。
+    首先, 该函数检查环境变量 CUDA_VISIBLE_DEVICES 是否已经设置。如果已经设置, 则发出警告并返回当前设置的值。
+    如果 best_num 等于 -1, 则将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
+    接下来, 该函数尝试使用 nvidia-smi 命令查询 GPU 设备的信息。如果命令不存在, 则发出警告并将环境变量 CUDA_VISIBLE_DEVICES 设置为 -1 并返回。
+    如果未指定 best_num, 则从环境变量 LOCAL_WORLD_SIZE 中获取值。然后将其转换为整数。
+    接下来, 该函数解析 nvidia-smi 命令的输出, 并计算每个 GPU 设备的得分。得分由 GPU 利用率和可用内存计算得出。
+    最后, 该函数选择得分最高的 best_num 个 GPU 设备, 并将其索引作为字符串连接起来。然后将环境变量 CUDA_VISIBLE_DEVICES 设置为该字符串并返回。
     '''
     import subprocess
 

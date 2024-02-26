@@ -29,7 +29,7 @@ def format_time(eta, hhmmss=True):
 
 
 def timeit(func):
-    '''装饰器，计算函数消耗的时间
+    '''装饰器, 计算函数消耗的时间
     
     Example
     --------------------------------------
@@ -84,7 +84,7 @@ class Timeit:
         '''
         :params name: 打印时候自定义的前缀
         :params count: 需要计算平均生成速度中统计的次数
-        :params reset: 是否重置start_tm, True只记录时间间隔，否则记录的是从一开始的累计时间
+        :params reset: 是否重置start_tm, True只记录时间间隔, 否则记录的是从一开始的累计时间
         '''
         if count is not None:
             self.count = count
@@ -166,7 +166,7 @@ class Timeit2:
 
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 
                mail_user:str=None, mail_pwd:str=None, mail_sender:str=None):
-    ''' 发送邮件(默认使用笔者自己注册的邮箱，若含敏感信息请使用自己注册的邮箱)
+    ''' 发送邮件(默认使用笔者自己注册的邮箱, 若含敏感信息请使用自己注册的邮箱)
 
     :param mail_subject: str, 邮件主题
     :param mail_msg: str, 邮件正文
@@ -205,7 +205,7 @@ def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str=""
 
 
 def email_when_error(receivers:Union[str,list], **configs):
-    '''装饰器，异常则发邮件
+    '''装饰器, 异常则发邮件
     Example:
     --------
     >>> @email_when_error(receivers='tongjilibo@163.com')

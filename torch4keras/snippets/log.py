@@ -104,11 +104,11 @@ def print_once(string:str):
 
 class SimpleStreamFileLogger(object):
     '''同时在和命令行和日切片中log（简单场景下可用）
-    1. 会按照天进行切片，适用于部署一些服务的时候长时间log日志的情况
+    1. 会按照天进行切片, 适用于部署一些服务的时候长时间log日志的情况
     2. 缺点是log时候不能定位到文件和行号
 
     :param log_path: str, log文件的地址, 如'/home/logs/demo.log'
-    :param date_format: str, date在路径中的位置，可选subdir|prefix|suffix, subdir会以'/home/logs/20231218/demo.log'保存
+    :param date_format: str, date在路径中的位置, 可选subdir|prefix|suffix, subdir会以'/home/logs/20231218/demo.log'保存
     '''
     def __init__(self, log_path:str, date_format:str='subdir', level:str='DEBUG', 
                  format:str="[%(asctime)s][%(levelname)s] %(message)s"):
@@ -187,18 +187,18 @@ class SimpleStreamFileLogger(object):
 
 class LoggerHandler(logging.Logger):
     '''同时在文件中和命令行中log（推荐）
-    1. 适用于部署一些服务的时候长时间log日志的情况，可按照文件大小，日期进行切片
+    1. 适用于部署一些服务的时候长时间log日志的情况, 可按照文件大小, 日期进行切片
     2. 可以定位到对应的文件和行号
 
     :param log_path: str, log到文件的路径
-    :param handles: str/tuple/list/set, handles的类型，默认为('StreamHandler', 'FileHander')
+    :param handles: str/tuple/list/set, handles的类型, 默认为('StreamHandler', 'FileHander')
     - StreamHandler 命令行输出
     - FileHander 文件数据
     - RotatingFileHandler 按照文件size切片的输出
     - TimedRotatingFileHandler 按照时间的切片输出
 
     :handle_config: dict, handles使用到的config
-    :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL，指定log的level
+    :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL, 指定log的level
     '''
     def __init__(self, log_path:str=None, handles=None, handle_config=None, name:str='root', 
                  level:str='DEBUG', format:str="[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s"):
