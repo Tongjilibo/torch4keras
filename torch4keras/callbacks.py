@@ -190,32 +190,35 @@ class Callback(object):
         pass
 
 
-def _process_stateful_metrics(stateful_metrics:Union[str, set, tuple, list]):
-    '''对stateful_metrics进行处理'''
-    if stateful_metrics is None:
-        stateful_metrics_new = set()
-    elif isinstance(stateful_metrics, str):
-        stateful_metrics_new = {stateful_metrics}
-    elif isinstance(stateful_metrics, (set, tuple, list)):
-        stateful_metrics_new = set(stateful_metrics)
-    else:
-        raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
-    stateful_metrics_new.update(NO_SMOOTH_METRICS)
-    return stateful_metrics_new
-
-
 class SmoothMetric:
     '''指标平滑'''
     def __init__(self, interval:int=None, stateful_metrics:Union[str, set, tuple, list]=None) -> None:
-        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
         self.interval = interval
-        self.stateful_metrics = stateful_metrics or set()
+        self.stateful_metrics = self._process_stateful_metrics(stateful_metrics)
+        self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
+        if self.interval is not None:
+            self._oversize_values = deque(maxlen=self.interval)
         self._seen_so_far = 0
     
+    @staticmethod
+    def _process_stateful_metrics(stateful_metrics:Union[str, set, tuple, list]=None):
+        '''对stateful_metrics进行处理'''
+        if stateful_metrics is None:
+            stateful_metrics_new = set()
+        elif isinstance(stateful_metrics, str):
+            stateful_metrics_new = {stateful_metrics}
+        elif isinstance(stateful_metrics, (set, tuple, list)):
+            stateful_metrics_new = set(stateful_metrics)
+        else:
+            raise ValueError('Args `stateful_metrics` only support `int/set/tuple/list` format')
+        stateful_metrics_new.update(NO_SMOOTH_METRICS)
+        return stateful_metrics_new
+
     def update(self, current:int, logs:dict):
-        if (self.interval is not None) and (current % self.interval == 1):
-            # 如果定义了累积interval, 则需要重新累计
-            self.reset()
+        if self.interval is not None:
+            if len(self._oversize_values) >= self.interval:
+                self._oversize_value = self._oversize_values.popleft()
+            self._oversize_values.append({k:v for k,v in logs.items()})
         
         for k, v in logs.items():
             if k in SKIP_METRICS:
@@ -226,10 +229,14 @@ class SmoothMetric:
             elif (k in NO_SMOOTH_METRICS) or (k in self.stateful_metrics):
                 self._values[k] = [v, 1]
             elif k not in self._values:
-                self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]
+                self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]                    
             else:
                 self._values[k][0] += v * (current - self._seen_so_far)
                 self._values[k][1] += (current - self._seen_so_far)
+                # 滑动平均, 把超出interval的的指标减去
+                if hasattr(self, '_oversize_value') and k in self._oversize_value:
+                    self._values[k][0] -= self._oversize_value[k]
+                    self._values[k][1] -= 1  # 这里理论上应该也是current - self._seen_so_far
             
         self._seen_so_far = current
         return self._values
@@ -253,9 +260,9 @@ class SmoothMetric:
 
 class SmoothMetricsCallback(Callback):
     '''指标平滑的callback, 会inplace修改log, 影响后续的callback中log
-    1）适用情形：希望Logger, Tensorboard, Wandb, EarlyStopping等callbacks中使用的累计平滑的指标
-    2）使用方法：初始化后, 放在fit()中靠前的位置来对log进行修改
-    3）step的平滑是全局来看的（跨epoch不中断）, epoch平滑是对每个epoch分别累计计算
+    1) 适用情形: 希望Logger, Tensorboard, Wandb, EarlyStopping等callbacks中使用的累计平滑的指标
+    2) 使用方法: 初始化后, 放在fit()中靠前的位置来对log进行修改
+    3) step的平滑是全局来看的 (跨epoch不中断) , epoch平滑是对每个epoch分别累计计算
 
     :param interval: int, 平滑时候使用的的step个数
     :param stateful_metrics: list, 以状态量记录指标的格式
@@ -285,26 +292,23 @@ class SmoothMetricsCallback(Callback):
 
 class Progbar(object):
     '''进度条, 直接从keras引入'''
-    def __init__(self, target:int, width:int=30, verbose:int=1, time_interval:float=0.05, stateful_metrics:Union[str, set, tuple, list]=None):
+    def __init__(self, target:int, width:int=30, verbose:int=1, time_interval:float=0.05):
         '''
         :param target: 进度条的step数量
         :param width: 进度条的宽度
         :param verbose: 是否展示进度条
         :param time_interval: 更新进度条的最短时间间隔
-        :param stateful_metrics: list, 以状态量记录指标的格式
         '''
         self.target = target
         self.width = width
         self.verbose = verbose
         self.time_interval = time_interval
-        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
         self._dynamic_display = ((hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()) or 'ipykernel' in sys.modules)
         self._total_width = 0
         self._start = time.time()
         self._last_update = 0
 
-
-    def update(self, current:int, values=None):
+    def update(self, current:int, values:dict=None):
         '''Updates the progress bar.'''
         now = time.time()
         if self.verbose == 1:
@@ -355,16 +359,9 @@ class Progbar(object):
                 else:
                     info += ' %.0fus/step' % (time_per_unit * 1e6)
 
-            for k in values:
+            for k, v in values.items():
                 info += ' - %s:' % k
-                if isinstance(values[k], list):
-                    avg = np.mean(values[k][0] / max(1, values[k][1]))  # 指标平滑
-                    if abs(avg) > 1e-3:
-                        info += f' %.{ROUND_PRECISION}f' % avg
-                    else:
-                        info += f' %.{ROUND_PRECISION}e' % avg
-                else:
-                    info += ' %s' % values[k]
+                info += f' %.{ROUND_PRECISION}f' % v if abs(v) > 1e-3 else f' %.{ROUND_PRECISION}e' % v
             info += ' '  # 最后加个空格, 防止中途有别的打印
             self._total_width += len(info)
             if prev_total_width > self._total_width:
@@ -378,15 +375,10 @@ class Progbar(object):
 
         elif self.verbose == 2:
             if self.target is None or current >= self.target:
-                for k in values:
+                for k, v in values.items():
                     info += ' - %s:' % k
-                    avg = np.mean(values[k][0] / max(1, values[k][1]))
-                    if avg > 1e-3:
-                        info += f' %.{ROUND_PRECISION}f' % avg
-                    else:
-                        info += f' %.{ROUND_PRECISION}e' % avg
+                    info += f' %.{ROUND_PRECISION}f' % v if abs(v) > 1e-3 else f' %.{ROUND_PRECISION}e' % v
                 info += '\n'
-
                 sys.stdout.write(info)
                 sys.stdout.flush()
 
@@ -395,22 +387,16 @@ class Progbar(object):
 
 class KerasProgbar(Callback):
     ''' keras进度条 '''
-    def __init__(self, stateful_metrics:Union[str, set, tuple, list]=None, interval:int=None, width:int=30, **kwargs):
+    def __init__(self, width:int=30, **kwargs):
         super(KerasProgbar, self).__init__(**kwargs)
-        self.stateful_metrics = _process_stateful_metrics(stateful_metrics)
-        self.interval = interval
         self.width = width
 
-    def add_metrics(self, metrics:Union[str, list], stateful_metrics:Union[str, set, tuple, list]=None, add_position:bool=None):
+    def add_metrics(self, metrics:Union[str, list], add_position:bool=None):
         '''在指定位置插入metrics指标
         '''
         if add_position is None:
             add_position = len(self.params['metrics'])
         metrics = [metrics] if isinstance(metrics, str) else metrics
-        if stateful_metrics:
-            stateful_metrics = _process_stateful_metrics(stateful_metrics)
-            self.stateful_metrics.update(stateful_metrics)
-            self.progbar.stateful_metrics.update(stateful_metrics)
 
         add_metrics = []
         for metric in metrics:
@@ -433,32 +419,41 @@ class KerasProgbar(Callback):
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('\n%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
+            print('\n%s - Start  Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
-            self.progbar = Progbar(target=self.target, width=self.width, verbose=self.verbose, stateful_metrics=self.stateful_metrics)
-            self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
+            self.progbar = Progbar(target=self.target, width=self.width, verbose=self.verbose)
+
+    def on_epoch_end(self, global_step: int, epoch: int, logs: dict = None):
+        # 打印该Epoch的参数
+        logs = logs or {}
+        log_values = {k:logs[k] for k in self.params['metrics'] if k in logs}
+        if self.verbose:
+            time_end = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print_str = '%s - Finish Epoch: %d/%d' % (time_end, epoch+1, self.epochs)
+            for k, v in log_values.items():
+                v = f' %.{ROUND_PRECISION}f' % v if abs(v) > 1e-3 else f' %.{ROUND_PRECISION}e' % v
+                print_str += f' - {k}:{v}'
+            print(print_str)
 
     def on_batch_end(self, global_step:int=None, local_step:int=None, logs:dict=None):
         logs = logs or {}  # 这里的logs是当前batch的指标
-        log_values = {k:logs[k] for k in self.params['metrics'] if k in logs}
-        if self.verbose:
-            values = self.smooth_metric.update(local_step+1, log_values)
-            self.progbar.update(local_step+1, values)
+        log_values = {k:logs[k] for k in self.params['metrics'] if k in logs}  # 限定仅打印metrics中
+        if self.verbose:  # 这里打印的是过去interval区间内的平均指标
+            self.progbar.update(local_step+1, log_values)
     
         
 class TqdmProgbar(KerasProgbar):
     ''' Tqdm进度条 '''
-    def __init__(self, stateful_metrics:Union[str, set, tuple, list]=None, interval:int=None, width:int=None, **kwargs):
-        super().__init__(stateful_metrics, interval, width, **kwargs)
+    def __init__(self, width:int=None, **kwargs):
+        super().__init__(width, **kwargs)
 
     def on_epoch_begin(self, global_step=None, epoch=None, logs=None):
         if self.verbose:
             from tqdm import tqdm
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('\n%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
+            print('\n%s - Start  Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
             self.progbar = tqdm(total=self.params['steps'], desc='Training', dynamic_ncols=False, file=sys.stdout, smoothing=0, ncols=self.width)
-        self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
     def on_batch_end(self, global_step:int=None, local_step:int=None, logs:dict=None):
         logs_new = self.smooth_values(local_step+1, logs)
@@ -473,22 +468,13 @@ class TqdmProgbar(KerasProgbar):
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         self.progbar.close()
+        KerasProgbar.on_epoch_end(self, global_step, epoch, logs)
     
     def smooth_values(self, current:int, values:dict=None):
         '''从Progbar迁移过来'''
-        _values = self.smooth_metric.update(current, values)
-
         logs = collections.OrderedDict()
-        for k in _values:
-            if isinstance(_values[k], list):
-                avg = np.mean(_values[k][0] / max(1, _values[k][1]))
-                if abs(avg) > 1e-3:
-                    logs[k] = f' %.{ROUND_PRECISION}f' % avg
-                else:
-                    logs[k] = f' %.{ROUND_PRECISION}e' % avg
-            else:
-                logs[k] = ' %s' % _values[k]
-
+        for k, v in values.items():
+            logs[k] = f' %.{ROUND_PRECISION}f' % v if abs(v) > 1e-3 else f' %.{ROUND_PRECISION}e' % v
         return logs
 
 
@@ -498,7 +484,7 @@ class ProgressBar2Progbar(TqdmProgbar):
         if self.verbose:
             import progressbar
             time_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('\n%s - Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
+            print('\n%s - Start  Epoch: %d/%d' % (time_start, epoch+1, self.epochs))
             self.target = self.params['steps']
             widgets = [progressbar.SimpleProgress(format='%(value_s)s/%(max_value_s)s'), progressbar.Bar(marker='=', left='[', right=']'), ' ', 
                        progressbar.AdaptiveETA(format='ETA: %(eta)s', format_finished='Time: %(elapsed)s'), ' - ']
@@ -508,7 +494,6 @@ class ProgressBar2Progbar(TqdmProgbar):
                     widgets.append(' - ')
             self.progbar = progressbar.bar.ProgressBar(min_value=0, max_value=self.params['steps'], widgets=widgets, 
                                                        redirect_stdout=True, redirect_stderr=True)
-        self.smooth_metric = SmoothMetric(self.interval, self.stateful_metrics)
 
     def on_batch_end(self, global_step:int=None, local_step:int=None, logs:dict=None):
         logs_new = self.smooth_values(local_step+1, logs or {})
@@ -521,6 +506,7 @@ class ProgressBar2Progbar(TqdmProgbar):
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         self.progbar.finish()
+        KerasProgbar.on_epoch_end(self, global_step, epoch, logs)
 
 
 class TerminateOnNaN(Callback):

@@ -4,7 +4,7 @@ from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_dev
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
-from typing import Union, List, Literal
+from typing import Union, List, Literal, Tuple, Set
 from inspect import isfunction
 import os
 import json
@@ -44,7 +44,8 @@ class Trainer:
 
     def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:float=None, 
                 mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, List[str], dict]=None, 
-                grad_accumulation_steps:int=1, progbar_config:dict=None, smooth_metrics_config:Union[dict, bool]=None, **kwargs):
+                grad_accumulation_steps:int=1, progbar_type:Literal['keras', 'tqdm', 'progressbar2']='keras', progbar_width:int=None,
+                stateful_metrics:Union[str, Set[str], Tuple[str], List[str]]=None, smooth_interval:int=100, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
         
         :param loss: loss
@@ -55,13 +56,13 @@ class Trainer:
         :param metrics: str/List[str]/dict, 训练过程中需要打印的指标, loss相关指标默认会打印, 目前支持accuracy, 也支持自定义metric, 形式为{key: func}
         :param grad_accumulation_steps: int, 梯度累积步数, 默认为1
         :param bar: str, 使用进度条的种类, 从kwargs中解析, 默认为keras, 可选keras, tqdm, progressbar2
-        :param progbar_config: 进度条的配置, 默认是对整个epoch计算均值指标
-            bar: str, 默认为keras
-            stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric, 指标抖动会更加明显, 默认为None表示使用指标平滑
+
+        > 进度条的配置
+            progbar_type: str, 默认为keras, 可选keras, tqdm, progressbar2
             width: int, keras进度条下表示进度条的长度
-        :param smooth_metrics_config: 指标平滑的配置, 默认为None表示采取默认平滑设置; 传入False表示不使用平滑
+        > 指标平滑的配置, 默认为None表示采取默认平滑设置; 传入False表示不使用平滑
             stateful_metrics: List[str], 表示不使用指标平滑仅进行状态记录的metric, 指标抖动会更加明显, 默认为None表示使用指标平滑
-            interval: int, 表示指标平滑时候的累计步数, 默认为100
+            smooth_interval: int, 表示指标平滑时候的累计步数, 默认为100
 
         :return: None
         '''
@@ -98,18 +99,13 @@ class Trainer:
                 raise ValueError('Args metrics only support `String, Dict, Callback, List[String, Dict, Callback]` format')
 
         # 进度条参数
-        self.progbar_config = progbar_config or {'bar': 'keras', 'stateful_metrics': None}
-        self.progbar_config.update({k:v for k, v in kwargs.items() if k in ['bar', 'stateful_metrics', 'width']})  # 直接传参
-        self.progbar_config['bar'] = self.progbar_config.get('bar', 'keras')
-        assert self.progbar_config['bar'] in {'keras', 'tqdm', 'progressbar2'}, \
-            f'Args `bar`={self.progbar_config["bar"]} illegal, only support `keras, tqdm, progressbar2`'
+        assert progbar_type in {'keras', 'tqdm', 'progressbar2'}
+        self.progbar_config = {'bar': progbar_type, 'width': progbar_width}
+        self.progbar_config = {k:v for k,v in self.progbar_config.items() if v is not None}
 
         # smooth_metrics参数: 默认平滑
-        if smooth_metrics_config is False:  # compile时传入False, 表示不使用平滑
-            self.smooth_metrics_config = None
-        else:
-            self.smooth_metrics_config = smooth_metrics_config or {}
-            self.smooth_metrics_config.update({k:v for k, v in kwargs.items() if k in ['stateful_metrics', 'interval', 'verbose']})  # 直接传参
+        self.smooth_metrics_config = {'stateful_metrics': stateful_metrics, 'interval': smooth_interval, 'verbose': kwargs.get('verbose')}
+        self.smooth_metrics_config = {k:v for k,v in self.smooth_metrics_config.items() if v is not None}
 
         # 其他参数设置
         for key, value in kwargs.items():
@@ -265,6 +261,26 @@ class Trainer:
         history = History()
         callbacks_ = []
 
+        # 指标平滑
+        if any([isinstance(i, SmoothMetricsCallback) for i in callbacks]):
+            # 用户自定的callbacks中包含了SmoothMetricsCallback
+            log_warn(f'SmoothMetricsCallback already in use and args `smooth_metrics_config` will be ignored')
+            smooth_callback = [callback for callback in callbacks if isinstance(callback, SmoothMetricsCallback)][0]
+            callbacks_.append(smooth_callback)
+            callbacks = [callback for callback in callbacks if not isinstance(callback, SmoothMetricsCallback)]
+        elif self.smooth_metrics_config.get('interval') is not None:
+            smooth_callback = SmoothMetricsCallback(**self.smooth_metrics_config)
+            callbacks_.append(smooth_callback)
+        else:
+            # 不平滑
+            smooth_callback = None
+
+        # 检查指标平滑的设置和后续callback的设置的interval是不是一致
+        for callback in callbacks:
+            if hasattr(callback, 'interval') and (smooth_callback is not None) and (callback != smooth_callback) and \
+                (callback.interval is not None) and (callback.interval % smooth_callback.interval != 0):
+                log_warn(f'{type(callback).__name__}.interval={callback.interval} while SmoothMetricsCallback.interval={smooth_callback.interval}')
+        
         # 进度条
         progbarlogger = None
         if self.verbose:
@@ -277,21 +293,6 @@ class Trainer:
             else:
                 progbarlogger = KerasProgbar(**self.progbar_config)
             callbacks_.append(progbarlogger)
-
-        # 指标平滑
-        if self.smooth_metrics_config is not None:
-            if any([isinstance(i, SmoothMetricsCallback) for i in callbacks]):
-                # 用户自定的callbacks中包含了SmoothMetricsCallback
-                log_warn(f'SmoothMetricsCallback already in use and args `smooth_metrics_config` will be ignored')
-            else:
-                callbacks_.append(SmoothMetricsCallback(**self.smooth_metrics_config))
-
-            # 检查指标平滑的设置和后续callback的设置的interval是不是一致
-            smooth_callback = [callback for callback in callbacks_+callbacks if isinstance(callback, SmoothMetricsCallback)][0]
-            for callback in callbacks_+callbacks:
-                if hasattr(callback, 'interval') and (callback != smooth_callback) and (callback.interval is not None) and \
-                    (callback.interval % smooth_callback.interval != 0):
-                    log_warn(f'{type(callback).__name__}.interval={callback.interval} while SmoothMetricsCallback.interval={smooth_callback.interval}')
 
         callbacks_  += callbacks + [history]
         self.callbacks = CallbackList(callbacks_, run_callbacks=self.run_callbacks)
