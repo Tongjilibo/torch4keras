@@ -648,6 +648,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         assert isinstance(master_rank, (int, list, tuple)), 'Args `master_rank` only supoorts int, list, tuple'
         if isinstance(master_rank, int):
             master_rank = [master_rank]
+        self.master_rank = master_rank
         self.verbose = (torch.distributed.get_rank() in master_rank)
     
     def _prepare_inputs(self, *args):
@@ -656,6 +657,11 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
             from torch.utils.data.distributed import DistributedSampler 
             self.train_dataloader.sampler = DistributedSampler(self.train_dataloader.dataset)
             self.train_dataloader_iter = iter(self.train_dataloader)
+    
+    def disable_run_callbacks(self, callbacks: Union[Callback, List[Callback]]):
+        for callback in callbacks:
+            if torch.distributed.get_rank() not in self.master_rank:
+                callback.run_callback = False
 
     @classmethod
     def init_process_group(master_rank=0):
