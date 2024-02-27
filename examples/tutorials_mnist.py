@@ -69,8 +69,7 @@ class MyEvaluator(Evaluator):
 
 if __name__ == '__main__':
     evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/')
-    ckpt = Checkpoint(save_dir='./ckpt/{step}_{loss:.2f}', monitor='loss', min_max='min', 
-                      max_save_count=2, epoch_or_step='step', interval=200)
+    ckpt = Checkpoint(save_dir='./ckpt/{epoch}')
     early_stop = EarlyStopping(monitor='test_acc', verbose=1)
     logger = Logger('./ckpt/log.log')  # log文件
     ts_board = Tensorboard('./ckpt/tensorboard')  # tensorboard
