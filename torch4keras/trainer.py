@@ -374,6 +374,7 @@ class Trainer:
         #  local_step: 当前epoch内的训练步数, 不同epoch中相同local_step对应的batch数据不一定相同, 在steps_per_epoch=None时相同
         #  batch_step: 在dataloader中的index, 不同epoch中相同的bti对应的batch数据一般相同, 除非重新生成dataloader
         self.callbacks.on_train_begin()
+        logs = self._log_init()  # 防止数据集为空时候
         for epoch in range(self.resume_epoch, epochs):
             self.epoch = epoch
             # resume_step：判断local_step的起点, 以及进度条的起始位置
@@ -653,8 +654,8 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     
     def _prepare_inputs(self, *args):
         super()._prepare_inputs(*args)
-        if self.train_dataloader.sampler is None:
-            from torch.utils.data.distributed import DistributedSampler 
+        from torch.utils.data.distributed import DistributedSampler 
+        if (self.train_dataloader.sampler is None) and (not isinstance(self.train_dataloader.sampler, DistributedSampler)):
             self.train_dataloader.sampler = DistributedSampler(self.train_dataloader.dataset)
             self.train_dataloader_iter = iter(self.train_dataloader)
     
@@ -678,7 +679,109 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         ddp.world_size = int(os.environ["WORLD_SIZE"])
         ddp.master_process = ddp.rank == master_rank
         torch.cuda.set_device(ddp.local_rank)
+        torch.manual_seed(ddp.rank)
         return ddp
+
+
+class AccelerateTrainer(Trainer):
+    '''accelerate来训练'''
+    def __init__(self, module: nn.Module, **configs):
+        super().__init__(module)
+        from accelerate import Accelerator
+        accelerator = Accelerator(**configs)
+        self.model = accelerator.prepare(module)
+        self.accelerator = accelerator
+        self.device = accelerator.device
+        self.verbose = 1 if accelerator.is_local_main_process else 0
+        log_warn('AcclerateTrainer may not be compatible with several callbacks, you may use custom callbacks instead.')
+    
+    def compile(self, *args, **kwargs):
+        super().compile(*args, **kwargs)
+        self.optimizer, self.scheduler, self.criterion = self.accelerator.prepare(self.optimizer, self.scheduler, self.criterion)
+
+    def _prepare_inputs(self, *args):
+        super()._prepare_inputs(*args)
+        self.train_dataloader = self.accelerator.prepare(self.train_dataloader)
+        self.train_dataloader_iter = iter(self.train_dataloader)
+
+    def prepare(self, *args, **kwargs):
+        '''调用acclerate的prepare, 如在外面评估时候需要对dev_dataloader使用'''
+        return self.accelerator.prepare(*args, **kwargs)
+
+    def unwrap_model(self):
+        '''返回nn.Module模块'''
+        unwrap_model = self.accelerator.unwrap_model(self.model)
+        if isinstance(unwrap_model, nn.Module): return unwrap_model
+        return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
+
+    def loss_backward(self, loss):
+        self.accelerator.backward(loss)
+        return loss
+
+
+class DeepSpeedTrainer(Trainer):
+    '''deepspeed来训练'''
+    def __init__(self, module, config_path):
+        super().__init__(module)
+        self.model = module
+        self.config = DottableDict(json.load(open(config_path)))
+        self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
+
+    def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
+        super().compile(*args, **kwargs)
+        import deepspeed
+        from deepspeed.utils import logger as ds_logger
+        import logging
+        log_levels = {
+            "debug": logging.DEBUG,
+            "info": logging.INFO,
+            "warning": logging.WARNING,
+            "error": logging.ERROR,
+            "critical": logging.CRITICAL,
+        }
+
+        ds_logger.setLevel(log_levels.get(log_level, logging.WARNING))
+
+        if inference:
+            # only Z3 makes sense for the inference
+            log_warn("ZeRO inference only makes sense with ZeRO Stage 3")
+            self.optimizer, self.scheduler = None, None
+            model_parameters = None
+        else:
+            model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+        
+        kwargs = {
+            "model": self.model,  # deepspeed的forward默认是计算到loss输出的
+            "model_parameters": model_parameters,
+            "config_params": self.config,
+            "optimizer": self.optimizer,
+            "lr_scheduler": self.scheduler,
+        }
+        if self.config.get('zero_optimization', {}).get('offload_optimizer', {}).get('device') == 'cpu':
+            kwargs.pop('optimizer')
+            if self.optimizer is not None:
+                self.optimizer = None
+                log_warn('You may not use custom optimizer when offload_optimizer=`cpu`')
+        self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
+        self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
+
+    def unwrap_model(self):
+        # 执行deepspeed_engine的forward
+        return self.deepspeed_engine
+
+    def loss_backward(self, loss):
+        self.deepspeed_engine.backward(loss)
+        return loss
+    
+    def step(self):
+        self.deepspeed_engine.step()
+
+    def resume_from_checkpoint(self, *args, **kwargs):
+        return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
+
+    def save_to_checkpoint(self, *args, **kwargs):
+        return self.deepspeed_engine.save_checkpoint(*args, **kwargs)
+
 
 def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
     '''为nn.Module添加Triner对应的方法'''
@@ -780,103 +883,3 @@ def add_module(obj, include=None, exclude=None, verbose=0, replace_func=False):
     if verbose and (len(added_funcs) > 0):
         log_info(f'Already add `{",".join(added_funcs)}` method')
     return obj
-
-
-class AccelerateTrainer(Trainer):
-    '''accelerate来训练'''
-    def __init__(self, module: nn.Module, **configs):
-        super().__init__(module)
-        from accelerate import Accelerator
-        accelerator = Accelerator(**configs)
-        self.model = accelerator.prepare(module)
-        self.accelerator = accelerator
-        self.device = accelerator.device
-        self.verbose = 1 if accelerator.is_local_main_process else 0
-        log_warn('AcclerateTrainer may not be compatible with several callbacks, you may use custom callbacks instead.')
-    
-    def compile(self, *args, **kwargs):
-        super().compile(*args, **kwargs)
-        self.optimizer, self.scheduler, self.criterion = self.accelerator.prepare(self.optimizer, self.scheduler, self.criterion)
-
-    def _prepare_inputs(self, *args):
-        super()._prepare_inputs(*args)
-        self.train_dataloader = self.accelerator.prepare(self.train_dataloader)
-        self.train_dataloader_iter = iter(self.train_dataloader)
-
-    def prepare(self, *args, **kwargs):
-        '''调用acclerate的prepare, 如在外面评估时候需要对dev_dataloader使用'''
-        return self.accelerator.prepare(*args, **kwargs)
-
-    def unwrap_model(self):
-        '''返回nn.Module模块'''
-        unwrap_model = self.accelerator.unwrap_model(self.model)
-        if isinstance(unwrap_model, nn.Module): return unwrap_model
-        return unwrap_model.module if hasattr(unwrap_model, 'module') else unwrap_model
-
-    def loss_backward(self, loss):
-        self.accelerator.backward(loss)
-        return loss
-
-
-class DeepSpeedTrainer(Trainer):
-    '''deepspeed来训练'''
-    def __init__(self, module, config_path):
-        super().__init__(module)
-        self.model = module
-        self.config = DottableDict(json.load(open(config_path)))
-        self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
-
-    def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
-        super().compile(*args, **kwargs)
-        import deepspeed
-        from deepspeed.utils import logger as ds_logger
-        import logging
-        log_levels = {
-            "debug": logging.DEBUG,
-            "info": logging.INFO,
-            "warning": logging.WARNING,
-            "error": logging.ERROR,
-            "critical": logging.CRITICAL,
-        }
-
-        ds_logger.setLevel(log_levels.get(log_level, logging.WARNING))
-
-        if inference:
-            # only Z3 makes sense for the inference
-            log_warn("ZeRO inference only makes sense with ZeRO Stage 3")
-            self.optimizer, self.scheduler = None, None
-            model_parameters = None
-        else:
-            model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
-        
-        kwargs = {
-            "model": self.model,  # deepspeed的forward默认是计算到loss输出的
-            "model_parameters": model_parameters,
-            "config_params": self.config,
-            "optimizer": self.optimizer,
-            "lr_scheduler": self.scheduler,
-        }
-        if self.config.get('zero_optimization', {}).get('offload_optimizer', {}).get('device') == 'cpu':
-            kwargs.pop('optimizer')
-            if self.optimizer is not None:
-                self.optimizer = None
-                log_warn('You may not use custom optimizer when offload_optimizer=`cpu`')
-        self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
-        self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
-
-    def unwrap_model(self):
-        # 执行deepspeed_engine的forward
-        return self.deepspeed_engine
-
-    def loss_backward(self, loss):
-        self.deepspeed_engine.backward(loss)
-        return loss
-    
-    def step(self):
-        self.deepspeed_engine.step()
-
-    def resume_from_checkpoint(self, *args, **kwargs):
-        return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
-
-    def save_to_checkpoint(self, *args, **kwargs):
-        return self.deepspeed_engine.save_checkpoint(*args, **kwargs)
