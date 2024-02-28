@@ -4,7 +4,7 @@ from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_dev
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
-from typing import Union, List, Literal, Tuple, Set
+from typing import Union, List, Literal, Tuple, Set, Callable
 from inspect import isfunction
 import os
 import json
@@ -473,12 +473,12 @@ class Trainer:
         os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
 
-    def load_weights(self, load_path:Union[str,tuple,list], strict:bool=True, mapping:dict=None):
+    def load_weights(self, load_path:Union[str,tuple,list], strict:bool=True, mapping:Union[dict,Callable]=None):
         '''加载模型权重, 支持加载权重文件list
 
         :param save_path: str/tuple/list, 权重加载路径
         :param strict: bool, torch.load()是否严格加载
-        :param mapping: dict, 指定key的映射
+        :param mapping: dict/func, 指定key的映射
             1. mapping=None, 表示按照模型自身结构加载, 一般加载finetune后使用save_weights()保存出来的权重
             2. mapping自定义, 根据用户自定义mapping来加载权重
         '''
@@ -493,15 +493,17 @@ class Trainer:
         for load_path_i in load_path:
             state_dict = load_checkpoint(load_path_i)
             for k in list(state_dict.keys()):
-                if k in mapping:
+                if isinstance(mapping, dict) and k in mapping:
                     state_dict[mapping[k]] = state_dict.pop(k)
+                elif isinstance(mapping, Callable):
+                    state_dict[mapping(k)] = state_dict.pop(k)
             self.unwrap_model().load_state_dict(state_dict, strict=strict)
 
-    def save_weights(self, save_path:str, mapping:dict=None, trainable_only:bool=False):
+    def save_weights(self, save_path:str, mapping:Union[dict,Callable]=None, trainable_only:bool=False):
         '''保存模型权重
 
         :param save_path: str, 权重保存路径
-        :param mapping: dict, 指定key的映射
+        :param mapping: dict/func, 指定key的映射
             1. mapping=None, 表示按照模型自身结构的key来保存, 后续可直接load_weights()加载
             2. mapping自定义, 根据用户自定义mapping来保存权重
         :param trainable_only: bool, 指定仅保存可训练参数
@@ -514,9 +516,10 @@ class Trainer:
             # 只保存可训练的模型部分
             if trainable_only and (k not in trainable_parameters):
                 continue
-            if k in mapping:
+            if isinstance(mapping, dict) and k in mapping:
                 state_dict[mapping[k]] = state_dict.pop(k)
-        
+            elif isinstance(mapping, Callable):
+                state_dict[mapping(k)] = state_dict.pop(k)        
         save_checkpoint(state_dict, save_path)
         if trainable_only:
             params_all = sum(p.numel() for p in self.unwrap_model().parameters())
@@ -524,7 +527,7 @@ class Trainer:
             ratio = params_trainable/params_all*100
             log_info(f"Only trainable parameters saved and occupy {params_trainable}/{params_all}={ratio:.2f}%")
 
-    def save_pretrained(self, save_path:str, weight_map:dict=None, mapping:dict=None):
+    def save_pretrained(self, save_path:str, weight_map:dict=None, mapping:Union[dict,Callable]=None):
         '''按照预训练模型的key来保存模型, 可供transformers包加载
 
         :param save_path: str, 保存的文件/文件夹路径
@@ -541,7 +544,7 @@ class Trainer:
             save_checkpoint(state_dict, os.path.join(save_dir, 'pytorch_model.bin') if save_dir else save_path)
     
     def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                               steps_params_path:str=None, mapping:dict=None, verbose:int=0, strict:bool=True, **kwargs):
+                               steps_params_path:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, **kwargs):
         '''同时加载模型、优化器、训练过程参数
 
         :param save_dir: str, 保存目录
@@ -579,7 +582,7 @@ class Trainer:
             print(verbose_str)
 
     def save_to_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                           steps_params_path:str=None, mapping:dict=None, trainable_only:bool=False, verbose:int=0, **kwargs):
+                           steps_params_path:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, verbose:int=0, **kwargs):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param save_dir: str, 保存目录
@@ -587,7 +590,7 @@ class Trainer:
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
-        :param mapping: dict, 模型文件的mapping
+        :param mapping: dict/func, 模型文件的mapping
         :param trainable_only
         '''
         verbose_str = ''
