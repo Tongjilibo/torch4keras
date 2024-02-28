@@ -665,7 +665,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
                 callback.run_callback = False
 
     @classmethod
-    def init_process_group(master_rank=0):
+    def init_process_group(master_rank=0, seed=42):
         if os.name == 'nt':
             # windows: Diff between backends: https://pytorch.org/docs/stable/distributed.html
             torch.distributed.init_process_group(backend="gloo")
@@ -679,7 +679,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         ddp.world_size = int(os.environ["WORLD_SIZE"])
         ddp.master_process = ddp.rank == master_rank
         torch.cuda.set_device(ddp.local_rank)
-        torch.manual_seed(ddp.rank)
+        torch.manual_seed(seed + ddp.rank)
         return ddp
 
 
