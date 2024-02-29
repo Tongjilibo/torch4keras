@@ -849,7 +849,7 @@ class Checkpoint(Callback):
             file_paths = []
             for filepath in [self.save_dir, self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
                 if filepath:
-                    filepath = filepath.format(epoch='train_end', step='train_end', **logs)
+                    filepath = filepath.format(epoch='final', step='final', **logs)
                 file_paths.append(filepath)
             self.trainer.save_to_checkpoint(*file_paths, verbose=self.verbose, **self.kwargs)
 
