@@ -77,8 +77,12 @@ KwargsConfig = DottableDict
 
 class JsonConfig:
     '''读取配置文件并返回可.操作符的字典'''
-    def __new__(self, json_path, encoding='utf-8'):
-        return DottableDict(json.load(open(json_path, "r", encoding=encoding)))
+    def __new__(self, json_path, encoding='utf-8', dot=True):
+        data = json.load(open(json_path, "r", encoding=encoding))
+        if dot:
+            return DottableDict(data)
+        else:
+            return data
 
 
 def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
