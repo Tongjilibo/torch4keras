@@ -593,31 +593,31 @@ class Trainer:
         :param mapping: dict/func, 模型文件的mapping
         :param trainable_only
         '''
-        verbose_str = ''
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)
-            verbose_str += f'Model weights successfuly saved to {model_path}\n'
+            if verbose == 1:
+                log_info(f'Model weights successfuly saved to {model_path}')
 
         if optimizer_path or save_dir:
             optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
             os.makedirs(os.path.dirname(optimizer_path), exist_ok=True)
             torch.save(self.optimizer.state_dict(), optimizer_path)
-            verbose_str += f'Optimizer successfuly saved to {optimizer_path}\n'
+            if verbose == 1:
+                log_info(f'Optimizer successfuly saved to {optimizer_path}')
 
         if (scheduler_path or save_dir) and (self.scheduler is not None):
             scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
             os.makedirs(os.path.dirname(scheduler_path), exist_ok=True)
             torch.save(self.scheduler.state_dict(), scheduler_path)
-            verbose_str += f'Scheduler successfuly saved to {scheduler_path}\n'
+            if verbose == 1:
+                log_info(f'Scheduler successfuly saved to {scheduler_path}')
 
         if steps_params_path or save_dir:
             steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
             self.save_steps_params(steps_params_path)
-            verbose_str += f'Steps_params successfuly saved to {steps_params_path}'
-
-        if verbose == 1:
-            print(verbose_str)
+            if verbose == 1:
+                log_info(f'Steps_params successfuly saved to {steps_params_path}')
 
     def unwrap_model(self):
         '''返回nn.Module模块

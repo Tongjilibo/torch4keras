@@ -810,11 +810,12 @@ class Checkpoint(Callback):
     :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     :param max_save_count: int, 最大保存的权重的个数
     :param monitor: str, 跟踪的指标
-    :param momin_maxde: str, 指示指标的优化方向
+    :param min_max: str, 指示指标的优化方向
+    :param save_train_end: bool, 训练结束后是否保存ckpt
     '''
     def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, steps_params_path:str=None, 
                  epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, monitor:str=None, 
-                 min_max:Literal['max', 'min']='min', **kwargs):
+                 min_max:Literal['max', 'min']='min', save_on_train_end:bool=False, **kwargs):
         super().__init__(**kwargs)
         assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
         self.epoch_or_step = epoch_or_step
@@ -830,6 +831,7 @@ class Checkpoint(Callback):
         self.min_max = min_max
         self.save_history = []
         self.save_history_monitor = []
+        self.save_train_end = save_on_train_end
         self.kwargs = kwargs
     
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
@@ -841,6 +843,15 @@ class Checkpoint(Callback):
         logs = logs or {}
         if (self.epoch_or_step == 'step') and ((global_step+1) % self.interval == 0):
             self.process(global_step+1, logs)
+
+    def on_train_end(self, logs: dict = None):
+        if self.save_train_end:
+            file_paths = []
+            for filepath in [self.save_dir, self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
+                if filepath:
+                    filepath = filepath.format(epoch='train_end', step='train_end', **logs)
+                file_paths.append(filepath)
+            self.trainer.save_to_checkpoint(*file_paths, verbose=self.verbose, **self.kwargs)
 
     def process(self, suffix:int, logs:dict):
         file_paths = []
