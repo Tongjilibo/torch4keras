@@ -43,7 +43,7 @@ class Trainer:
         # add_module(self)  # 增加nn.Module的成员方法
 
     def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:float=None, 
-                mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, List[str], dict]=None, 
+                mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, dict, Callable, List[str, dict, Callable]]=None, 
                 grad_accumulation_steps:int=1, progbar_type:Literal['keras', 'tqdm', 'progressbar2']='keras', progbar_width:int=None,
                 stateful_metrics:Union[str, Set[str], Tuple[str], List[str]]=None, smooth_interval:int=100, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
@@ -96,7 +96,7 @@ class Trainer:
             elif isfunction(metric):
                 self.metrics.update({metric: metric})
             else:
-                raise ValueError('Args metrics only support `String, Dict, Callback, List[String, Dict, Callback]` format')
+                raise TypeError('Args metrics only support `String, Dict, Callable, List[String, Dict, Callable]` format')
 
         # 进度条参数
         assert progbar_type in {'keras', 'tqdm', 'progressbar2'}
