@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error
+from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, seed_everything
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
@@ -544,7 +544,8 @@ class Trainer:
             save_checkpoint(state_dict, os.path.join(save_dir, 'pytorch_model.bin') if save_dir else save_path)
     
     def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                               steps_params_path:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, **kwargs):
+                               steps_params_path:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, 
+                               device=None, **kwargs):
         '''同时加载模型、优化器、训练过程参数
 
         :param save_dir: str, 保存目录
@@ -554,32 +555,35 @@ class Trainer:
         :param steps_params_path: str, 训练过程参数保存路径
         :param mapping: dict, 模型文件的mapping
         '''
-        model_path = model_path or os.path.join(save_dir, 'model.pt')
-        optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
-        scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
-        steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
-
-        verbose_str = ''
         # 加载模型权重
-        if model_path:
+        if model_path or save_dir:
+            model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.load_weights(model_path, strict=strict, mapping=mapping)
-            verbose_str += f'Model weights successfuly resumed from {model_path}\n'
-        # 加载优化器, 断点续训使用
-        if optimizer_path:
-            state_dict = torch.load(optimizer_path, map_location='cpu')
+            if verbose == 1:
+                log_info(f'Model weights successfuly resumed from {model_path}')
+
+        # 加载优化器
+        if optimizer_path or save_dir:
+            optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
+            state_dict = torch.load(optimizer_path, map_location = device or self.device)
             self.optimizer.load_state_dict(state_dict)
-            verbose_str += f'Optimizer successfuly resumed from {optimizer_path}\n'
-        # 加载优化器, 断点续训使用
-        if scheduler_path:
-            state_dict = torch.load(scheduler_path, map_location='cpu')
+            if verbose == 1:
+                log_info(f'Optimizer successfuly resumed from {optimizer_path}')
+
+        # 加载scheduler
+        if (scheduler_path or save_dir) and (self.scheduler is not None):
+            scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
+            state_dict = torch.load(scheduler_path, map_location = device or self.device)
             self.scheduler.load_state_dict(state_dict)
-            verbose_str += f'Scheduler successfuly resumed from {scheduler_path}\n'
-        # 加载训练进度参数, 断点续训使用
-        if steps_params_path:
+            if verbose == 1:
+                log_info(f'Scheduler successfuly resumed from {scheduler_path}')
+
+        # 加载训练进度参数
+        if steps_params_path or save_dir:
+            steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
             self.load_steps_params(steps_params_path)
-            verbose_str += f'Steps_params successfuly resumed from {steps_params_path}'
-        if verbose == 1:
-            print(verbose_str)
+            if verbose == 1:
+                log_info(f'Steps_params successfuly resumed from {steps_params_path}')
 
     def save_to_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
                            steps_params_path:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, verbose:int=0, **kwargs):
@@ -682,7 +686,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         ddp.world_size = int(os.environ["WORLD_SIZE"])
         ddp.master_process = ddp.rank == master_rank
         torch.cuda.set_device(ddp.local_rank)
-        torch.manual_seed(seed + ddp.rank)
+        seed_everything(seed + ddp.rank)
         return ddp
 
 
