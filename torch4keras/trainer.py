@@ -46,7 +46,7 @@ class Trainer:
         # add_module(self)  # 增加nn.Module的成员方法
 
     def compile(self, loss:Optional[Union[Callable, nn.Module]]=None, optimizer:Optimizer=None, scheduler:LambdaLR=None, clip_grad_norm:float=None, 
-                mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, dict, Callable, List[str, dict, Callable]]=None, 
+                mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, dict, Callable, List[Union[str, dict, Callable]]]=None, 
                 grad_accumulation_steps:int=1, progbar_type:Literal['keras', 'tqdm', 'progressbar2']='keras', progbar_width:int=None,
                 stateful_metrics:Union[str, Set[str], Tuple[str], List[str]]=None, smooth_interval:int=100, **kwargs):
         '''complile: 定义loss, optimizer, metrics等参数
@@ -548,23 +548,18 @@ class Trainer:
             save_dir = None if re.search('\.[a-zA-z0-9]+$', save_path) else save_path
             save_checkpoint(state_dict, os.path.join(save_dir, 'pytorch_model.bin') if save_dir else save_path)
     
-    def resume_from_checkpoint(self, save_dir:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, device=None, **kwargs):
+    def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
+                               steps_params_path:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, 
+                               device=None, **kwargs):
         '''同时加载模型、优化器、训练过程参数
 
         :param save_dir: str, 保存目录
-        :param mapping: dict, 模型文件的mapping
-        
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
+        :param mapping: dict, 模型文件的mapping
         '''
-
-        model_path = kwargs.get('model_path')
-        optimizer_path = kwargs.get('optimizer_path')
-        scheduler_path = kwargs.get('scheduler_path')
-        steps_params_path = kwargs.get('steps_params_path')
-        
         # 加载模型权重
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
@@ -595,23 +590,19 @@ class Trainer:
             if verbose == 1:
                 log_info(f'Steps_params successfuly resumed from {steps_params_path}')
 
-    def save_to_checkpoint(self, save_dir:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, verbose:int=0, **kwargs):
+    def save_to_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
+                           steps_params_path:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, 
+                           verbose:int=0, **kwargs):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param save_dir: str, 保存目录
-        :param mapping: dict/func, 模型文件的mapping
-        :param trainable_only: bool, 仅仅保存可训练的参数
-
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
+        :param mapping: dict/func, 模型文件的mapping
+        :param trainable_only
         '''
-        model_path = kwargs.get('model_path')
-        optimizer_path = kwargs.get('optimizer_path')
-        scheduler_path = kwargs.get('scheduler_path')
-        steps_params_path = kwargs.get('steps_params_path')
-
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)
