@@ -1,10 +1,13 @@
 from torch import nn
 import torch
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.data import DataLoader
 from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, seed_everything
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
-from typing import Union, List, Literal, Tuple, Set, Callable
+from typing import Union, List, Literal, Tuple, Set, Callable, Optional
 from inspect import isfunction
 import os
 import json
@@ -42,7 +45,7 @@ class Trainer:
         self.loss2metrics = True  # 把loss_detail打印在进度条的metrics上
         # add_module(self)  # 增加nn.Module的成员方法
 
-    def compile(self, loss=None, optimizer=None, scheduler=None, clip_grad_norm:float=None, 
+    def compile(self, loss:Optional[Union[Callable, nn.Module]]=None, optimizer:Optimizer=None, scheduler:LambdaLR=None, clip_grad_norm:float=None, 
                 mixed_precision:Literal[True, False, 'fp16', 'bf16']=False, metrics:Union[str, dict, Callable, List[str, dict, Callable]]=None, 
                 grad_accumulation_steps:int=1, progbar_type:Literal['keras', 'tqdm', 'progressbar2']='keras', progbar_width:int=None,
                 stateful_metrics:Union[str, Set[str], Tuple[str], List[str]]=None, smooth_interval:int=100, **kwargs):
@@ -234,7 +237,7 @@ class Trainer:
             else:
                 self.scheduler.step()
 
-    def _prepare_inputs(self, train_dataloader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
+    def _prepare_inputs(self, train_dataloader:DataLoader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
         '''对fit的输入进行类型检查并置为成员变量'''
         if not hasattr(train_dataloader, '__len__'):
             assert steps_per_epoch is not None, 'Either train_dataloader has attr `__len__` or steps_per_epoch is not None'
@@ -327,7 +330,8 @@ class Trainer:
         batch = self._move_to_model_device(batch)
         return batch
 
-    def fit(self, train_dataloader, steps_per_epoch:int=None, epochs:int=1, callbacks:Union[list]=None, verbose:int=1, **kwargs):
+    def fit(self, train_dataloader:DataLoader, steps_per_epoch:int=None, epochs:int=1, 
+            callbacks:Union[Callback, List[Callback]]=None, verbose:int=1, **kwargs):
         ''' 模型训练
         :param train_dataloader: Dataloader, 训练数据集
         :param steps_per_epoch: int, 每个epoch训练的steps, 默认为None表示自行计算 
@@ -361,7 +365,8 @@ class Trainer:
                 self.save_to_checkpoint(save_dir_when_error, verbose=verbose, **kwargs)
             raise e
 
-    def _fit(self, train_dataloader, steps_per_epoch:int=None, epochs:int=1, callbacks:Union[list]=None, verbose:int=1, **kwargs):
+    def _fit(self, train_dataloader:DataLoader, steps_per_epoch:int=None, epochs:int=1, 
+             callbacks:Union[Callback, List[Callback]]=None, verbose:int=1, **kwargs):
         '''模型训练'''
         # 输入处理
         self._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
@@ -543,18 +548,23 @@ class Trainer:
             save_dir = None if re.search('\.[a-zA-z0-9]+$', save_path) else save_path
             save_checkpoint(state_dict, os.path.join(save_dir, 'pytorch_model.bin') if save_dir else save_path)
     
-    def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                               steps_params_path:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, 
-                               device=None, **kwargs):
+    def resume_from_checkpoint(self, save_dir:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, device=None, **kwargs):
         '''同时加载模型、优化器、训练过程参数
 
         :param save_dir: str, 保存目录
+        :param mapping: dict, 模型文件的mapping
+        
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
-        :param mapping: dict, 模型文件的mapping
         '''
+
+        model_path = kwargs.get('model_path')
+        optimizer_path = kwargs.get('optimizer_path')
+        scheduler_path = kwargs.get('scheduler_path')
+        steps_params_path = kwargs.get('steps_params_path')
+        
         # 加载模型权重
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
@@ -585,18 +595,23 @@ class Trainer:
             if verbose == 1:
                 log_info(f'Steps_params successfuly resumed from {steps_params_path}')
 
-    def save_to_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                           steps_params_path:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, verbose:int=0, **kwargs):
+    def save_to_checkpoint(self, save_dir:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, verbose:int=0, **kwargs):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param save_dir: str, 保存目录
+        :param mapping: dict/func, 模型文件的mapping
+        :param trainable_only: bool, 仅仅保存可训练的参数
+
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
-        :param mapping: dict/func, 模型文件的mapping
-        :param trainable_only
         '''
+        model_path = kwargs.get('model_path')
+        optimizer_path = kwargs.get('optimizer_path')
+        scheduler_path = kwargs.get('scheduler_path')
+        steps_params_path = kwargs.get('steps_params_path')
+
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)

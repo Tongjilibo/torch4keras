@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, IterableDataset
 import inspect
 from .import_utils import is_safetensors_available, is_sklearn_available
 import os
+from torch import nn
 
 
 if is_safetensors_available():
@@ -19,7 +20,7 @@ else:
     roc_auc_score = None
 
 
-def take_along_dim(input_tensor, indices, dim=None):
+def take_along_dim(input_tensor:torch.Tensor, indices:torch.Tensor, dim:int=None):
     '''兼容部分低版本pytorch没有torch.take_along_dim
     '''
     if version.parse(torch.__version__) > version.parse('1.8.1'):
@@ -35,7 +36,7 @@ def take_along_dim(input_tensor, indices, dim=None):
         return res
 
 
-def torch_div(input, other, rounding_mode=None):
+def torch_div(input:torch.Tensor, other:torch.Tensor, rounding_mode:Optional[str] = None):
     ''' torch.div兼容老版本
     '''
     if version.parse(torch.__version__) < version.parse('1.7.2'):
@@ -45,7 +46,7 @@ def torch_div(input, other, rounding_mode=None):
     return indices
 
 
-def softmax(x, axis=-1):
+def softmax(x:np.ndarray, axis:int=-1):
     '''numpy版softmax
     '''
     x = x - x.max(axis=axis, keepdims=True)
@@ -53,7 +54,7 @@ def softmax(x, axis=-1):
     return x / x.sum(axis=axis, keepdims=True)
 
 
-def search_layer(model, layer_name, retrun_first=True):
+def search_layer(model:nn.Module, layer_name:str, retrun_first:bool=True):
     '''根据layer_name搜索并返回参数/参数list
     '''
     return_list = []
@@ -74,7 +75,7 @@ class ListDataset(Dataset):
     :param file_path: str, 待读取的文件的路径, 若无可以为None
     :param data: List[Any], list格式的数据, 和file_path至少有一个不为None
     '''
-    def __init__(self, file_path=None, data=None, **kwargs):
+    def __init__(self, file_path:Union[str, tuple, list]=None, data:Optional[list]=None, **kwargs):
         self.kwargs = kwargs
         if isinstance(file_path, (str, tuple, list)):
             self.data = self.load_data(file_path)
@@ -99,7 +100,7 @@ class IterDataset(IterableDataset):
 
     :param file_path: str, 待读取的文件的路径, 若无可以为None
     '''
-    def __init__(self, file_path=None, **kwargs):
+    def __init__(self, file_path:Union[str, tuple, list]=None, **kwargs):
         self.kwargs = kwargs
         if isinstance(file_path, (str, tuple, list)):
             self.file_path = file_path
@@ -126,7 +127,7 @@ class IterDataset(IterableDataset):
                     yield line
 
 
-def set_precision(num, dense_round=1):
+def set_precision(num:float, dense_round:int=1):
     '''设置数字的精度
     '''
     if np.isinf(num):
@@ -141,7 +142,8 @@ def set_precision(num, dense_round=1):
     return num
 
 
-def metric_mapping(metric, func, y_pred, y_true):
+def metric_mapping(metric:str, func:Callable, y_pred:Union[torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor]], 
+                   y_true:Union[torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor]]):
     '''metric的计算
 
     :param metric: str, 自带metrics的名称
