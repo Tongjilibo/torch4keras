@@ -226,12 +226,16 @@ def email_when_error(receivers:Union[str,list], **configs):
     return actual_decorator
 
 
-def watch_system_state(log_dir:str, gpu_id_list=None, pid=None):
+def watch_system_state(log_dir:str, gpu_id_list:List[int]=None, pid:int=None, interval=1):
     '''监控system的状态
     
     :param log_dir: str, tensorboard的地址
     :param gpu_id_list: List[int], 监控的gpu
     :param pid: int, 监控的进程号
+
+    Example:
+    --------
+    >>> watch_system_state(log_dir='./system_states')
     '''
     import psutil
     import pynvml
@@ -243,8 +247,7 @@ def watch_system_state(log_dir:str, gpu_id_list=None, pid=None):
 
     pre_time_int = int(time.time())
     pre_time = time.time()
-    pid = None or os.getpid()
-    p = psutil.Process(pid)
+    pid = pid or os.getpid()
     G = 1024*1024*1024
 
     pre_read = p.io_counters().read_bytes
@@ -253,7 +256,7 @@ def watch_system_state(log_dir:str, gpu_id_list=None, pid=None):
 
     log_info("Watching System Info")
     while True:
-        time.sleep(1)
+        time.sleep(interval)
         now_time = time.time()
         time_str = int(now_time) - time_str_init
         p = psutil.Process(pid)
@@ -276,7 +279,8 @@ def watch_system_state(log_dir:str, gpu_id_list=None, pid=None):
             pre_read = data.read_bytes
             pre_write = data.write_bytes
             pre_time = now_time
-
+        
+        # gpu使用情况
         tesorboard_info_list = []
         if gpu_id_list is None:
             deviceCount = pynvml.nvmlDeviceGetCount()
@@ -304,3 +308,58 @@ def watch_system_state(log_dir:str, gpu_id_list=None, pid=None):
     pynvml.nvmlShutdown()
 
     return
+
+
+def watch_system_state_once(pid, gpu_id_list, pynvml=None, pre_time=None):
+    import psutil
+    G = 1024*1024*1024
+    p = psutil.Process(pid)
+    logs = {}
+    
+    # CPU使用情况
+    logs[f"CPU_pid_{pid}/cpu_percent"] = p.cpu_percent(interval=0.5)
+
+    # 内存使用情况
+    logs[f"Memory_pid_{pid}/memory_percent"] = p.memory_percent()
+    logs[f"Memory_pid_{pid}/RSS G_byte"] = p.memory_info().rss/G
+    logs[f"Memory_pid_{pid}/VMS G_byte"] = p.memory_info().vms/G
+
+    # 进程IO信息
+    data = p.io_counters()
+    logs[f"IO_pid_{pid}/read M_byte"] = data.read_bytes/1024
+    logs[f"IO_pid_{pid}/write M_byte"] = data.write_bytes/1024
+    now_time = time.time()
+    if (pre_time is None) and ((now_time - pre_time)%5 == 0):
+        logs[f"IO_pid_{pid}/readRate M_byte_s"] = (data.read_bytes - pre_read)/(now_time-pre_time)/1024
+        logs[f"IO_pid_{pid}/writeRate M_byte_s"] = (data.write_bytes - pre_write)/(now_time-pre_time)/1024
+        pre_read = data.read_bytes
+        pre_write = data.write_bytes
+        pre_time = now_time
+    
+    # gpu使用情况
+    if pynvml is None:
+        return logs
+    
+    tesorboard_info_list = []
+    if gpu_id_list is None:
+        deviceCount = pynvml.nvmlDeviceGetCount()
+        device_list = [i for i in range(deviceCount)]
+    else:
+        device_list = gpu_id_list
+
+    tesorboard_info_list = []
+    for i in device_list:
+        tesorboard_info = {}
+        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+        tesorboard_info['gpu_name'] = pynvml.nvmlDeviceGetName(handle)
+        meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        tesorboard_info['gpu_mem_used'] = meminfo.used/G
+        UTIL = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        tesorboard_info['gpu_gpu_util'] = UTIL.gpu
+        tesorboard_info['gpu_mem_util'] = UTIL.memory
+        tesorboard_info_list.append(copy.deepcopy(tesorboard_info))
+    for tesorboard_info,i in zip(tesorboard_info_list, device_list):
+        logs[f'GPU{i}/gpu_mem_used unit_G'] = tesorboard_info['gpu_mem_used']
+        logs[f'GPU{i}/gpu_gpu_util'] = tesorboard_info['gpu_gpu_util']
+        logs[f'GPU{i}/gpu_mem_util'] = tesorboard_info['gpu_mem_util']
+    return logs

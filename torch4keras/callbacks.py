@@ -11,7 +11,7 @@ import os
 from torch4keras.snippets import log_info, log_error, log_warn, send_email, log_warn_once
 from torch4keras.snippets import set_precision, format_time
 import math
-from typing import Literal, Union
+from typing import Literal, Union, List
 import shutil
 
 
@@ -1038,6 +1038,9 @@ class Tensorboard(Callback):
             log_warn("Callback Tensorboard requires tensorboardX to be installed. Run `pip install tensorboardX`.")
             self.run_callback = False
 
+    def on_train_end(self, logs: dict = None):
+        self.writer.close()
+    
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if hasattr(self.trainer, 'epochs') and self.trainer.epochs > 1:
             self.process(epoch+1, logs, self.prefix_epoch)
@@ -1053,6 +1056,22 @@ class Tensorboard(Callback):
                 continue
             index = k if '/' in k else f"{prefix}{k}"
             self.writer.add_scalar(index, v, iteration)
+
+
+class SystemStateCallback(Tensorboard):
+    '''监控system的状态
+    '''
+    def __init__(self, log_dir:str, interval:int=100, prefix:str='Train', 
+                 gpu_id_list:List[int]=None, pid:int=None, **kwargs):
+        super(SystemStateCallback, self).__init__(log_dir, interval, prefix, **kwargs)
+        self.gpu_id_list = gpu_id_list
+        self.pid = pid or os.getpid()
+
+    def on_train_begin(self, logs:dict=None):
+        super().on_train_begin()
+
+    def process(self, iteration:int, logs:dict, prefix:str):
+        pass
 
 
 class WandbCallback(Callback):
