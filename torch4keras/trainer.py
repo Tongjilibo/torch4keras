@@ -259,7 +259,7 @@ class Trainer:
         elif isinstance(callbacks, Callback):
             callbacks = [callbacks]
         for callback in callbacks:
-            assert isinstance(callback, Callback), "Args `callbacks` only support Callback() inputs"
+            assert isinstance(callback, Callback), f"Args `callbacks` only support Callback(), but got {type(callback)}"
 
         history = History()
         callbacks_ = []
