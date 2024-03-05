@@ -13,6 +13,7 @@ from torch4keras.snippets import set_precision, format_time
 import math
 from typing import Literal, Union, List
 import shutil
+import traceback
 
 
 # 忽略nan的指标
@@ -578,6 +579,10 @@ class EarlyStopping(Callback):
        :param epoch_or_step: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
        :param baseline: None/float, 基线, 默认为None 
        :param restore_best_weights: bool, stopping时候是否恢复最优的权重, 默认为False
+
+       Example
+       ----------------
+       early_stop = EarlyStopping(monitor='test_acc', verbose=1)
     '''
     def __init__(self, monitor:str='perf', min_delta:float=0, patience:int=0, verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', 
                  epoch_or_step:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
@@ -812,6 +817,10 @@ class Checkpoint(Callback):
     :param monitor: str, 跟踪的指标
     :param min_max: str, 指示指标的优化方向
     :param save_train_end: bool, 训练结束后是否保存ckpt
+
+    Example
+    ---------------
+    >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}')
     '''
     def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, steps_params_path:str=None, 
                  epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, monitor:str=None, 
@@ -916,6 +925,10 @@ class Evaluator(Checkpoint):
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
+
+    Example
+    ------------------
+    >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/')  # 最简单的使用
     '''
     def __init__(self, monitor:str='perf', min_max:Literal['max', 'min']='max', verbose:int=2, 
                  save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None,
@@ -969,6 +982,10 @@ class Logger(Callback):
     :param mode: str, log保存的模式, 默认为'a'表示追加
     :param separator: str, 指标间分隔符
     :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL, 指定log的level
+
+    Example
+    ---------------------
+    >>> logger = Logger('./ckpt/log.log')
     '''
     def __init__(self, log_path:str, interval:int=100, mode:Literal['a', 'w']='a', separator:str='\t', 
                  level:Literal['DEBUG','INFO','WARNING','ERROR','CRITICAL']='DEBUG', name:str='root', **kwargs):
@@ -1021,6 +1038,10 @@ class Tensorboard(Callback):
     :param log_dir: str, tensorboard文件的保存路径
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀, 默认为'train'
+
+    Example
+    --------------------
+    >>> ts_board = Tensorboard('./ckpt/tensorboard')
     '''
     def __init__(self, log_dir:str, interval:int=100, prefix:str='Train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
@@ -1035,7 +1056,7 @@ class Tensorboard(Callback):
             os.makedirs(self.log_dir, exist_ok=True)
             self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
         except:
-            log_warn("Callback Tensorboard requires tensorboardX to be installed. Run `pip install tensorboardX`.")
+            log_warn_once(traceback.format_exc() + '; Skip this callback')
             self.run_callback = False
 
     def on_train_end(self, logs: dict = None):
@@ -1060,18 +1081,96 @@ class Tensorboard(Callback):
 
 class SystemStateCallback(Tensorboard):
     '''监控system的状态
+
+    :param log_dir: str, tensorboard文件的保存路径
+    :param interval: int, 保存tensorboard的间隔
+    :param gpu_id_list: List[int], 需要记录的gpuid列表
+    :param pids: int/List[int], 需要记录的
+
+    Example
+    ---------------------------
+    >>> syscallback = SystemStateCallback('./ckpt/tensorboard/system')
     '''
-    def __init__(self, log_dir:str, interval:int=100, prefix:str='Train', 
-                 gpu_id_list:List[int]=None, pid:int=None, **kwargs):
-        super(SystemStateCallback, self).__init__(log_dir, interval, prefix, **kwargs)
+    def __init__(self, log_dir:str, interval:int=100, gpu_id_list:List[int]=None, pids:Union[int,List[int]]=None, **kwargs):
+        super(SystemStateCallback, self).__init__(log_dir, interval, **kwargs)
         self.gpu_id_list = gpu_id_list
-        self.pid = pid or os.getpid()
+        self.pids = pids or os.getpid()
+        self.pids = [self.pids] if isinstance(self.pids, int) else self.pids
 
     def on_train_begin(self, logs:dict=None):
         super().on_train_begin()
+        try:
+            import pynvml
+            self.pynvml = pynvml
+            self.pynvml.nvmlInit()
+            import psutil
+            self.psutil = psutil
+            self.pre_read = {pid:psutil.Process(pid).io_counters().read_bytes for pid in self.pids}
+            self.pre_write = {pid:psutil.Process(pid).io_counters().write_bytes for pid in self.pids}
+            self.pre_time = time.time()
+        except:
+            log_warn_once(traceback.format_exc() + '; Skip this callback')
+            self.run_callback = False
+
+    def on_train_end(self, logs: dict = None):
+        super().on_train_end(logs)
+        self.pynvml.nvmlShutdown()
+
+    def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
+        # 不记录
+        pass
 
     def process(self, iteration:int, logs:dict, prefix:str):
-        pass
+        G = 1024*1024*1024
+        logs = {}
+        
+        now_time = time.time()
+        for pid in self.pids:
+            p = self.psutil.Process(pid)
+            # CPU使用情况
+            logs[f"Pid_{pid}/CPU Percent"] = p.cpu_percent(interval=0.5)
+
+            # 内存使用情况
+            logs[f"Pid_{pid}/Memory Percent"] = p.memory_percent()
+            logs[f"Pid_{pid}/Memory RSS G_byte"] = p.memory_info().rss/G
+            logs[f"Pid_{pid}/Memory VMS G_byte"] = p.memory_info().vms/G
+
+            # 进程IO信息
+            data = p.io_counters()
+            logs[f"Pid_{pid}/IO read M_byte"] = data.read_bytes/1024
+            logs[f"Pid_{pid}/IO write M_byte"] = data.write_bytes/1024
+            logs[f"Pid_{pid}/IO readRate M_byte_s"] = (data.read_bytes - self.pre_read[pid])/(now_time-self.pre_time)/1024
+            logs[f"Pid_{pid}/IO writeRate M_byte_s"] = (data.write_bytes - self.pre_write[pid])/(now_time-self.pre_time)/1024
+            self.pre_read[pid] = data.read_bytes
+            self.pre_write[pid] = data.write_bytes
+        self.pre_time = now_time
+        
+        # gpu使用情况       
+        tesorboard_info_list = []
+        if self.gpu_id_list is None:
+            deviceCount = self.pynvml.nvmlDeviceGetCount()
+            device_list = [i for i in range(deviceCount)]
+        else:
+            device_list = self.gpu_id_list
+
+        tesorboard_info_list = []
+        for i in device_list:
+            tesorboard_info = {}
+            handle = self.pynvml.nvmlDeviceGetHandleByIndex(i)
+            tesorboard_info['gpu_name'] = self.pynvml.nvmlDeviceGetName(handle)
+            meminfo = self.pynvml.nvmlDeviceGetMemoryInfo(handle)
+            tesorboard_info['gpu_mem_used'] = meminfo.used/G
+            UTIL = self.pynvml.nvmlDeviceGetUtilizationRates(handle)
+            tesorboard_info['gpu_gpu_util'] = UTIL.gpu
+            tesorboard_info['gpu_mem_util'] = UTIL.memory
+            tesorboard_info_list.append(copy.deepcopy(tesorboard_info))
+        for tesorboard_info,i in zip(tesorboard_info_list, device_list):
+            logs[f'GPU/Gpu{i} mem_used unit_G'] = tesorboard_info['gpu_mem_used']
+            logs[f'GPU/Gpu{i} gpu_util'] = tesorboard_info['gpu_gpu_util']
+            logs[f'GPU/Gpu{i} mem_util'] = tesorboard_info['gpu_mem_util']
+
+        for k, v in logs.items():
+            self.writer.add_scalar(k, v, iteration)
 
 
 class WandbCallback(Callback):
@@ -1083,7 +1182,10 @@ class WandbCallback(Callback):
         Can be :obj:`"gradients"`, :obj:`"all"` or :obj:`"false"`. Set to :obj:`"false"` to disable gradient
         logging or :obj:`"all"` to log gradients and parameters.
     :param project: str, wandb的project name, 默认为bert4torch
-    :param 
+    
+    Example
+    ---------------------
+    >>> wandb = WandbCallback(save_code=True)
     '''
     def __init__(self, project:str='bert4torch', trial_name:str=None, run_name:str=None, watch:str='gradients', 
                  interval:int=100, save_code:bool=False, config:dict=None):
@@ -1234,6 +1336,10 @@ class EmailCallback(Callback):
     :param mail_user: str, 发件人
     :param mail_pwd: str, smtp的第三方密码
     :param mail_sender: str, 发件人邮箱
+
+    Example
+    ----------------------
+    >>> email = EmailCallback(mail_receivers='tongjilibo@163.com')  # 发送邮件
     '''
     def __init__(self, mail_receivers:Union[str,list], mail_subject:str='', epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, 
                  mail_host:str=None, mail_user:str=None, mail_pwd:str=None, mail_sender:str=None, **kwargs):

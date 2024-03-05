@@ -4,7 +4,8 @@ import torch.optim as optim
 import torchvision
 from torch4keras.model import BaseModel, Trainer
 from torch4keras.snippets import seed_everything
-from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary, Logger, EmailCallback, WandbCallback, Tensorboard
+from torch4keras.callbacks import Checkpoint, Evaluator, EarlyStopping, Summary, Logger
+from torch4keras.callbacks import EmailCallback, WandbCallback, Tensorboard, SystemStateCallback
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
@@ -75,8 +76,9 @@ if __name__ == '__main__':
     ts_board = Tensorboard('./ckpt/tensorboard')  # tensorboard
     email = EmailCallback(mail_receivers='tongjilibo@163.com')  # 发送邮件
     wandb = WandbCallback(save_code=True)  # wandb
+    syscallback = SystemStateCallback('./ckpt/tensorboard/system')
     hist = model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=epochs, 
-                     callbacks=[Summary(), evaluator, ts_board, logger, ckpt, early_stop])
+                     callbacks=[Summary(), syscallback, evaluator, ts_board, logger, ckpt, early_stop])
 else:
     model.load_weights('./ckpt/5/model.pt')
     metrics = MyEvaluator().evaluate()
