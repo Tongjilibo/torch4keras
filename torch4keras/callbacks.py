@@ -83,7 +83,7 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_epoch_begin(global_step, epoch, logs)
         self._delta_t_batch = 0.
         self._delta_ts_batch_begin = deque([], maxlen=self.queue_length)
@@ -93,7 +93,7 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_epoch_end(global_step, epoch, logs)
 
     def on_batch_begin(self, global_step:int, local_step:int, logs:dict=None):
@@ -101,7 +101,7 @@ class CallbackList(object):
         logs = logs or {}
         t_before_callbacks = time.time()
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_batch_begin(global_step, local_step, logs)
         self._delta_ts_batch_begin.append(time.time() - t_before_callbacks)
         delta_t_median = np.median(self._delta_ts_batch_begin)
@@ -117,7 +117,7 @@ class CallbackList(object):
         self._delta_t_batch = time.time() - self._t_enter_batch
         t_before_callbacks = time.time()
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_batch_end(global_step, local_step, logs)
         self._delta_ts_batch_end.append(time.time() - t_before_callbacks)
         delta_t_median = np.median(self._delta_ts_batch_end)
@@ -128,28 +128,28 @@ class CallbackList(object):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_train_begin(logs)
 
     def on_train_end(self, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_train_end(logs)
 
     def on_dataloader_end(self, logs:dict=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_dataloader_end(logs)
 
     def on_train_step_end(self, logs:int=None):
         if not self.run_callbacks: return
         logs = logs or {}
         for callback in self.callbacks:
-            if hasattr(callback, 'run_callback') and (not callback.run_callback): return
+            if hasattr(callback, 'run_callback') and (not callback.run_callback): continue
             callback.on_train_step_end(logs)
 
     def __iter__(self):
@@ -1098,7 +1098,6 @@ class SystemStateCallback(Tensorboard):
         self.pids = [self.pids] if isinstance(self.pids, int) else self.pids
 
     def on_train_begin(self, logs:dict=None):
-        super().on_train_begin()
         try:
             import pynvml
             self.pynvml = pynvml
@@ -1108,6 +1107,7 @@ class SystemStateCallback(Tensorboard):
             self.pre_read = {pid:psutil.Process(pid).io_counters().read_bytes for pid in self.pids}
             self.pre_write = {pid:psutil.Process(pid).io_counters().write_bytes for pid in self.pids}
             self.pre_time = time.time()
+            super().on_train_begin()
         except:
             log_warn_once(traceback.format_exc() + '; Skip this callback')
             self.run_callback = False
@@ -1320,10 +1320,13 @@ class Summary(Callback):
     '''调用torchinfo的summary
     '''
     def on_train_begin(self, logs:dict=None):
-        from torchinfo import summary
-        print()
-        summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
-        print()
+        try:
+            from torchinfo import summary
+            print()
+            summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
+            print()
+        except:
+            log_warn("Summary requires torchinfo to be installed. Run `pip install torchinfo`.")
 
 
 class EmailCallback(Callback):

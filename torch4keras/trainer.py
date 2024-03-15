@@ -340,9 +340,10 @@ class Trainer:
         :param verbose: int, 是否打印, 默认为1表示打印
         
         > 其他参数
-        :param mail_receivers: str, 发生异常的时候邮件通知
-        :param save_dir_when_error: str, 发生异常时候保存权重的路径
-        
+        :param mail_receivers_when_error: str, 训练异常时候邮件通知
+        :param save_checkpoint_when_error: str, 训练异常时候保存权重的路径
+        :param print_batch_when_error: bool, 训练异常时候打印当前batch
+
         :return: History
         '''
         try:
@@ -350,19 +351,25 @@ class Trainer:
         except Exception as e:
             # 训练异常则发邮件
             error_msg = traceback.format_exc()
-            mail_receivers_ = kwargs.get('mail_receivers')
+            mail_receivers_ = kwargs.get('mail_receivers_when_error')
             if mail_receivers_ is not None:
-                mail_subject_ = kwargs.get('mail_subject') or "[ERROR] fit"
-                mail_host_ = kwargs.get('mail_host')
-                mail_user_ = kwargs.get('mail_user')
-                mail_pwd_ = kwargs.get('mail_pwd')
-                mail_sender_ = kwargs.get('mail_sender')
+                mail_subject_ = kwargs.get('mail_subject_when_error') or "[ERROR] fit"
+                mail_host_ = kwargs.get('mail_host_when_error')
+                mail_user_ = kwargs.get('mail_user_when_error')
+                mail_pwd_ = kwargs.get('mail_pwd_when_error')
+                mail_sender_ = kwargs.get('mail_sender_when_error')
                 send_email(mail_receivers_, mail_subject_, error_msg, mail_host=mail_host_, 
                            mail_user=mail_user_, mail_pwd=mail_pwd_, mail_sender=mail_sender_)
 
             # 训练异常则保存权重
-            if (save_dir_when_error := kwargs.get('save_dir_when_error')) is not None:
-                self.save_to_checkpoint(save_dir_when_error, verbose=verbose, **kwargs)
+            if (save_checkpoint_when_error := kwargs.get('save_checkpoint_when_error')) is not None:
+                self.save_to_checkpoint(save_checkpoint_when_error, verbose=verbose, **kwargs)
+
+            # 训练异常则打印当前batch
+            if kwargs.get('print_batch_when_error') is not None:
+                log_error(self.train_X)
+                log_error(self.train_y)
+            
             raise e
 
     def _fit(self, train_dataloader:DataLoader, steps_per_epoch:int=None, epochs:int=1, 
@@ -399,9 +406,9 @@ class Trainer:
                     self.unwrap_model().train()  # 设置为train模式
                 tr_loss, tr_loss_detail = 0, {}
                 for _ in range(self.grad_accumulation_steps):
-                    train_X, train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
-                    self._log_first_step(resume_step, train_X, train_y)  # log第一个step
-                    output, loss, loss_detail = self.train_step(train_X, train_y)
+                    self.train_X, self.train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
+                    self._log_first_step(resume_step, self.train_X, self.train_y)  # log第一个step
+                    output, loss, loss_detail = self.train_step(self.train_X, self.train_y)
                     self.callbacks.on_train_step_end()
                     tr_loss += loss.item()
                     for k, v in loss_detail.items():
@@ -419,7 +426,7 @@ class Trainer:
                     
                 # 添加metrics至log打印
                 for metric, func in self.metrics.items():
-                    perf = metric_mapping(metric, func, output, train_y)  # 内置的一些accuracy指标
+                    perf = metric_mapping(metric, func, output, self.train_y)  # 内置的一些accuracy指标
                     if perf is not None:
                         if isfunction(metric):  # 直接传入回调函数(无key)
                             if self.verbose and (self.global_step == resume_step):
