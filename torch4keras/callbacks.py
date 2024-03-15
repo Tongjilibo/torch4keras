@@ -9,7 +9,7 @@ import json
 import copy
 import os
 from torch4keras.snippets import log_info, log_error, log_warn, send_email, log_warn_once
-from torch4keras.snippets import set_precision, format_time
+from torch4keras.snippets import set_precision, format_time, is_package_available
 import math
 from typing import Literal, Union, List
 import shutil
@@ -1055,8 +1055,11 @@ class Tensorboard(Callback):
             from tensorboardX import SummaryWriter
             os.makedirs(self.log_dir, exist_ok=True)
             self.writer = SummaryWriter(log_dir=str(self.log_dir))  # prepare summary writer
+        except ImportError:
+            log_warn('Tensorboard callback requires tensorboardX to be installed. Run `pip install tensorboardX`; Skip this callback instead.')
+            self.run_callback = False
         except:
-            log_warn_once(traceback.format_exc() + '; Skip this callback')
+            log_warn_once(traceback.format_exc())
             self.run_callback = False
 
     def on_train_end(self, logs: dict = None):
@@ -1108,8 +1111,14 @@ class SystemStateCallback(Tensorboard):
             self.pre_write = {pid:psutil.Process(pid).io_counters().write_bytes for pid in self.pids}
             self.pre_time = time.time()
             super().on_train_begin()
+        except ImportError:
+            if not is_package_available('pynvml'):
+                log_warn_once("SystemStateCallback requires pynvml to be installed. Run `pip install pynvml`; Skip this callback instead.")
+            if not is_package_available('psutil'):
+                log_warn_once("SystemStateCallback requires psutil to be installed. Run `pip install psutil`; Skip this callback instead.")
+            self.run_callback = False
         except:
-            log_warn_once(traceback.format_exc() + '; Skip this callback')
+            log_warn_once(traceback.format_exc())
             self.run_callback = False
 
     def on_train_end(self, logs: dict = None):
@@ -1192,8 +1201,12 @@ class WandbCallback(Callback):
         try:
             import wandb
             self._wandb = wandb
+        except ImportError:
+            log_warn("WandbCallback requires wandb to be installed. Run `pip install wandb`; Skip this callback instead.")
+            self._wandb = None
+            self.run_callback = False
         except:
-            log_warn("WandbCallback requires wandb to be installed. Run `pip install wandb`.")
+            log_warn(traceback.format_exc())
             self._wandb = None
             self.run_callback = False
 
@@ -1325,9 +1338,12 @@ class Summary(Callback):
             print()
             summary(self.model, input_data=next(iter(self.trainer.train_dataloader))[0])
             print()
+        except ImportError:
+            log_warn("Summary callback requires torchinfo to be installed. Run `pip install torchinfo`; Skip this callback instead")
+            self.run_callback = False
         except:
-            log_warn("Summary requires torchinfo to be installed. Run `pip install torchinfo`.")
-
+            log_warn(traceback.format_exc())
+            self.run_callback = False
 
 class EmailCallback(Callback):
     '''发送Email

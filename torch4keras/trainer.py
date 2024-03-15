@@ -341,8 +341,8 @@ class Trainer:
         
         > 其他参数
         :param mail_receivers_when_error: str, 训练异常时候邮件通知
-        :param save_checkpoint_when_error: str, 训练异常时候保存权重的路径
-        :param print_batch_when_error: bool, 训练异常时候打印当前batch
+        :param save_ckpt_dir_when_error: str, 训练异常时候保存权重的路径
+        :param save_batch_path_when_error: bool, 训练异常时候保存当前batch, 方便debug
 
         :return: History
         '''
@@ -362,13 +362,13 @@ class Trainer:
                            mail_user=mail_user_, mail_pwd=mail_pwd_, mail_sender=mail_sender_)
 
             # 训练异常则保存权重
-            if (save_checkpoint_when_error := kwargs.get('save_checkpoint_when_error')) is not None:
-                self.save_to_checkpoint(save_checkpoint_when_error, verbose=verbose, **kwargs)
+            if (save_ckpt_dir_when_error := kwargs.get('save_ckpt_dir_when_error')) is not None:
+                self.save_to_checkpoint(save_ckpt_dir_when_error, verbose=verbose, **kwargs)
 
             # 训练异常则打印当前batch
-            if kwargs.get('print_batch_when_error') is not None:
-                log_error(self.train_X)
-                log_error(self.train_y)
+            if (save_batch_path_when_error := kwargs.get('save_batch_path_when_error')) is not None:
+                os.makedirs(os.path.dirname(save_batch_path_when_error), exist_ok=True)
+                torch.save({'train_X': self.train_X.cpu(), 'train_y': self.train_y.cpu()}, save_batch_path_when_error)
             
             raise e
 
