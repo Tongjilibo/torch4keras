@@ -77,8 +77,8 @@ class Trainer:
 
         # 混合精度
         assert mixed_precision in {True, False, 'fp16', 'bf16'}
-        self.mixed_precision = 'fp16' if mixed_precision is True else mixed_precision
-        if self.mixed_precision:
+        self.mixed_precision_mode = 'fp16' if mixed_precision is True else mixed_precision
+        if self.mixed_precision_mode:
             self.autocast = torch.cuda.amp.autocast
             self.scaler = torch.cuda.amp.GradScaler()
 
@@ -174,8 +174,8 @@ class Trainer:
     def train_step(self, train_X, train_y):
         ''' Perform a training step on a batch of inputs. '''
         # 计算loss
-        if self.mixed_precision:
-            with self.autocast(dtype=torch.float16 if self.mixed_precision=='fp16' else torch.bfloat16):
+        if self.mixed_precision_mode:
+            with self.autocast(dtype=torch.float16 if self.mixed_precision_mode=='fp16' else torch.bfloat16):
                 output = self._forward(train_X)
                 loss_detail = self.criterion(output, train_y)
         else:
@@ -206,7 +206,7 @@ class Trainer:
     def loss_backward(self, loss):
         '''loss.backward'''
         self.scale_before_step = 0
-        if self.mixed_precision:  # 混合精度
+        if self.mixed_precision_mode:  # 混合精度
             self.scale_before_step = self.scaler.get_scale()
             self.scaler.scale(loss).backward(retain_graph=self.retain_graph)
         else:
@@ -217,7 +217,7 @@ class Trainer:
         '''参数更新'''
         skip_scheduler = False
         # 混合精度
-        if self.mixed_precision:
+        if self.mixed_precision_mode:
             self.scaler.unscale_(self.optimizer)
             if self.clip_grad_norm is not None:  # 梯度裁剪
                 torch.nn.utils.clip_grad_norm_(self.unwrap_model().parameters(), self.clip_grad_norm)
