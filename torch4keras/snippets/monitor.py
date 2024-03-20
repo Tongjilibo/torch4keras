@@ -12,19 +12,30 @@ def format_time(eta, hhmmss=True):
     '''格式化显示时间
     :param hhmmss: bool, 是否只以00:00:00格式显示
     '''
-    if eta > 86400:
-        eta_d, eta_h = eta // 86400, eta % 86400
-        eta_format = '%dd ' % eta_d + ('%d:%02d:%02d' % (eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60))
-    elif eta > 3600:
-        eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
-    elif hhmmss:
-        eta_format = '%d:%02d' % (eta // 60, eta % 60)
-    elif (eta >= 1) and (eta < 60):
-        eta_format = '%.2fs' % eta
-    elif eta >= 1e-3:
-        eta_format = '%.0fms' % (eta * 1e3)
+    # 以00:00:00格式显示
+    if hhmmss:
+        if eta > 86400:  # 1d 12:10:36
+            eta_d, eta_h = eta // 86400, eta % 86400
+            eta_format = '%dd ' % eta_d + ('%d:%02d:%02d' % (eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60))
+        elif eta > 3600:  # 12:10:36
+            eta_format = ('%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60))
+        else:  # 10:36
+            eta_format = '%d:%02d' % (eta // 60, eta % 60)
+
     else:
-        eta_format = '%.0fus' % (eta * 1e6)
+        if eta > 86400:  # 1d 12h 10m 36s
+            eta_d, eta_h = eta // 86400, eta % 86400
+            eta_format = '%dd %dh %02dm %02ds' % (eta_d, eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60)
+        elif eta > 3600:  # 12h 10m 36s
+            eta_format = ('%dh %02dm %02ds' % (eta // 3600, (eta % 3600) // 60, eta % 60))
+        elif eta > 60:  # 10m 36s
+            eta_format = ('%02dm %02ds' % (eta // 60, eta % 60))
+        elif (eta >= 1) and (eta <= 60):  # 36.02s
+            eta_format = '%.2fs' % eta
+        elif eta >= 1e-3:  # 25ms
+            eta_format = '%.0fms' % (eta * 1e3)
+        else:  # 250us
+            eta_format = '%.0fus' % (eta * 1e6)
     return eta_format
 
 
