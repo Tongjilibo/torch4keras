@@ -25,11 +25,11 @@ def format_time(eta, hhmmss=True):
     else:
         if eta > 86400:  # 1d 12h 10m 36s
             eta_d, eta_h = eta // 86400, eta % 86400
-            eta_format = '%dd %dh %02dm %02ds' % (eta_d, eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60)
+            eta_format = '%dd %dh %dm %ds' % (eta_d, eta_h // 3600, (eta_h % 3600) // 60, eta_h % 60)
         elif eta > 3600:  # 12h 10m 36s
-            eta_format = ('%dh %02dm %02ds' % (eta // 3600, (eta % 3600) // 60, eta % 60))
+            eta_format = ('%dh %dm %ds' % (eta // 3600, (eta % 3600) // 60, eta % 60))
         elif eta > 60:  # 10m 36s
-            eta_format = ('%02dm %02ds' % (eta // 60, eta % 60))
+            eta_format = ('%dm %ds' % (eta // 60, eta % 60))
         elif (eta >= 1) and (eta <= 60):  # 36.02s
             eta_format = '%.2fs' % eta
         elif eta >= 1e-3:  # 25ms
