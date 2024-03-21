@@ -1063,7 +1063,10 @@ class Tensorboard(Callback):
             self.run_callback = False
 
     def on_train_end(self, logs: dict = None):
-        self.writer.close()
+        try:
+            self.writer.close()
+        except:
+            log_warn_once(traceback.format_exc())
     
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         if hasattr(self.trainer, 'epochs') and self.trainer.epochs > 1:
@@ -1122,8 +1125,11 @@ class SystemStateCallback(Tensorboard):
             self.run_callback = False
 
     def on_train_end(self, logs: dict = None):
-        super().on_train_end(logs)
-        self.pynvml.nvmlShutdown()
+        try:
+            super().on_train_end(logs)
+            self.pynvml.nvmlShutdown()
+        except:
+            log_warn_once(traceback.format_exc())
 
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
         # 不记录
