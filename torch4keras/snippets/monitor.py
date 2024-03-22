@@ -73,8 +73,8 @@ class Timeit:
     >>> with Timeit() as ti:
     >>>     for i in range(10):
     >>>         time.sleep(0.1)
-    >>>         # ti.lap(name=i, restart=False)  # 统计累计耗时
-    >>>         # ti.lap(name=i, restart=True)  # 统计间隔耗时
+    >>>         # ti.lap(name=i, reset=False)  # 统计累计耗时
+    >>>         # ti.lap(name=i, reset=True)  # 统计间隔耗时
     >>>         # ti.lap(count=10, name=i, restart=True)  # 统计每段速度
     >>>     # ti(10) # 统计速度
     '''
@@ -150,7 +150,7 @@ class Timeit2:
     def restart(self):
         self.start_tm = time.time()
 
-    def lap(self, name:str):
+    def lap(self, name:str, verbose=0):
         '''
         :params name: 打印时候自定义的前缀
         '''
@@ -160,6 +160,11 @@ class Timeit2:
         self.cost[name] = self.cost.get(name, 0) + consume
         self.count[name] = self.count.get(name, 0) + 1
         self.start_tm = time.time()
+        
+        if verbose > 1:
+            start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_tm))
+            end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
+            log_info(name + f'Cost {consume} [{start1} < {end1}]')
 
     def end(self, verbose=1):
         for k, v in self.count.items():
