@@ -744,7 +744,13 @@ class DeepSpeedTrainer(Trainer):
     def __init__(self, module):
         super().__init__(module)
         self.model = module
-        self.config = DottableDict(json.load(open(os.environ.get('deepspeed'))))
+
+        import argparse
+        parser = argparse.ArgumentParser(description='deepspeed args')
+        parser.add_argument('--deepspeed', type=str, help='deepspeed config path')
+        args, unknown_args = parser.parse_known_args()  # 允许其他参数不传入
+        
+        self.config = DottableDict(json.load(open(args.deepspeed)))
         self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
 
     def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
