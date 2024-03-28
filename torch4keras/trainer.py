@@ -741,10 +741,10 @@ class AccelerateTrainer(Trainer):
 
 class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
-    def __init__(self, module, config_path):
+    def __init__(self, module):
         super().__init__(module)
         self.model = module
-        self.config = DottableDict(json.load(open(config_path)))
+        self.config = DottableDict(json.load(open(os.environ.get('deepspeed'))))
         self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
 
     def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
