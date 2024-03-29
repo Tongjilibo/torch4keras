@@ -75,12 +75,23 @@ class DottableDict(dict):
 KwargsConfig = DottableDict
 
 
+def tran2dottableDict(dict_:dict):
+    '''将一个嵌套字典转成DottableDict'''
+    def traverse_dict(d): 
+        d = DottableDict(d)
+        for key, value in d.items():
+            if isinstance(value, dict):
+                d[key] = traverse_dict(value)
+        return d
+    return traverse_dict(dict_)
+
+
 class JsonConfig:
     '''读取json配置文件并返回可.操作符的字典'''
     def __new__(self, json_path:str, encoding:str='utf-8', dot:bool=True):
         data = json.load(open(json_path, "r", encoding=encoding))
         if dot:
-            return DottableDict(data)
+            return tran2dottableDict(data)
         else:
             return data
 
@@ -91,10 +102,9 @@ class YamlConfig:
         import yaml
         data = yaml.load(open(yaml_path, "r", encoding=encoding), Loader=yaml.FullLoader)
         if dot:
-            return DottableDict(data)
+            return tran2dottableDict(data)
         else:
             return data
-
 
 class IniConfig:
     '''读取ini配置文件'''
