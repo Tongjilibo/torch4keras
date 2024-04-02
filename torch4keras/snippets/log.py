@@ -247,3 +247,38 @@ class LoggerHandler(logging.Logger):
         self.addHandler(file_handle)
         file_handle.setLevel(level_dict[level])
         file_handle.setFormatter(formatter)
+
+
+def print_table(data:Union[List, List[List]], headers:List=None):
+    '''格式化打印表格，不依赖第三方包
+
+    Example
+    ---------------
+    >>> # 示例数据  
+    >>> data = [  
+    >>>     [1, "Alice", 25],  
+    >>>     [2, "Bob", 30],  
+    >>>     [3, "Charlie", 35]  
+    >>> ]  
+    >>> headers = ["ID", "Name", "Age"]  
+    >>> # 打印表格  
+    >>> print_table(data, headers)
+    '''
+    # 获取列的最大宽度
+    max_widths = [max(len(str(row[i])) for row in data) for i in range(len(data[0]))]  
+    
+    # 打印表头  
+    if headers:
+        max_widths = [max(i, len(j)) for i, j in zip(max_widths, headers)]
+        row_to_print = ' | '.join(str(header).ljust(max_widths[i]) for i, header in enumerate(headers))  
+        print(f'+{"-".join("-" * (w + 2) for w in max_widths)}+')  
+        print(f'| {row_to_print} |')  
+    print(f'+{"-".join("-" * (w + 2) for w in max_widths)}+')        
+      
+    # 打印数据行  
+    for row in data:  
+        row_to_print = ' | '.join(str(item).ljust(max_widths[i]) for i, item in enumerate(row))  
+        print(f'| {row_to_print} |')  
+      
+    # 打印表格底部边界  
+    print(f'+{"-".join("-" * (w + 2) for w in max_widths)}+')  

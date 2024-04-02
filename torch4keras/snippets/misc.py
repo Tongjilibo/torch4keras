@@ -4,7 +4,7 @@ from torch import nn, Tensor
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import os
 import random
-from .log import log_info, log_warn, log_error
+from .log import log_info, log_warn, log_error, log_warn_once, print_table
 import json
 
 
@@ -236,3 +236,33 @@ def find_tied_parameters(model: nn.Module, **kwargs):
 
     # return FindTiedParametersResult([sorted([weight] + list(set(tied))) for weight, tied in result.items()])
     return {weight: list(set(tied)) for weight, tied in result.items()}
+
+
+def check_cuda_verison():
+    '''使用torch查看cuda, cudnn的版本'''
+    versions = []
+    # 查看PyTorch版本
+    versions.append([f'torch', torch.__version__])
+
+    # 查看CUDA版本（如果已安装）
+    versions.append(["CUDA version", torch.version.cuda if torch.cuda.is_available() else 'Not available'])
+    
+    # 查看cuDNN版本（如果已安装）
+    versions.append(["cuDNN version", torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else 'Not available'])
+    
+    log_info('Cuda version summary')
+    print_table(versions, headers=['name', 'version'])
+
+
+def check_cuda_capability():
+    '''打印各个显卡的算力'''
+    # 查看CUDA版本（如果已安装）
+    if torch.cuda.is_available():
+        gpu_count = torch.cuda.device_count()
+        gpu_summay = []
+        for device in range(gpu_count):
+            gpu_summay.append([device, torch.cuda.get_device_name(device), str(torch.cuda.get_device_capability(device))])
+        log_info('CUDA device capability summary')
+        print_table(gpu_summay, headers=['device', 'name', 'capability'])
+    else:
+        log_error('CUDA not available')
