@@ -14,6 +14,7 @@ import json
 import math
 import re
 import traceback
+import inspect
 
 
 class Trainer:
@@ -803,10 +804,20 @@ class DeepSpeedTrainer(Trainer):
         self.deepspeed_engine.step()
 
     def resume_from_checkpoint(self, *args, **kwargs):
-        return self.deepspeed_engine.load_checkpoint(*args, **kwargs)
+        from deepspeed import DeepSpeedEngine
+        kwargs_ = {
+            k: v for k, v in kwargs.items() if k in inspect.signature(DeepSpeedEngine.load_checkpoint).parameters
+        }
+        save_dir = args[0] if len(args) > 0 else kwargs['save_dir']
+        return self.deepspeed_engine.load_checkpoint(save_dir, **kwargs_)
 
     def save_to_checkpoint(self, *args, **kwargs):
-        return self.deepspeed_engine.save_checkpoint(*args, **kwargs)
+        from deepspeed import DeepSpeedEngine
+        kwargs_ = {
+            k: v for k, v in kwargs.items() if k in inspect.signature(DeepSpeedEngine.save_checkpoint).parameters
+        }
+        save_dir = args[0] if len(args) > 0 else kwargs['save_dir']
+        return self.deepspeed_engine.save_checkpoint(save_dir, **kwargs_)
 
 
 def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
