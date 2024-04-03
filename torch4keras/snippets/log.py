@@ -249,7 +249,7 @@ class LoggerHandler(logging.Logger):
         file_handle.setFormatter(formatter)
 
 
-def print_table(data:Union[List, List[List]], headers:List=None):
+def print_table(data:Union[List, List[List], List[Dict]], headers:List=None):
     '''格式化打印表格，不依赖第三方包
 
     Example
@@ -264,6 +264,11 @@ def print_table(data:Union[List, List[List]], headers:List=None):
     >>> # 打印表格  
     >>> print_table(data, headers)
     '''
+    assert isinstance(data, list), 'Args `data` only accept list format'
+    if isinstance(data[0], dict):
+        headers = list(data[0].keys())
+        data = [list(i.values()) for i in data]
+
     # 获取列的最大宽度
     max_widths = [max(len(str(row[i])) for row in data) for i in range(len(data[0]))]  
     

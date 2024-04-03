@@ -6,10 +6,23 @@ import copy
 import functools
 from .log import log_info, log_warn, log_error
 from pprint import pprint
+import datetime
 
 
-def format_time(eta, hhmmss=True):
-    '''格式化显示时间
+def format_timestamp(timestamp, format='%Y-%m-%d %H:%M:%S', verbose=0):
+    '''格式化显示时间戳'''
+    dt_object = datetime.datetime.fromtimestamp(timestamp)  
+    
+    # 格式化 datetime 对象  
+    formatted_time = dt_object.strftime(format)  
+    
+    if verbose > 0:
+        print(formatted_time)
+    return formatted_time
+
+
+def format_time(eta:Union[int, float], hhmmss=True):
+    '''格式化显示时间间隔
     :param hhmmss: bool, 是否只以00:00:00格式显示
     '''
     # 以00:00:00格式显示

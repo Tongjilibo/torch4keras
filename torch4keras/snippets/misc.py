@@ -5,7 +5,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import os
 import random
 from .log import log_info, log_warn, log_error, log_warn_once, print_table
+from .monitor import format_timestamp, format_time
 import json
+import time
 
 
 def seed_everything(seed:int=None):
@@ -266,3 +268,45 @@ def check_cuda_capability():
         print_table(gpu_summay, headers=['device', 'name', 'capability'])
     else:
         log_error('CUDA not available')
+
+
+  
+def check_file_modify_time(file_path:Union[str, List[str]], duration:int=None, verbose=0):
+    """  
+    判断文件被修改的时间
+    :param file_path: 文件路径
+    :param duration: 文件的日期如何在duration以内，认为文件刚刚被修改
+    :return: 如果文件被修改，返回True；否则返回False
+    """
+    if isinstance(file_path, str):
+        file_path = [file_path]
+    
+    results = []
+    for file_i in file_path:
+        # 获取文件的当前修改时间
+        file_mtime = os.path.getmtime(file_i)
+
+        # 比较当前修改时间和上次检查的修改时间
+        cur_time = time.time()
+        res = {'file_name': os.path.basename(file_i)}
+        res['file_modify_time'] = format_timestamp(file_mtime)
+        if duration is not None and isinstance(duration, int):
+            res['current_time'] = format_timestamp(cur_time)
+            diff_duration = cur_time - file_mtime
+            res['diff_duration'] = format_time(diff_duration)
+            res['modified'] = True if diff_duration <= duration else False
+        results.append(res)
+    
+    if verbose > 0:
+        print_table(results)
+
+    if (len(results) == 1) and duration is not None:
+        return results[0]['modified']
+    else:
+        return results
+
+
+def check_file_modified(file_path:Union[str, List[str]], duration:int=1, verbose=0):
+    '''判断文件在duration区间是否被修改
+    '''
+    return check_file_modify_time(file_path, duration, verbose)
