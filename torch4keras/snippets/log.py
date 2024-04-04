@@ -249,6 +249,46 @@ class LoggerHandler(logging.Logger):
         file_handle.setFormatter(formatter)
 
 
+def json_flat(config:dict, sep=' -> '):
+    '''把嵌套的字典flat化
+    Example
+    ---------------
+    config = {'train_batch_size': 2,
+            "optimizer": {
+                "type": "AdamW",
+                "params": {
+                    "lr": 5e-4,
+                    "betas": [0.8, 0.999],
+                    "eps": 1e-8,
+                    "weight_decay": 3e-7
+                }
+            }
+            }
+    print_table(flat_config(config), headers=['config_name', 'config_value'])
+
+    >>> 结果输出
+    +----------------------------------------------------+
+    | config_name                         | config_value |
+    +----------------------------------------------------+
+    | train_batch_size                    | 2            |
+    | optimizer -> type                   | AdamW        |
+    | optimizer -> params -> lr           | 0.0005       |
+    | optimizer -> params -> betas        | [0.8, 0.999] |
+    | optimizer -> params -> eps          | 1e-08        |
+    | optimizer -> params -> weight_decay | 3e-07        |
+    +----------------------------------------------------+
+    '''
+    res = []
+    def _flat_config(config, pre_k=''):
+        for k, v in config.items():
+            key = k if pre_k == '' else pre_k + sep + k
+            if isinstance(v, dict):
+                _flat_config(v, key)
+            else:
+                res.append([key, v])
+    _flat_config(config)
+    return res
+    
 def print_table(data:Union[List, List[List], List[Dict]], headers:List=None):
     '''格式化打印表格，不依赖第三方包
 
@@ -263,6 +303,15 @@ def print_table(data:Union[List, List[List], List[Dict]], headers:List=None):
     >>> headers = ["ID", "Name", "Age"]  
     >>> # 打印表格  
     >>> print_table(data, headers)
+
+    结果输出：
+    +--------------------+
+    | ID | Name    | Age |
+    +--------------------+
+    | 1  | Alice   | 25  |
+    | 2  | Bob     | 30  |
+    | 3  | Charlie | 35  |
+    +--------------------+
     '''
     assert isinstance(data, list), 'Args `data` only accept list format'
     if isinstance(data[0], dict):

@@ -3,8 +3,9 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
-from torch4keras.snippets import DottableDict, JsonConfig, metric_mapping, get_parameter_device, log_info, log_warn, log_error, seed_everything
+from torch4keras.snippets import DottableDict, JsonConfig, metric_mapping, get_parameter_device, log_info, log_warn, log_warn_once, seed_everything
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint, argument_parse
+from torch4keras.snippets import print_table, json_flat
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from typing import Union, List, Literal, Tuple, Set, Callable, Optional
@@ -673,13 +674,12 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
         self.master_rank = master_rank
         self.verbose = (torch.distributed.get_rank() in master_rank)
     
-    def _prepare_inputs(self, *args):
-        super()._prepare_inputs(*args)
+    def _prepare_inputs(self, train_dataloader:DataLoader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
         # 如果使用ddp的时候没有使用DistributedSampler，这里会自动修改一下
         from torch.utils.data.distributed import DistributedSampler 
-        if (self.train_dataloader.sampler is None) and (not isinstance(self.train_dataloader.sampler, DistributedSampler)):
-            self.train_dataloader.sampler = DistributedSampler(self.train_dataloader.dataset)
-            self.train_dataloader_iter = iter(self.train_dataloader)
+        if (train_dataloader.sampler is None) and (not isinstance(train_dataloader.sampler, DistributedSampler)):
+            train_dataloader.sampler = DistributedSampler(train_dataloader.dataset)
+        super()._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
     
     def disable_run_callbacks(self, callbacks: Union[Callback, List[Callback]]):
         for callback in callbacks:
@@ -721,10 +721,10 @@ class AccelerateTrainer(Trainer):
         super().compile(*args, **kwargs)
         self.optimizer, self.scheduler, self.criterion = self.accelerator.prepare(self.optimizer, self.scheduler, self.criterion)
 
-    def _prepare_inputs(self, *args):
-        super()._prepare_inputs(*args)
-        self.train_dataloader = self.accelerator.prepare(self.train_dataloader)
-        self.train_dataloader_iter = iter(self.train_dataloader)
+    def _prepare_inputs(self, train_dataloader:DataLoader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
+        # 如果使用ddp的时候没有使用DistributedSampler，这里会自动修改一下
+        train_dataloader = self.accelerator.prepare(train_dataloader)
+        super()._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
 
     def prepare(self, *args, **kwargs):
         '''调用acclerate的prepare, 如在外面评估时候需要对dev_dataloader使用'''
@@ -743,18 +743,26 @@ class AccelerateTrainer(Trainer):
 
 class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
-    def __init__(self, module):
+    def __init__(self, module, verbose=0):
         super().__init__(module)
         self.model = module
         args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
         self.config = JsonConfig(args.deepspeed)
         self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
-
-    def _prepare_inputs(self, *args):
-        super()._prepare_inputs(*args)
+        if verbose > 0:
+            log_info('Deepspeed config listed below.')
+            print_table(json_flat(self.config), headers=['config_name', 'config_value'])
+    
+    def _prepare_inputs(self, train_dataloader:DataLoader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
         # batch_size需要使用deepspeed config中的train_batch_size/train_micro_batch_size_per_gpu
-        if self.train_dataloader.batch_sampler is None:
-            self.train_dataloader.batch_sampler.batch_size = self.config.train_batch_size
+        if train_dataloader.batch_sampler is not None:
+            btz = train_dataloader.batch_sampler.batch_size
+            btz_ds = self.config.train_batch_size
+            btz_ds_per = self.config.train_micro_batch_size_per_gpu
+            if btz != btz_ds:
+                log_warn_once(f'Use deepspeed config `train_batch_size`={btz_ds} and `train_micro_batch_size_per_gpu`={btz_ds_per} instead')
+            train_dataloader.batch_sampler.batch_size = self.config.train_batch_size
+        super()._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
 
     def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)
