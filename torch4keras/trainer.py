@@ -3,8 +3,8 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
-from torch4keras.snippets import DottableDict, metric_mapping, get_parameter_device, log_info, log_warn, log_error, seed_everything
-from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
+from torch4keras.snippets import DottableDict, JsonConfig, metric_mapping, get_parameter_device, log_info, log_warn, log_error, seed_everything
+from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint, argument_parse
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
 from typing import Union, List, Literal, Tuple, Set, Callable, Optional
@@ -675,6 +675,7 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     
     def _prepare_inputs(self, *args):
         super()._prepare_inputs(*args)
+        # 如果使用ddp的时候没有使用DistributedSampler，这里会自动修改一下
         from torch.utils.data.distributed import DistributedSampler 
         if (self.train_dataloader.sampler is None) and (not isinstance(self.train_dataloader.sampler, DistributedSampler)):
             self.train_dataloader.sampler = DistributedSampler(self.train_dataloader.dataset)
@@ -745,14 +746,15 @@ class DeepSpeedTrainer(Trainer):
     def __init__(self, module):
         super().__init__(module)
         self.model = module
-
-        import argparse
-        parser = argparse.ArgumentParser(description='deepspeed args')
-        parser.add_argument('--deepspeed', type=str, help='deepspeed config path')
-        args, unknown_args = parser.parse_known_args()  # 允许其他参数不传入
-        
-        self.config = DottableDict(json.load(open(args.deepspeed)))
+        args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
+        self.config = JsonConfig(args.deepspeed)
         self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
+
+    def _prepare_inputs(self, *args):
+        super()._prepare_inputs(*args)
+        # batch_size需要使用deepspeed config中的train_batch_size/train_micro_batch_size_per_gpu
+        if self.train_dataloader.batch_sampler is None:
+            self.train_dataloader.batch_sampler.batch_size = self.config.train_batch_size
 
     def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)

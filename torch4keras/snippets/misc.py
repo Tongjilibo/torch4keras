@@ -310,3 +310,37 @@ def check_file_modified(file_path:Union[str, List[str]], duration:int=1, verbose
     '''判断文件在duration区间是否被修改
     '''
     return check_file_modify_time(file_path, duration, verbose)
+
+
+def argument_parse(argumments=Union[str, list, dict], description='argument_parse', parse_known_args=True):
+    ''' 根据传入的参数接受命令行参数，生成argparse.ArgumentParser
+    :param argumments: 参数设置，接受str, list, dict输入
+    :param description: 描述
+    :param parse_known_args: bool, 只解析命令行中认识的参数
+
+    Example
+    -----------------------
+    args = argument_parse('deepspeed')
+    args = argument_parse(['deepspeed'])
+    args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
+    '''
+    import argparse
+    parser = argparse.ArgumentParser(description=description)
+
+    if isinstance(argumments, str):
+        parser.add_argument(f'--{argumments}')
+    elif isinstance(argumments, list):
+        for argument in argumments:
+            parser.add_argument(f'--{argument}')
+    elif isinstance(argumments, dict):
+        for argument, kwargs in argumments.items():
+            parser.add_argument(f'--{argument}',  **kwargs)
+    else:
+        raise TypeError('Args `argumments` only accepts `str,list,dict` format')
+
+    if parse_known_args:
+        args, unknown_args = parser.parse_known_args()  # 允许其他参数不传入
+    else:
+        args = parser.parse_args()
+
+    return args
