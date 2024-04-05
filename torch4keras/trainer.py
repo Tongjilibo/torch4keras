@@ -665,6 +665,8 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
         Trainer.__init__(self)
+        kwargs['device_ids'] = kwargs.get('device_ids', [int(os.getenv('LOCAL_RANK'))])
+        kwargs['output_device'] = kwargs.get('output_device', int(os.getenv('LOCAL_RANK')))
         nn.parallel.DistributedDataParallel.__init__(self, *args, **kwargs)
 
         # 默认仅对master_rank=0打印信息
@@ -681,28 +683,24 @@ class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
             train_dataloader.sampler = DistributedSampler(train_dataloader.dataset)
         super()._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
     
-    def disable_run_callbacks(self, callbacks: Union[Callback, List[Callback]]):
+    def disable_workers_callback(self, callbacks: Union[Callback, List[Callback]]):
+        '''非master_rank上不使用callback'''
         for callback in callbacks:
             if torch.distributed.get_rank() not in self.master_rank:
                 callback.run_callback = False
 
     @classmethod
-    def init_process_group(master_rank=0, seed=42):
-        if os.name == 'nt':
-            # windows: Diff between backends: https://pytorch.org/docs/stable/distributed.html
-            torch.distributed.init_process_group(backend="gloo")
-        else:  # linux
-            torch.distributed.init_process_group(backend='nccl')
-        
-        ddp = DottableDict()
-        ddp.rank = int(os.environ["RANK"])
-        ddp.local_rank = int(os.getenv('LOCAL_RANK'))
-        ddp.device = torch.device('cuda', ddp.local_rank)
-        ddp.world_size = int(os.environ["WORLD_SIZE"])
-        ddp.master_process = ddp.rank == master_rank
-        torch.cuda.set_device(ddp.local_rank)
-        seed_everything(seed + ddp.rank)
-        return ddp
+    def init_process_group(cls, master_rank=0, seed=42):
+        '''初始化各项参数'''
+        cls.ddp_config = DottableDict()
+        cls.ddp_config.rank = int(os.environ["RANK"])
+        cls.ddp_config.local_rank = int(os.getenv('LOCAL_RANK'))
+        cls.ddp_config.device = torch.device('cuda', cls.ddp_config.local_rank)
+        cls.ddp_config.world_size = int(os.environ["WORLD_SIZE"])
+        cls.ddp_config.master_process = cls.ddp_config.rank == master_rank
+        torch.cuda.set_device(cls.ddp_config.local_rank)
+        seed_everything(seed + cls.ddp_config.rank)
+        return cls.ddp_config
 
 
 class AccelerateTrainer(Trainer):
@@ -760,7 +758,7 @@ class DeepSpeedTrainer(Trainer):
             btz_ds = self.config.train_batch_size
             btz_ds_per = self.config.train_micro_batch_size_per_gpu
             if btz != btz_ds:
-                log_warn_once(f'Use deepspeed config `train_batch_size`={btz_ds} and `train_micro_batch_size_per_gpu`={btz_ds_per} instead')
+                log_warn_once(f'Use deepspeed config `train_batch_size`={btz_ds} and `train_micro_batch_size_per_gpu`={btz_ds_per} instead of `batch_size`={btz}')
             train_dataloader.batch_sampler.batch_size = self.config.train_batch_size
         super()._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
 
