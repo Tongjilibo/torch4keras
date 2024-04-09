@@ -11,7 +11,7 @@ from collections import OrderedDict
 from typing import Union, List, Literal, Tuple, Set, Callable, Optional
 from inspect import isfunction
 import os
-import json
+import sys
 import math
 import re
 import traceback
@@ -744,9 +744,11 @@ class DeepSpeedTrainer(Trainer):
     def __init__(self, module, verbose=0):
         super().__init__(module)
         self.model = module
-        args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
+        args = argument_parse()
         self.config = JsonConfig(args.deepspeed)
-        self.config['steps_per_print'] = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
+        self.set_default_args()  # 设置默认的一些参数
+        self.trainer_config_process(self.config, auto_find_batch_size=False)  # 设置一些auto的参数
+
         if verbose > 0:
             log_info('Deepspeed config listed below.')
             print_table(json_flat(self.config), headers=['config_name', 'config_value'])
@@ -761,6 +763,7 @@ class DeepSpeedTrainer(Trainer):
                 log_warn_once(f'Use deepspeed config `train_batch_size`={btz_ds} and `train_micro_batch_size_per_gpu`={btz_ds_per} instead of `batch_size`={btz}')
             train_dataloader.batch_sampler.batch_size = self.config.train_batch_size
         super()._prepare_inputs(train_dataloader, steps_per_epoch, epochs, verbose)
+
 
     def compile(self, *args, log_level='warning', inference=False, master_rank=0, **kwargs):
         super().compile(*args, **kwargs)
@@ -826,6 +829,141 @@ class DeepSpeedTrainer(Trainer):
         }
         save_dir = args[0] if len(args) > 0 else kwargs['save_dir']
         return self.deepspeed_engine.save_checkpoint(save_dir, **kwargs_)
+
+    def set_default_args(self):
+        '''设置默认的参数，用于deepspeed里面参数设置为auto的情况'''
+        self.config.steps_per_print = self.config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
+
+        self.config.world_size = int(os.environ["WORLD_SIZE"])
+        self.config.per_device_train_batch_size = self.config.get('per_device_train_batch_size', 8)
+        self.config.gradient_accumulation_steps = self.config.get('gradient_accumulation_steps', 1)
+        self.config.max_grad_norm = self.config.get('max_grad_norm', 1.0)
+        self.config.learning_rate = self.config.get('learning_rate', 5e-5)
+        self.config.adam_beta1 = self.config.get('adam_beta1', 0.9)
+        self.config.adam_beta2 = self.config.get('adam_beta2', 0.999)
+        self.config.adam_epsilon = self.config.get('adam_epsilon', 1e-8)
+        self.config.weight_decay = self.config.get('weight_decay', 0.0)
+        self.config.fp16 = self.config.get('fp16', False)
+        self.config.fp16_full_eval = self.config.get('fp16_full_eval', False)
+        self.config.fp16_opt_level = self.config.get('fp16_opt_level', "O1")
+        self.config.fp16_backend = self.config.get('fp16_backend', "auto")
+
+        self.config.bf16 = self.config.get('bf16', False)
+        self.config.bf16_full_eval = self.config.get('bf16_full_eval', False)
+        self.config.warmup_steps = self.config.get('warmup_steps', 0)
+        self.config.warmup_ratio = self.config.get('warmup_ratio', 0.0)
+
+    def find_config_node(self, ds_key_long):
+        config = self.config
+
+        # find the config node of interest if it exists
+        nodes = ds_key_long.split(".")
+        ds_key = nodes.pop()
+        for node in nodes:
+            config = config.get(node)
+            if config is None:
+                return None, ds_key
+
+        return config, ds_key
+    
+    def fill_match(self, ds_key_long, hf_val, must_match=True):
+        """
+        A utility method that massages the config file and can optionally verify that the values match.
+
+        1. Replace "auto" values with `TrainingArguments` value.
+
+        2. If it wasn't "auto" and `must_match` is true, then check that DS config matches Trainer
+        config values and if mismatched add the entry to `self.mismatched` - will assert during
+        `trainer_config_finalize` for one or more mismatches.
+
+        """
+        config, ds_key = self.find_config_node(ds_key_long)
+        if config is None:
+            return
+
+        if config.get(ds_key) == "auto":
+            config[ds_key] = hf_val
+            return
+
+        if not must_match:
+            return
+
+        ds_val = config.get(ds_key)
+        if ds_val is not None and ds_val != hf_val:
+            log_warn_once(f"- ds {ds_key_long}={ds_val} <> {hf_val}")
+
+    def trainer_config_process(self, args, auto_find_batch_size=False):
+        """自动填充和替换ds_config中的auto选项
+        """
+        # DeepSpeed does:
+        # train_batch_size = world_size * train_micro_batch_size_per_gpu * gradient_accumulation_steps
+        train_batch_size = args.world_size * args.per_device_train_batch_size * args.gradient_accumulation_steps
+        self.fill_match("train_micro_batch_size_per_gpu", args.per_device_train_batch_size, must_match=not auto_find_batch_size)
+        self.fill_match("gradient_accumulation_steps", args.gradient_accumulation_steps)
+        self.fill_match("train_batch_size", train_batch_size, must_match = not auto_find_batch_size)
+        self.fill_match("gradient_clipping", args.max_grad_norm)
+
+        self.fill_match("optimizer.params.lr", args.learning_rate)
+        self.fill_match("optimizer.params.betas", [args.adam_beta1, args.adam_beta2])
+        self.fill_match("optimizer.params.eps", args.adam_epsilon)
+        self.fill_match("optimizer.params.weight_decay", args.weight_decay)
+
+        self.fill_match("scheduler.params.warmup_min_lr", 0, must_match=False)  # not a trainer arg
+        self.fill_match("scheduler.params.warmup_max_lr", args.learning_rate)
+        # total_num_steps - will get set in trainer_config_finalize
+
+        # fp16
+        if args.fp16 or args.fp16_full_eval:
+            fp16_backend = "apex" if args.fp16_backend == "apex" else "amp"
+        else:
+            fp16_backend = None
+
+        # amp: similar to the pytorch native amp - it has a bunch of optional params but we won't set
+        # any here unless the user did the work
+        self.fill_match("fp16.enabled", ((args.fp16 or args.fp16_full_eval) and fp16_backend == "amp"))
+
+        # apex: delegates amp work to apex (which needs to be available), but it cannot be used with any
+        # ZeRO features
+        self.fill_match("amp.enabled", fp16_backend == "apex")
+        self.fill_match("amp.opt_level", args.fp16_opt_level)
+
+        self.fill_match("bf16.enabled", (args.bf16 or args.bf16_full_eval))
+
+        ''' 以下逻辑为transformers中trainer_config_finalize修改'''
+        # deal with config keys that use `auto` value and rely on model's hidden_size
+        hidden_size_based_keys = [
+            "zero_optimization.reduce_bucket_size",
+            "zero_optimization.stage3_prefetch_bucket_size",
+            "zero_optimization.stage3_param_persistence_threshold",
+        ]
+        hidden_size_auto_keys = [x for x in hidden_size_based_keys if self.is_auto(x)]
+
+        if len(hidden_size_auto_keys) > 0:
+            if hasattr(self.model.config, "hidden_size"):
+                hidden_size = self.config.hidden_size
+            elif hasattr(self.config, "hidden_sizes"):
+                # if there are many hidden sizes pick the largest one
+                hidden_size = max(self.config.hidden_sizes)
+            else:
+                raise ValueError(
+                    "The model's config file has neither `hidden_size` nor `hidden_sizes` entry, "
+                    "therefore it's not possible to automatically fill out the following `auto` entries "
+                    f"in the DeepSpeed config file: {hidden_size_auto_keys}. You can fix that by replacing "
+                    "`auto` values for these keys with an integer value of your choice."
+                )
+
+            self.fill_match("zero_optimization.reduce_bucket_size", hidden_size * hidden_size, must_match=False)
+            _stage = self.find_config_node("zero_optimization.stage")
+            if _stage[0] is not None and _stage[0].get(_stage[1]) == 3:
+                # automatically assign the optimal config values based on model config
+                self.fill_match("zero_optimization.stage3_prefetch_bucket_size", 0.9 * hidden_size * hidden_size, must_match=False)
+                self.fill_match("zero_optimization.stage3_param_persistence_threshold", 10 * hidden_size, must_match=False)
+
+        # scheduler
+        if hasattr(self, 'totel_steps'):
+            self.fill_match("scheduler.params.total_num_steps", self.total_steps)
+            self.fill_match("scheduler.params.warmup_num_steps", (self.config.warmup_steps if self.config.warmup_steps > 0 
+                                                                else math.ceil(self.total_steps * self.config.warmup_ratio)))
 
 
 def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):

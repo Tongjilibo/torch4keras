@@ -8,6 +8,7 @@ from .log import log_info, log_warn, log_error, log_warn_once, print_table
 from .monitor import format_timestamp, format_time
 import json
 import time
+import sys
 
 
 def seed_everything(seed:int=None):
@@ -312,14 +313,15 @@ def check_file_modified(file_path:Union[str, List[str]], duration:int=1, verbose
     return check_file_modify_time(file_path, duration, verbose)
 
 
-def argument_parse(argumments=Union[str, list, dict], description='argument_parse', parse_known_args=True):
+def argument_parse(arguments:Union[str, list, dict]=None, description='argument_parse', parse_known_args=True):
     ''' 根据传入的参数接受命令行参数，生成argparse.ArgumentParser
-    :param argumments: 参数设置，接受str, list, dict输入
+    :param arguments: 参数设置，接受str, list, dict输入
     :param description: 描述
     :param parse_known_args: bool, 只解析命令行中认识的参数
 
     Example
     -----------------------
+    args = argument_parse()
     args = argument_parse('deepspeed')
     args = argument_parse(['deepspeed'])
     args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
@@ -327,20 +329,24 @@ def argument_parse(argumments=Union[str, list, dict], description='argument_pars
     import argparse
     parser = argparse.ArgumentParser(description=description)
 
-    if isinstance(argumments, str):
-        parser.add_argument(f'--{argumments}')
-    elif isinstance(argumments, list):
-        for argument in argumments:
-            parser.add_argument(f'--{argument}')
-    elif isinstance(argumments, dict):
-        for argument, kwargs in argumments.items():
+    if arguments is None:
+        # 不预设，直接解析所有命令行参数
+        arguments = [arg for arg in sys.argv[1:] if arg.startswith('-') and ('=' not in arg)]
+            
+    if isinstance(arguments, str):
+        parser.add_argument(f'--{arguments}')
+    elif isinstance(arguments, list):
+        for argument in arguments:
+            if argument.startswith('-') and ('=' not in argument):
+                parser.add_argument(f'--{argument.lstrip('-')}')
+    elif isinstance(arguments, dict):
+        for argument, kwargs in arguments.items():
             parser.add_argument(f'--{argument}',  **kwargs)
     else:
-        raise TypeError('Args `argumments` only accepts `str,list,dict` format')
+        raise TypeError('Args `arguments` only accepts `str,list,dict` format')
 
     if parse_known_args:
         args, unknown_args = parser.parse_known_args()  # 允许其他参数不传入
     else:
         args = parser.parse_args()
-
     return args
