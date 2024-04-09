@@ -11,19 +11,19 @@ from .base import Trainer
 
 class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
-    def __init__(self, module, verbose=0):
+    def __init__(self, module, verbose=1):
         super().__init__(module)
         self.model = module
 
         # 参数解析
-        ds_args = DeepSpeedArgs(argument_parse())
+        ds_args = DeepSpeedArgs(argument_parse())  # 解析命令行参数
         ds_args.set_default_args()  # 设置默认的一些参数
-        ds_args.trainer_config_process(auto_find_batch_size=False)  # 设置一些auto的参数
+        ds_args.trainer_config_process(self.model, auto_find_batch_size=False)  # 设置一些auto的参数
         self.ds_config = ds_args.ds_config
 
         if verbose > 0:
             log_info('Deepspeed config listed below.')
-            print_table(json_flat(self.ds_config), headers=['config_name', 'config_value'])
+            print_table(json_flat(self.ds_config), headers=['ds_config name', 'ds_config value'])
     
     def _prepare_inputs(self, train_dataloader:DataLoader, steps_per_epoch:Union[int,None], epochs:int, verbose:int):
         # batch_size需要使用deepspeed config中的train_batch_size/train_micro_batch_size_per_gpu
@@ -105,34 +105,41 @@ class DeepSpeedTrainer(Trainer):
 
 class DeepSpeedArgs():
     '''deepspeed的config设置, 含自动填充auto
+    为了和transformers保持一致，部分命令行参数名尽量和其保持一致，好处是一些启动命令可以直接套用
     '''
     def __init__(self, arguements) -> None:
         self.train_args = arguements
         self.ds_config = JsonConfig(arguements.deepspeed)
-        self.mismatches = []
         
     def set_default_args(self):
         '''设置默认的参数，用于deepspeed里面参数设置为auto的情况'''
         self.ds_config.steps_per_print = self.ds_config.get('steps_per_print', 1e9)  # 默认不打印, 防止进度条打印问题
 
+        self.default_args = set()
+        def set_default_arg(name, value):
+            # 命令行参数未传入的，设置为默认值
+            if name not in self.train_args:
+                self.train_args[name] = value
+                self.default_args.add(name)
+
         # 训练参数的默认参数
-        self.train_args.world_size = int(os.environ["WORLD_SIZE"])
-        self.train_args.per_device_train_batch_size = self.train_args.get('per_device_train_batch_size', 8)
-        self.train_args.gradient_accumulation_steps = self.train_args.get('gradient_accumulation_steps', 1)
-        self.train_args.max_grad_norm = self.train_args.get('max_grad_norm', 1.0)
-        self.train_args.learning_rate = self.train_args.get('learning_rate', 5e-5)
-        self.train_args.adam_beta1 = self.train_args.get('adam_beta1', 0.9)
-        self.train_args.adam_beta2 = self.train_args.get('adam_beta2', 0.999)
-        self.train_args.adam_epsilon = self.train_args.get('adam_epsilon', 1e-8)
-        self.train_args.weight_decay = self.train_args.get('weight_decay', 0.0)
-        self.train_args.fp16 = self.train_args.get('fp16', False)
-        self.train_args.fp16_full_eval = self.train_args.get('fp16_full_eval', False)
-        self.train_args.fp16_opt_level = self.train_args.get('fp16_opt_level', "O1")
-        self.train_args.fp16_backend = self.train_args.get('fp16_backend', "auto")
-        self.train_args.bf16 = self.train_args.get('bf16', False)
-        self.train_args.bf16_full_eval = self.train_args.get('bf16_full_eval', False)
-        self.train_args.warmup_steps = self.train_args.get('warmup_steps', 0)
-        self.train_args.warmup_ratio = self.train_args.get('warmup_ratio', 0.0) 
+        set_default_arg('world_size', int(os.environ["WORLD_SIZE"]))
+        set_default_arg('per_device_train_batch_size', 8)
+        set_default_arg('gradient_accumulation_steps', 1)
+        set_default_arg('max_grad_norm', 1.0)
+        set_default_arg('learning_rate', 5e-5)
+        set_default_arg('adam_beta1', 0.9)
+        set_default_arg('adam_beta2', 0.999)
+        set_default_arg('adam_epsilon', 1e-8)
+        set_default_arg('weight_decay', 0.0)
+        set_default_arg('fp16', False)
+        set_default_arg('fp16_full_eval', False)
+        set_default_arg('fp16_opt_level', "O1")
+        set_default_arg('fp16_backend', "auto")
+        set_default_arg('bf16', False)
+        set_default_arg('bf16_full_eval', False)
+        set_default_arg('warmup_steps', 0)
+        set_default_arg('warmup_ratio', 0.0) 
 
     def find_config_node(self, ds_key_long):
         config = self.ds_config
@@ -148,15 +155,7 @@ class DeepSpeedArgs():
         return config, ds_key
     
     def fill_match(self, ds_key_long, b4t_val, must_match=True):
-        """
-        A utility method that massages the config file and can optionally verify that the values match.
-
-        1. Replace "auto" values with `TrainingArguments` value.
-
-        2. If it wasn't "auto" and `must_match` is true, then check that DS config matches Trainer
-        config values and if mismatched add the entry to `self.mismatched` - will assert during
-        `trainer_config_finalize` for one or more mismatches.
-
+        """填充auto的默认值, 使用 "命令行参数/默认值"
         """
         config, ds_key = self.find_config_node(ds_key_long)
         if config is None:
@@ -169,10 +168,6 @@ class DeepSpeedArgs():
         if not must_match:
             return
 
-        ds_val = config.get(ds_key)
-        if ds_val is not None and ds_val != b4t_val:
-            self.mismatches.append({'ds_name': ds_key_long, 'ds_value': ds_val, 'b4t_value': b4t_val})
-
     def get_value(self, ds_key_long, default=None):
         """
         Returns the set value or `default` if no value is set
@@ -182,11 +177,10 @@ class DeepSpeedArgs():
             return default
         return config.get(ds_key, default)
     
-    def trainer_config_process(self, args=None, auto_find_batch_size=False):
+    def trainer_config_process(self, model, auto_find_batch_size=False):
         """自动填充和替换ds_config中的auto选项
         """
-        if args is None:
-            args = self.train_args
+        args = self.train_args
 
         # DeepSpeed does:
         # train_batch_size = world_size * train_micro_batch_size_per_gpu * gradient_accumulation_steps
@@ -232,7 +226,7 @@ class DeepSpeedArgs():
         hidden_size_auto_keys = [x for x in hidden_size_based_keys if self.get_value(x) == 'auto']
 
         if len(hidden_size_auto_keys) > 0:
-            if hasattr(self.model.config, "hidden_size"):
+            if hasattr(model.config, "hidden_size"):
                 hidden_size = self.ds_config.hidden_size
             elif hasattr(self.ds_config, "hidden_sizes"):
                 # if there are many hidden sizes pick the largest one
@@ -254,9 +248,5 @@ class DeepSpeedArgs():
         # scheduler
         if hasattr(self, 'totel_steps'):
             self.fill_match("scheduler.params.total_num_steps", self.total_steps)
-            self.fill_match("scheduler.params.warmup_num_steps", (self.ds_config.warmup_steps if self.ds_config.warmup_steps > 0 
-                                                                else math.ceil(self.total_steps * self.ds_config.warmup_ratio)))
-
-        if len(self.mismatches) > 0:
-            log_warn('deepspeed config values not match bert4torch settings')
-            print_table(self.mismatches)
+            self.fill_match("scheduler.params.warmup_num_steps", self.ds_config.warmup_steps if self.ds_config.warmup_steps > 0 
+                             else math.ceil(self.total_steps * self.ds_config.warmup_ratio))

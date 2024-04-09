@@ -249,7 +249,7 @@ class LoggerHandler(logging.Logger):
         file_handle.setFormatter(formatter)
 
 
-def json_flat(config:dict, sep=' -> '):
+def json_flat(config:dict, sep='.'):
     '''把嵌套的字典flat化
     Example
     ---------------
