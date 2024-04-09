@@ -313,7 +313,7 @@ def check_file_modified(file_path:Union[str, List[str]], duration:int=1, verbose
     return check_file_modify_time(file_path, duration, verbose)
 
 
-def argument_parse(arguments:Union[str, list, dict]=None, description='argument_parse', parse_known_args=True):
+def argument_parse(arguments:Union[str, list, dict]=None, description='argument_parse', parse_known_args:bool=True, dot:bool=True):
     ''' 根据传入的参数接受命令行参数，生成argparse.ArgumentParser
     :param arguments: 参数设置，接受str, list, dict输入
     :param description: 描述
@@ -349,4 +349,7 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
         args, unknown_args = parser.parse_known_args()  # 允许其他参数不传入
     else:
         args = parser.parse_args()
+    
+    if dot is True:
+        args = tran2dottableDict(vars(args))
     return args
