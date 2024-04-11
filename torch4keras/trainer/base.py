@@ -638,8 +638,12 @@ class Trainer:
     def unwrap_model(self):
         '''返回nn.Module模块
         '''
-        if isinstance(self, nn.Module): return self
-        return self.module if hasattr(self, 'module') else self
+        if isinstance(self, nn.Module):
+            return self
+        elif hasattr(self, 'module') and isinstance(self.module, nn.Module):
+            return self.module
+        else:
+            return self
 
 
 Trainer.compile_training_components = Trainer.compile

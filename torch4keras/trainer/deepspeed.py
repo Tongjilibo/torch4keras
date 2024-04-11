@@ -1,4 +1,5 @@
 from torch.utils.data import DataLoader
+from torch import nn
 from torch4keras.snippets import JsonConfig, log_info, log_warn, log_warn_once
 from torch4keras.snippets import argument_parse
 from torch4keras.snippets import print_table, json_flat
@@ -13,12 +14,12 @@ class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
     def __init__(self, module, verbose=1):
         super().__init__(module)
-        self.model = module
+        self.module = module
 
         # 参数解析
         ds_args = DeepSpeedArgs(argument_parse())  # 解析命令行参数
         ds_args.set_default_args()  # 设置默认的一些参数
-        ds_args.trainer_config_process(self.model, auto_find_batch_size=False)  # 设置一些auto的参数
+        ds_args.trainer_config_process(self.module, auto_find_batch_size=False)  # 设置一些auto的参数
         self.ds_config = ds_args.ds_config
 
         if verbose > 0:
@@ -58,10 +59,10 @@ class DeepSpeedTrainer(Trainer):
             self.optimizer, self.scheduler = None, None
             model_parameters = None
         else:
-            model_parameters = list(filter(lambda p: p.requires_grad, self.model.parameters()))
+            model_parameters = list(filter(lambda p: p.requires_grad, self.module.parameters()))
         
         kwargs = {
-            "model": self.model,  # deepspeed的forward默认是计算到loss输出的
+            "model": self.module,  # deepspeed的forward默认是计算到loss输出的
             "model_parameters": model_parameters,
             "config_params": self.ds_config,
             "optimizer": self.optimizer,
@@ -75,7 +76,7 @@ class DeepSpeedTrainer(Trainer):
         self.deepspeed_engine, self.optimizer, _, self.scheduler = deepspeed.initialize(**kwargs)
         self.verbose = 1 if self.deepspeed_engine.local_rank == master_rank else 0
 
-    def unwrap_model(self):
+    def unwrap_model(self) -> nn.Module:
         # 执行deepspeed_engine的forward
         return self.deepspeed_engine
 
