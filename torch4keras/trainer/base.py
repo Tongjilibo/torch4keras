@@ -3,7 +3,7 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
-from torch4keras.snippets import metric_mapping, get_parameter_device, log_info, log_warn
+from torch4keras.snippets import metric_mapping, get_parameter_device, log_info, log_warn, print_table
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
@@ -27,12 +27,13 @@ class Trainer:
     def initialize(self, module:nn.Module=None):
         # 传入Module实例方式
         if module is not None:
-            assert isinstance(module, nn.Module), 'Args `module` only support nn.Module format'
+            if not isinstance(module, nn.Module):
+                raise TypeError(f'Args `module` only support nn.Module format not {type(module)}')
             self.module = module
 
         self.global_step, self.local_step, self.total_steps, self.batch_step = 0, 0, 0, 0
         self.epoch, self.steps_per_epoch, self.train_dataloader = 0, None, None
-        self.resume_step, self.resume_epoch = 0, 0
+        self.resume_step, self.resume_epoch, self.resume_batch = 0, 0, 0
         self.retain_graph = False  # loss.backward()是否保留计算图
         self.move_to_model_device = True  # 自动把tensor转到model所在的device
         self.log_first_step = False  # 是否打印第一个step的数据
@@ -271,6 +272,7 @@ class Trainer:
             callbacks_.append(smooth_callback)
             callbacks = [callback for callback in callbacks if not isinstance(callback, SmoothMetricsCallback)]
         elif self.smooth_metrics_config.get('interval') is not None:
+            self.smooth_metrics_config['seen_so_far'] = self.resume_step + self.resume_epoch * self.steps_per_epoch  # 支持断点续训
             smooth_callback = SmoothMetricsCallback(**self.smooth_metrics_config)
             callbacks_.append(smooth_callback)
         else:
@@ -310,22 +312,31 @@ class Trainer:
         callback_trainer.stop_training = False  # 在EarlyStopping中会重新设置
         return history, callback_trainer, progbarlogger
 
-    def _prepare_nextbatch(self):
+    def prepare_nextbatch(self):
         '''准备下一个batch数据'''
         # 循环dataloader, 不要试用itertools的cycle, 遇到过变量不释放的问题
-        try:
-            batch = next(self.train_dataloader_iter)
+        def _prepare_nextbatch():
+            try:
+                batch = next(self.train_dataloader_iter)
+            except StopIteration:
+                self.callbacks.on_dataloader_end()  # 适用于数据量较大时, 动态读取文件并重新生成self.train_dataloader的情况, 如预训练
+                # DDP训练时候为了避免每个epoch样本一致, 修改随机种子
+                if isinstance(self.train_dataloader.sampler, torch.utils.data.distributed.DistributedSampler) and \
+                    hasattr(self.train_dataloader.sampler, 'set_epoch'):
+                    self.train_dataloader.sampler.set_epoch(self.epoch)
+                self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候, 其实顺序也重新生成了
+                batch = next(self.train_dataloader_iter)
             self.batch_step += 1
-        except StopIteration:
-            self.callbacks.on_dataloader_end()  # 适用于数据量较大时, 动态读取文件并重新生成self.train_dataloader的情况, 如预训练
-            # DDP训练时候为了避免每个epoch样本一致, 修改随机种子
-            if isinstance(self.train_dataloader.sampler, torch.utils.data.distributed.DistributedSampler) and \
-                hasattr(self.train_dataloader.sampler, 'set_epoch'):
-                self.train_dataloader.sampler.set_epoch(self.epoch)
-            self.train_dataloader_iter = iter(self.train_dataloader)  # shuffle=True时候, 其实顺序也重新生成了
-            self.batch_step = 0
-            batch = next(self.train_dataloader_iter)
-
+            return batch
+        
+        # 若使用梯度累计grad_accumulation_steps，则batch_step和global_step会不一致
+        if self.batch_step > self.resume_batch:
+            # 从头开始
+            batch = _prepare_nextbatch()
+        else:
+            # 断点续训
+            while self.batch_step <= self.resume_batch:
+                batch = _prepare_nextbatch()
         batch = self._move_to_model_device(batch)
         return batch
 
@@ -405,7 +416,7 @@ class Trainer:
                     self.unwrap_model().train()  # 设置为train模式
                 tr_loss, tr_loss_detail = 0, {}
                 for _ in range(self.grad_accumulation_steps):
-                    self.train_X, self.train_y = self._prepare_nextbatch()  # 获取下一个batch的训练数据
+                    self.train_X, self.train_y = self.prepare_nextbatch()  # 获取下一个batch的训练数据
                     self._log_first_step(resume_step, self.train_X, self.train_y)  # log第一个step
                     output, loss, loss_detail = self.train_step(self.train_X, self.train_y)
                     self.callbacks.on_train_step_end()
@@ -471,6 +482,7 @@ class Trainer:
         step_params = torch.load(save_path)
         self.resume_step = step_params['resume_step'] 
         self.resume_epoch = step_params['resume_epoch']
+        self.resume_batch = step_params.get('resume_batch', 0)  # 兼容老版本
         return step_params
 
     def save_steps_params(self, save_path:str):
@@ -478,8 +490,11 @@ class Trainer:
 
         :param save_path: str, 训练过程参数保存路径
         '''
-        step_params = {'resume_step': (self.local_step+1) % self.steps_per_epoch, 
-                       'resume_epoch': self.epoch + (self.local_step+1) // self.steps_per_epoch}
+        step_params = {
+            'resume_step': (self.local_step+1) % self.steps_per_epoch,  # 当前epoch下的step数量
+            'resume_epoch': self.epoch + (self.local_step+1) // self.steps_per_epoch,  # 经过的epoch数量
+            'resume_batch': self.batch_step  # 经过的batch数量
+            }
         save_dir = os.path.dirname(save_path)
         os.makedirs(save_dir, exist_ok=True)
         torch.save(step_params, save_path)
@@ -554,86 +569,101 @@ class Trainer:
             save_dir = None if re.search(r'\.[a-zA-z0-9]+$', save_path) else save_path
             save_checkpoint(state_dict, os.path.join(save_dir, 'pytorch_model.bin') if save_dir else save_path)
     
-    def resume_from_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                               steps_params_path:str=None, mapping:Union[dict,Callable]=None, verbose:int=0, strict:bool=True, 
-                               device=None, **kwargs):
-        '''同时加载模型、优化器、训练过程参数
+    def resume_from_checkpoint(self, save_dir:str=None, mapping:Union[dict,Callable]=None, strict:bool=True, device=None, verbose:int=1, **kwargs):
+        '''同时加载模型、优化器、训练过程参数, 以保证断点续训和不断效果一致或相当
 
         :param save_dir: str, 保存目录
+        :param mapping: dict, 模型文件的mapping
+        :param strict: bool, 是否严格加载
+        :param device: 加载的device
+        :param verbose: int, 是否打印resume成功的信息, 默认打印
+
+        > 可选参数
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
-        :param mapping: dict, 模型文件的mapping
         '''
+        model_path = kwargs.get('model_path')
+        optimizer_path = kwargs.get('optimizer_path')
+        scheduler_path = kwargs.get('scheduler_path')
+        steps_params_path = kwargs.get('steps_params_path')
+
+        resume_info = []
         # 加载模型权重
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.load_weights(model_path, strict=strict, mapping=mapping)
-            if verbose == 1:
-                log_info(f'Model weights successfuly resumed from {model_path}')
+            resume_info.append(['Model weights', model_path])
 
         # 加载优化器
         if optimizer_path or save_dir:
             optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
             state_dict = torch.load(optimizer_path, map_location = device or self.device)
             self.optimizer.load_state_dict(state_dict)
-            if verbose == 1:
-                log_info(f'Optimizer successfuly resumed from {optimizer_path}')
+            resume_info.append(['Optimizer', optimizer_path])
 
         # 加载scheduler
         if (scheduler_path or save_dir) and (self.scheduler is not None):
             scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
             state_dict = torch.load(scheduler_path, map_location = device or self.device)
             self.scheduler.load_state_dict(state_dict)
-            if verbose == 1:
-                log_info(f'Scheduler successfuly resumed from {scheduler_path}')
+            resume_info.append(['Scheduler', scheduler_path])
 
         # 加载训练进度参数
         if steps_params_path or save_dir:
             steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
             self.load_steps_params(steps_params_path)
-            if verbose == 1:
-                log_info(f'Steps_params successfuly resumed from {steps_params_path}')
+            resume_info.append(['Steps_params', steps_params_path])
 
-    def save_to_checkpoint(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, 
-                           steps_params_path:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, 
-                           verbose:int=0, **kwargs):
+        if verbose == 1 and len(resume_info) > 0:
+            log_info('Successfuly resume training checkpoint')
+            print_table(resume_info, headers=['File', 'Path'])
+
+    def save_to_checkpoint(self, save_dir:str=None, mapping:Union[dict,Callable]=None, trainable_only:bool=False, verbose:int=0, **kwargs):
         '''同时保存模型、优化器、训练过程参数、scheduler
 
         :param save_dir: str, 保存目录
+        :param mapping: dict/func, 模型文件的mapping
+        :param trainable_only
+
+        > 可选参数
         :param model_path: str, 模型文件路径
         :param optimizer_path: str, 优化器文件路径
         :param scheduler_path: str, scheduler文件路径
         :param steps_params_path: str, 训练过程参数保存路径
-        :param mapping: dict/func, 模型文件的mapping
-        :param trainable_only
         '''
+        model_path = kwargs.get('model_path')
+        optimizer_path = kwargs.get('optimizer_path')
+        scheduler_path = kwargs.get('scheduler_path')
+        steps_params_path = kwargs.get('steps_params_path')
+
+        load_info = []
         if model_path or save_dir:
             model_path = model_path or os.path.join(save_dir, 'model.pt')
             self.save_weights(model_path, mapping=mapping, trainable_only=trainable_only)
-            if verbose == 1:
-                log_info(f'Model weights successfuly saved to {model_path}')
+            load_info.append(['Model weights', model_path])
 
         if optimizer_path or save_dir:
             optimizer_path = optimizer_path or os.path.join(save_dir, 'optimizer.pt')
             os.makedirs(os.path.dirname(optimizer_path), exist_ok=True)
             torch.save(self.optimizer.state_dict(), optimizer_path)
-            if verbose == 1:
-                log_info(f'Optimizer successfuly saved to {optimizer_path}')
+            load_info.append(['Optimizer', optimizer_path])
 
         if (scheduler_path or save_dir) and (self.scheduler is not None):
             scheduler_path = scheduler_path or os.path.join(save_dir, 'scheduler.pt')
             os.makedirs(os.path.dirname(scheduler_path), exist_ok=True)
             torch.save(self.scheduler.state_dict(), scheduler_path)
-            if verbose == 1:
-                log_info(f'Scheduler successfuly saved to {scheduler_path}')
+            load_info.append(['Scheduler', scheduler_path])
 
         if steps_params_path or save_dir:
             steps_params_path = steps_params_path or os.path.join(save_dir, 'steps_params.pt')
             self.save_steps_params(steps_params_path)
-            if verbose == 1:
-                log_info(f'Steps_params successfuly saved to {steps_params_path}')
+            load_info.append(['Steps_params', steps_params_path])
+
+        if verbose == 1 and len(load_info) > 0:
+            log_info('Successfuly save training checkpoint')
+            print_table(load_info, headers=['File', 'Path'])
 
     def unwrap_model(self):
         '''返回nn.Module模块

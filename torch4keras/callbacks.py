@@ -193,13 +193,13 @@ class Callback(object):
 
 class SmoothMetric:
     '''指标平滑'''
-    def __init__(self, interval:int=None, stateful_metrics:Union[str, set, tuple, list]=None) -> None:
+    def __init__(self, interval:int=None, stateful_metrics:Union[str, set, tuple, list]=None, seen_so_far=0) -> None:
         self.interval = interval
         self.stateful_metrics = self._process_stateful_metrics(stateful_metrics)
         self._values = collections.OrderedDict()  # OrderedDict([('loss', [11.60657262802124, 5]), ('acc', [0.25, 5])])
         if self.interval is not None:
             self._oversize_values = deque(maxlen=self.interval)
-        self._seen_so_far = 0
+        self.seen_so_far = seen_so_far
     
     @staticmethod
     def _process_stateful_metrics(stateful_metrics:Union[str, set, tuple, list]=None):
@@ -230,16 +230,16 @@ class SmoothMetric:
             elif (k in NO_SMOOTH_METRICS) or (k in self.stateful_metrics):
                 self._values[k] = [v, 1]
             elif k not in self._values:
-                self._values[k] = [v * (current - self._seen_so_far), current - self._seen_so_far]                    
+                self._values[k] = [v * (current - self.seen_so_far), current - self.seen_so_far]                    
             else:
-                self._values[k][0] += v * (current - self._seen_so_far)
-                self._values[k][1] += (current - self._seen_so_far)
+                self._values[k][0] += v * (current - self.seen_so_far)
+                self._values[k][1] += (current - self.seen_so_far)
                 # 滑动平均, 把超出interval的的指标减去
                 if hasattr(self, '_oversize_value') and k in self._oversize_value:
                     self._values[k][0] -= self._oversize_value[k]
                     self._values[k][1] -= 1  # 这里理论上应该也是current - self._seen_so_far
             
-        self._seen_so_far = current
+        self.seen_so_far = current
         return self._values
 
     def reset(self):
@@ -256,7 +256,7 @@ class SmoothMetric:
         return smooth_logs
 
     def add(self, n, values=None):
-        self.update(self._seen_so_far + n, values)
+        self.update(self.seen_so_far + n, values)
 
 
 class SmoothMetricsCallback(Callback):
@@ -268,11 +268,12 @@ class SmoothMetricsCallback(Callback):
     :param interval: int, 平滑时候使用的的step个数
     :param stateful_metrics: list, 以状态量记录指标的格式
     '''
-    def __init__(self, interval:int=100, stateful_metrics:Union[str, set, tuple, list]=None, verbose:int=0, **kwargs):
+    def __init__(self, interval:int=100, stateful_metrics:Union[str, set, tuple, list]=None, seen_so_far:int=0, verbose:int=0, **kwargs):
         super(SmoothMetricsCallback, self).__init__(**kwargs)
         self.interval = interval
         self.stateful_metrics = stateful_metrics
-        self.smooth_metric_step = SmoothMetric(interval=self.interval, stateful_metrics=self.stateful_metrics)
+        self.seen_so_far = seen_so_far
+        self.smooth_metric_step = SmoothMetric(interval=self.interval, stateful_metrics=self.stateful_metrics, seen_so_far=self.seen_so_far)
         if verbose != 0:
             log_info(f'SmoothMetricCallback calculate {interval} steps average metrics')
 
@@ -807,10 +808,6 @@ class Checkpoint(Callback):
     '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存, 也可以保存最近/最优的ckpt
 
     :param save_dir: str, 保存的文件夹, 只定义即可按照默认的文件名保存
-    :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
-    :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
-    :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
-    :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param epoch_or_step: str, 按照轮次保存还是按照步数保存, 默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     :param max_save_count: int, 最大保存的权重的个数
@@ -818,21 +815,26 @@ class Checkpoint(Callback):
     :param min_max: str, 指示指标的优化方向
     :param save_train_end: bool, 训练结束后是否保存ckpt
 
+    > 可选参数
+    :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
+    :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
+    
     Example
     ---------------
     >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}')
     '''
-    def __init__(self, save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None, steps_params_path:str=None, 
-                 epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, monitor:str=None, 
-                 min_max:Literal['max', 'min']='min', save_on_train_end:bool=False, **kwargs):
+    def __init__(self, save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, 
+                 monitor:str=None, min_max:Literal['max', 'min']='min', save_on_train_end:bool=False, **kwargs):
         super().__init__(**kwargs)
         assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
         self.epoch_or_step = epoch_or_step
         self.save_dir = save_dir  # 保存文件夹
-        self.model_path = model_path  # 保存路径, 可设置{epoch}{step}{loss}等占位符
-        self.optimizer_path = optimizer_path  # 是否保存优化器
-        self.scheduler_path = scheduler_path  # 是否保存scheduler
-        self.steps_params_path = steps_params_path  # 是否保存训练步数
+        self.save_paths = {}
+        for i in ['model_path', 'optimizer_path', 'scheduler_path', 'steps_params_path']:
+            if i in kwargs:
+                self.save_paths[i] = kwargs.pop(i)
         self.interval = interval  # epoch_or_step='step'时候生效
         self.verbose = verbose
         self.max_save_count = max_save_count  # 最大保存的权重的个数
@@ -853,23 +855,28 @@ class Checkpoint(Callback):
         if (self.epoch_or_step == 'step') and ((global_step+1) % self.interval == 0):
             self.process(global_step+1, logs)
 
+    @staticmethod
+    def replace_placeholder(filepath:Union[str, list, dict], epoch_suffix, step_suffix, **logs):
+        if filepath is None:
+            pass
+        elif isinstance(filepath, str):
+            filepath = filepath.format(epoch=epoch_suffix, step=step_suffix, **logs)
+        elif isinstance(filepath, list):
+            filepath = [i.format(epoch=epoch_suffix, step=step_suffix, **logs) for i in filepath]
+        elif isinstance(filepath, dict):
+            filepath = {k:v.format(epoch=epoch_suffix, step=step_suffix, **logs) for k, v in filepath.items()}
+        return filepath
+    
     def on_train_end(self, logs: dict = None):
         if self.save_train_end:
-            file_paths = []
-            for filepath in [self.save_dir, self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
-                if filepath:
-                    filepath = filepath.format(epoch='final', step='final', **logs)
-                file_paths.append(filepath)
-            self.trainer.save_to_checkpoint(*file_paths, verbose=self.verbose, **self.kwargs)
+            self.trainer.save_to_checkpoint(self.replace_placeholder(self.save_dir, epoch_suffix='final', step_suffix='final', **logs), 
+                                            verbose=self.verbose, **self.kwargs,
+                                            **self.replace_placeholder(self.save_paths, epoch_suffix='final', step_suffix='final', **logs))
 
     def process(self, suffix:int, logs:dict):
-        file_paths = []
-        for filepath in [self.save_dir, self.model_path, self.optimizer_path, self.scheduler_path, self.steps_params_path]:
-            if filepath:
-                filepath = filepath.format(epoch=suffix, **logs) if self.epoch_or_step == 'epoch' else filepath.format(step=suffix, **logs)
-            file_paths.append(filepath)
-
-        self.trainer.save_to_checkpoint(*file_paths, verbose=self.verbose, **self.kwargs)
+        self.trainer.save_to_checkpoint(self.replace_placeholder(self.save_dir, epoch_suffix=suffix, step_suffix=suffix, **logs), 
+                                        verbose=self.verbose, **self.kwargs,
+                                        **self.replace_placeholder(self.save_paths, epoch_suffix=suffix, step_suffix=suffix, **logs))
         if self.max_save_count is not None:
             file_paths = tuple(file_paths)
             if file_paths not in self.save_history:
@@ -920,20 +927,21 @@ class Evaluator(Checkpoint):
     :param epoch_or_step: str, 控制是按照epoch还是step来计算, 默认为'epoch', 可选{'step', 'epoch'}
     :param baseline: None/float, 基线, 默认为None 
     :param save_dir: str, 保存的文件夹, 只定义即可按照默认的文件名保存
+    :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
+    
+    > 可选参数
     :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
-    :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
-
+    
     Example
     ------------------
     >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/')  # 最简单的使用
     '''
     def __init__(self, monitor:str='perf', min_max:Literal['max', 'min']='max', verbose:int=2, 
-                 save_dir:str=None, model_path:str=None, optimizer_path:str=None, scheduler_path:str=None,
-                 steps_params_path:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
-        super().__init__(save_dir, model_path, optimizer_path, scheduler_path, steps_params_path, epoch_or_step, interval, **kwargs)
+                 save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
+        super().__init__(save_dir, epoch_or_step, interval, **kwargs)
         self.monitor = monitor
         assert min_max in {'max', 'min'}, 'Compare performance only support `max/min`'
         self.min_max = min_max
@@ -1143,19 +1151,19 @@ class SystemStateCallback(Tensorboard):
         for pid in self.pids:
             p = self.psutil.Process(pid)
             # CPU使用情况
-            logs[f"Pid_{pid}/CPU Percent"] = p.cpu_percent(interval=0.5)
+            logs[f"Pid_{pid}/CPU-Percent"] = p.cpu_percent(interval=0.5)
 
             # 内存使用情况
-            logs[f"Pid_{pid}/Memory Percent"] = p.memory_percent()
-            logs[f"Pid_{pid}/Memory RSS G_byte"] = p.memory_info().rss/G
-            logs[f"Pid_{pid}/Memory VMS G_byte"] = p.memory_info().vms/G
+            logs[f"Pid_{pid}/Memory-Percent"] = p.memory_percent()
+            logs[f"Pid_{pid}/Memory-RSS-G_byte"] = p.memory_info().rss/G
+            logs[f"Pid_{pid}/Memory-VMS-G_byte"] = p.memory_info().vms/G
 
             # 进程IO信息
             data = p.io_counters()
-            logs[f"Pid_{pid}/IO read M_byte"] = data.read_bytes/1024
-            logs[f"Pid_{pid}/IO write M_byte"] = data.write_bytes/1024
-            logs[f"Pid_{pid}/IO readRate M_byte_s"] = (data.read_bytes - self.pre_read[pid])/(now_time-self.pre_time)/1024
-            logs[f"Pid_{pid}/IO writeRate M_byte_s"] = (data.write_bytes - self.pre_write[pid])/(now_time-self.pre_time)/1024
+            logs[f"Pid_{pid}/IO-read-M_byte"] = data.read_bytes/1024
+            logs[f"Pid_{pid}/IO-write-M_byte"] = data.write_bytes/1024
+            logs[f"Pid_{pid}/IO-readRate-M_byte_s"] = (data.read_bytes - self.pre_read[pid])/(now_time-self.pre_time)/1024
+            logs[f"Pid_{pid}/IO-writeRate-M_byte_s"] = (data.write_bytes - self.pre_write[pid])/(now_time-self.pre_time)/1024
             self.pre_read[pid] = data.read_bytes
             self.pre_write[pid] = data.write_bytes
         self.pre_time = now_time
@@ -1180,9 +1188,9 @@ class SystemStateCallback(Tensorboard):
             tesorboard_info['gpu_mem_util'] = UTIL.memory
             tesorboard_info_list.append(copy.deepcopy(tesorboard_info))
         for tesorboard_info,i in zip(tesorboard_info_list, device_list):
-            logs[f'GPU/Gpu{i} mem_used unit_G'] = tesorboard_info['gpu_mem_used']
-            logs[f'GPU/Gpu{i} gpu_util'] = tesorboard_info['gpu_gpu_util']
-            logs[f'GPU/Gpu{i} mem_util'] = tesorboard_info['gpu_mem_util']
+            logs[f'GPU/Gpu{i}-mem_used-unit_G'] = tesorboard_info['gpu_mem_used']
+            logs[f'GPU/Gpu{i}-gpu_util'] = tesorboard_info['gpu_gpu_util']
+            logs[f'GPU/Gpu{i}-mem_util'] = tesorboard_info['gpu_mem_util']
 
         for k, v in logs.items():
             self.writer.add_scalar(k, v, iteration)
