@@ -338,7 +338,7 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
     elif isinstance(arguments, list):
         for argument in arguments:
             if argument.startswith('-') and ('=' not in argument):
-                parser.add_argument(f'--{argument.lstrip('-')}')
+                parser.add_argument(f"--{argument.lstrip('-')}")
     elif isinstance(arguments, dict):
         for argument, kwargs in arguments.items():
             parser.add_argument(f'--{argument}',  **kwargs)
