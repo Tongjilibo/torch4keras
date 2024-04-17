@@ -14,6 +14,7 @@ import math
 from typing import Literal, Union, List
 import shutil
 import traceback
+import torch
 
 
 # 忽略nan的指标
@@ -192,7 +193,12 @@ class Callback(object):
 
 
 class SmoothMetric:
-    '''指标平滑'''
+    '''指标平滑
+    
+    :param interval: int, 平滑时候使用的的step个数
+    :param stateful_metrics: list, 以状态量记录指标的格式
+    :param seen_so_far: int, 平滑起始点
+    '''
     def __init__(self, interval:int=None, stateful_metrics:Union[str, set, tuple, list]=None, seen_so_far=0) -> None:
         self.interval = interval
         self.stateful_metrics = self._process_stateful_metrics(stateful_metrics)
@@ -583,7 +589,12 @@ class EarlyStopping(Callback):
 
        Example
        ----------------
-       early_stop = EarlyStopping(monitor='test_acc', verbose=1)
+       >>> # 如果连续3个epoch, test_acc还没有继续增长则停止训练
+       >>> early_stop = EarlyStopping(monitor='test_acc', verbose=1, epoch_or_step='epoch', patience=3, min_max='max')
+       >>>
+       >>> # 如果连续100个steps, loss还未继续下降则停止训练
+       >>> early_stop = EarlyStopping(monitor='loss', verbose=1, epoch_or_step='step', patience=100, min_max='min')
+
     '''
     def __init__(self, monitor:str='perf', min_delta:float=0, patience:int=0, verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', 
                  epoch_or_step:Literal['epoch', 'step']='epoch', baseline:float=None, restore_best_weights:bool=False, **kwargs):
@@ -805,17 +816,18 @@ class RemoteMonitor(Callback):
 
 
 class Checkpoint(Callback):
-    '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存, 也可以保存最近/最优的ckpt
+    '''保存Checkpoint, 可以每个epoch或者每隔一定的steps保存, 也可以保存最近/最优的ckpt(weights/optimizer/scheduler/steps_params)
 
     :param save_dir: str, 保存的文件夹, 只定义即可按照默认的文件名保存
     :param epoch_or_step: str, 按照轮次保存还是按照步数保存, 默认为'epoch'表示每个epoch保存一次, 可选['epoch', 'step'] 
     :param interval: int, epoch_or_step设置为'step'时候指定每隔多少步数保存模型, 默认为100表示每隔100步保存一次
     :param max_save_count: int, 最大保存的权重的个数
-    :param monitor: str, 跟踪的指标
+    :param max_save_count_path: str, 历史保存的ckpt的路径和指标记录, 如果是断点续训可以开启, 减少保存的冗余ckpt数量
+    :param monitor: str, 监控的指标, 当max_save_count_path不为None且monitor为None表示最近的ckpt, monitor不为None表示最优的ckpt
     :param min_max: str, 指示指标的优化方向
-    :param save_train_end: bool, 训练结束后是否保存ckpt
+    :param save_on_train_end: bool, 训练结束后是否保存ckpt
 
-    > 可选参数
+    > 可选参数, 用于具体指定每个文件保存, 一般推荐直接指定save_dir即可
     :param model_path: str, 模型保存路径(含文件名), 可以使用{epoch}和{step}占位符
     :param optimizer_path: str, 优化器保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
@@ -823,26 +835,50 @@ class Checkpoint(Callback):
     
     Example
     ---------------
-    >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}')
+    >>> # 每个epoch结束时保存
+    >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}', epoch_or_step='epoch')
+    >>>
+    >>> # 每隔1000个steps保存
+    >>> ckpt = Checkpoint(save_dir='./ckpt/{step}', epoch_or_step='step', interval=1000)
+    >>>
+    >>> # 保存loss最小的3个权重
+    >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}', epoch_or_step='epoch', monitor='loss', min_max='min', max_save_count=3)
+    >>>
+    >>> # 保存最近的3个权重
+    >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}', epoch_or_step='epoch', monitor=None, max_save_count=3)
+    >>>
+    >>> # 保存文件夹名称中含指标名, 方便查看
+    >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}_{loss}')
     '''
-    def __init__(self, save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, verbose:int=0, max_save_count:int=None, 
-                 monitor:str=None, min_max:Literal['max', 'min']='min', save_on_train_end:bool=False, **kwargs):
+    def __init__(self, save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, monitor:str=None, 
+                 min_max:Literal['max', 'min']='min', verbose:int=0, max_save_count:int=None, max_save_count_path:str=None, 
+                 save_on_train_end:bool=False, **kwargs):
         super().__init__(**kwargs)
         assert epoch_or_step in {'step', 'epoch'}, 'Args `epoch_or_step` only support `step` or `epoch`'
         self.epoch_or_step = epoch_or_step
-        self.save_dir = save_dir  # 保存文件夹
-        self.save_paths = {}
+        self.save_dir = save_dir  # 保存文件夹（推荐）
+        self.save_paths = {}  # 具体指定各自保存的路径
         for i in ['model_path', 'optimizer_path', 'scheduler_path', 'steps_params_path']:
             if i in kwargs:
                 self.save_paths[i] = kwargs.pop(i)
         self.interval = interval  # epoch_or_step='step'时候生效
         self.verbose = verbose
-        self.max_save_count = max_save_count  # 最大保存的权重的个数
         self.monitor = monitor
         self.min_max = min_max
-        self.save_history = []
-        self.save_history_monitor = []
-        self.save_train_end = save_on_train_end
+        self.max_save_count = max_save_count  # 最大保存的权重的个数
+        self.max_save_count_path = max_save_count_path
+        if self.max_save_count is not None:
+            # 记录保存的文件路径历史，用于保存最近/最优的ckpt
+            # 保存成文件目的：如果训练中间断掉，后续重启后还能保存断之前的状态，否则会重新保存最优/最近的几个文件
+            if self.max_save_count_path is not None and os.path.exists(self.max_save_count_path):
+                tmp = torch.load(self.max_save_count_path)
+                self.save_history = tmp['save_history']
+                self.save_history_monitor = tmp['save_history_monitor']
+                log_info(f'Resume save_history from {self.max_save_count_path}')
+            else:
+                self.save_history = []
+                self.save_history_monitor = []
+        self.save_on_train_end = save_on_train_end
         self.kwargs = kwargs
     
     def on_epoch_end(self, global_step:int, epoch:int, logs:dict=None):
@@ -868,7 +904,7 @@ class Checkpoint(Callback):
         return filepath
     
     def on_train_end(self, logs: dict = None):
-        if self.save_train_end:
+        if self.save_on_train_end:
             self.trainer.save_to_checkpoint(self.replace_placeholder(self.save_dir, epoch_suffix='final', step_suffix='final', **logs), 
                                             verbose=self.verbose, **self.kwargs,
                                             **self.replace_placeholder(self.save_paths, epoch_suffix='final', step_suffix='final', **logs))
@@ -889,12 +925,16 @@ class Checkpoint(Callback):
                     else:
                         log_warn_once(f'Args `monitor`={self.monitor} not in logs')
             self.remove_oversize_checkpoints()
+            # 保存历史ckpt的记录
+            if self.max_save_count_path is not None:
+                os.makedirs(os.path.dirname(self.max_save_count_path), exist_ok=True)
+                torch.save({'save_history': self.save_history, 'save_history_monitor': self.save_history_monitor}, self.max_save_count_path)
     
     def remove_oversize_checkpoints(self):
         '''删除超出size的文件'''
         if len(self.save_history) > self.max_save_count:
             # 删除oldest的ckpt
-            split_index = len(self.save_history)-self.max_save_count
+            split_index = len(self.save_history) - self.max_save_count
             if len(self.save_history_monitor) == 0:
                 drop_list = list(range(0, split_index))
             # 删除指标最差的ckpt
@@ -921,7 +961,7 @@ class Checkpoint(Callback):
 
 
 class Evaluator(Checkpoint):
-    '''评估: 可以每个epoch或者每隔一定的steps进行评估, 并可保存最优Checkpoint
+    '''评估: 可以每个epoch或者每隔一定的steps进行评估, 并可保存最优Checkpoint, 一般需要继承使用
 
     :param monitor: str, 监控指标, 需要在logs中, 默认为'perf'
     :param verbose: int, 是否打印, 默认为2表示打印
@@ -939,7 +979,16 @@ class Evaluator(Checkpoint):
     
     Example
     ------------------
-    >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/')  # 最简单的使用
+    >>> class MyEvaluator(Evaluator):
+    >>> def evaluate(self):
+    >>>     test_acc = random.random()  # 计算逻辑示例
+    >>>     return {'test_acc': test_acc}
+    >>>
+    >>> # 每个epoch进行评估, 并保存test_acc最大的ckpt权重
+    >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/', min_max='max', epoch_or_step='epoch')
+    >>>
+    >>> # 每隔1000个steps进行评估, 并保存test_acc最大的ckpt权重
+    >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/', min_max='max', epoch_or_step='step', interval=1000)
     '''
     def __init__(self, monitor:str='perf', min_max:Literal['max', 'min']='max', verbose:int=2, 
                  save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
@@ -995,7 +1044,8 @@ class Logger(Callback):
 
     Example
     ---------------------
-    >>> logger = Logger('./ckpt/log.log')
+    >>> # 每隔100个step记录下当前指标
+    >>> logger = Logger('./ckpt/log.log', interval=100)
     '''
     def __init__(self, log_path:str, interval:int=100, mode:Literal['a', 'w']='a', separator:str='\t', 
                  level:Literal['DEBUG','INFO','WARNING','ERROR','CRITICAL']='DEBUG', name:str='root', **kwargs):
@@ -1374,7 +1424,12 @@ class EmailCallback(Callback):
 
     Example
     ----------------------
-    >>> email = EmailCallback(mail_receivers='tongjilibo@163.com')  # 发送邮件
+    >>> # 每个epoch结束后, 使用默认邮箱把对应的指标发送到指定邮箱
+    >>> email = EmailCallback(mail_receivers='tongjilibo@163.com', epoch_or_step='epoch')
+    >>>
+    >>> # 每个epoch结束后, 使用自定义邮箱把对应的指标发送到指定邮箱
+    >>> email = EmailCallback(mail_receivers='tongjilibo@163.com', epoch_or_step='epoch', 
+    mail_host='smtp.163.com', mail_user='bert4torch', mail_pwd='VDSGQEHFXDZOCVEH', mail_sender='bert4torch@163.com')
     '''
     def __init__(self, mail_receivers:Union[str,list], mail_subject:str='', epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, 
                  mail_host:str=None, mail_user:str=None, mail_pwd:str=None, mail_sender:str=None, **kwargs):

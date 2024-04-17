@@ -19,6 +19,37 @@ class Trainer:
     '''Trainer, 传入Module实例
 
     :param module: None/nn.Module, nn.Module()的模型实例
+
+    Example
+    -------------------
+    >>> import torch
+    >>> import torch.nn as nn
+    >>> import torch.optim as optim
+    >>> import torchvision
+    >>> from torch4keras.model import Trainer
+    >>> from torch.utils.data import TensorDataset, DataLoader
+    >>> 
+    >>> device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    >>> 
+    >>> # 读取数据
+    >>> mnist = torchvision.datasets.MNIST(root='./', download=True)
+    >>> x, y = mnist.train_data.unsqueeze(1).to(device).float() / 255.0, mnist.train_labels.to(device)
+    >>> train_dataloader = DataLoader(TensorDataset(x, y), batch_size=8)
+    >>> 
+    >>> # 准备模型
+    >>> net = torch.nn.Sequential(
+    >>>             nn.Conv2d(1, 32, kernel_size=3), nn.ReLU(),
+    >>>             nn.MaxPool2d(2, 2), 
+    >>>             nn.Conv2d(32, 64, kernel_size=3), nn.ReLU(),
+    >>>             nn.Flatten(),
+    >>>             nn.Linear(7744, 10)
+    >>>         )
+    >>> 
+    >>> model = Trainer(net.to(device))
+    >>> model.compile(optimizer=optim.Adam(net.parameters()), loss=nn.CrossEntropyLoss())
+    >>>
+    >>> # 模型开始训练
+    >>> model.fit(train_dataloader, steps_per_epoch=None, epochs=5)
     '''
     def __init__(self, module:nn.Module=None):
         super(Trainer, self).__init__()
@@ -130,6 +161,9 @@ class Trainer:
     def device(self, value):
         '''允许修改self.device'''
         self._device = value
+
+    def to_device(self, device:Union[str, torch.device, int]):
+        self.unwrap_model().to(device)
 
     def _move_to_model_device(self, inputs:Union[torch.Tensor, tuple, list, dict]):
         '''遍历并转移到model.device上（递归）'''

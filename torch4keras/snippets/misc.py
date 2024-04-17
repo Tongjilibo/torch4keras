@@ -321,10 +321,10 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
 
     Example
     -----------------------
-    args = argument_parse()
-    args = argument_parse('deepspeed')
-    args = argument_parse(['deepspeed'])
-    args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
+    >>> args = argument_parse()
+    >>> args = argument_parse('deepspeed')
+    >>> args = argument_parse(['deepspeed'])
+    >>> args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
     '''
     import argparse
     parser = argparse.ArgumentParser(description=description)
