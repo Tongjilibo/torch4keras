@@ -87,21 +87,27 @@ class DeepSpeedTrainer(Trainer):
     def step(self):
         self.deepspeed_engine.step()
 
-    def resume_from_checkpoint(self, *args, **kwargs):
+    def resume_from_checkpoint(self, *args, verbose:int=1, **kwargs):
         from deepspeed import DeepSpeedEngine
         kwargs_ = {
             k: v for k, v in kwargs.items() if k in inspect.signature(DeepSpeedEngine.load_checkpoint).parameters
         }
         save_dir = args[0] if len(args) > 0 else kwargs['save_dir']
-        return self.deepspeed_engine.load_checkpoint(save_dir, **kwargs_)
+        self.deepspeed_engine.load_checkpoint(save_dir, **kwargs_)
+        self.load_steps_params(os.path.join(save_dir, 'steps_params.pt'))
+        if verbose == 1:
+            log_info('Successfuly resume training checkpoint')
 
-    def save_to_checkpoint(self, *args, **kwargs):
+    def save_to_checkpoint(self, *args, verbose:int=0, **kwargs):
         from deepspeed import DeepSpeedEngine
         kwargs_ = {
             k: v for k, v in kwargs.items() if k in inspect.signature(DeepSpeedEngine.save_checkpoint).parameters
         }
         save_dir = args[0] if len(args) > 0 else kwargs['save_dir']
-        return self.deepspeed_engine.save_checkpoint(save_dir, **kwargs_)
+        self.deepspeed_engine.save_checkpoint(save_dir, **kwargs_)
+        self.save_steps_params(os.path.join(save_dir, 'steps_params.pt'))
+        if verbose == 1:
+            log_info('Successfuly save training checkpoint')
 
 
 class DeepSpeedArgs():
