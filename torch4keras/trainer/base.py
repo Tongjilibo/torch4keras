@@ -156,7 +156,7 @@ class Trainer:
         '''
         return self._argparse_forward(self.unwrap_model(), *inputs, **input_kwargs)
 
-    def _argparse_forward(self, model, *inputs, **input_kwargs):
+    def _argparse_forward(self, model:nn.Module, *inputs, **input_kwargs):
         '''调用模型的forward
         如果传入了网络结构module, 则调用module的forward; 如果是继承方式, 则调用自身的forward
         这里声明为staticmethod的话, 使用add_trainer会有问题

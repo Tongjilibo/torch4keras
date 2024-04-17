@@ -874,11 +874,13 @@ class Checkpoint(Callback):
                                             **self.replace_placeholder(self.save_paths, epoch_suffix='final', step_suffix='final', **logs))
 
     def process(self, suffix:int, logs:dict):
-        self.trainer.save_to_checkpoint(self.replace_placeholder(self.save_dir, epoch_suffix=suffix, step_suffix=suffix, **logs), 
-                                        verbose=self.verbose, **self.kwargs,
-                                        **self.replace_placeholder(self.save_paths, epoch_suffix=suffix, step_suffix=suffix, **logs))
+        save_dir = self.replace_placeholder(self.save_dir, epoch_suffix=suffix, step_suffix=suffix, **logs)
+        save_paths = self.replace_placeholder(self.save_paths, epoch_suffix=suffix, step_suffix=suffix, **logs)
+        self.trainer.save_to_checkpoint(save_dir, verbose=self.verbose, **self.kwargs, **save_paths)
+
+        # 删除超出size的文件
         if self.max_save_count is not None:
-            file_paths = tuple(file_paths)
+            file_paths = tuple([save_dir] + list(save_paths.values()))
             if file_paths not in self.save_history:
                 self.save_history.append(file_paths)
                 if self.monitor is not None:
@@ -903,7 +905,7 @@ class Checkpoint(Callback):
                 else:
                     drop_list = sorted_idx[::-1][:split_index]  # 删除指标最大的
 
-            for item in [self.save_history[i] for i in drop_list]:
+            for item in [self.save_history[d_i] for d_i in drop_list]:
                 for i in item:
                     if i is None:
                         continue
