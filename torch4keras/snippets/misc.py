@@ -1,14 +1,20 @@
 import numpy as np
-import torch
-from torch import nn, Tensor
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import os
 import random
 from .log import log_info, log_warn, log_error, log_warn_once, print_table
 from .monitor import format_timestamp, format_time
+from .import_utils import is_torch_available
 import json
 import time
 import sys
+
+if is_torch_available():
+    import torch
+    from torch import Tensor
+    from torch.nn import Module
+else:
+    Tensor, Module = object, object
 
 
 def seed_everything(seed:int=None):
@@ -33,7 +39,7 @@ def seed_everything(seed:int=None):
     return seed
 
 
-def print_trainable_parameters(module:nn.Module):
+def print_trainable_parameters(module:Module):
     '''打印可训练的参数量'''
     trainable_params = 0
     all_param = 0
@@ -56,7 +62,7 @@ def get_parameter_device(parameter):
     except StopIteration:
         # For nn.DataParallel compatibility in PyTorch 1.5
 
-        def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
+        def find_tensor_attributes(module: Module) -> List[Tuple[str, Tensor]]:
             tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
             return tuples
 
@@ -182,7 +188,7 @@ def auto_set_cuda_devices(best_num: Optional[int] = None) -> str:
     return topk_idx_str
 
 
-def find_tied_parameters(model: nn.Module, **kwargs):
+def find_tied_parameters(model: Module, **kwargs):
     """ copyed from accelerate
     Find the tied parameters in a given model.
 
@@ -194,7 +200,7 @@ def find_tied_parameters(model: nn.Module, **kwargs):
     </Tip>
 
     Args:
-        model (`torch.nn.Module`): The model to inspect.
+        model (`torch.Module`): The model to inspect.
 
     Returns:
         List[List[str]]: A list of lists of parameter names being all tied together.
@@ -353,3 +359,9 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
     if dot is True:
         args = tran2dottableDict(vars(args))
     return args
+
+
+class AnyClass:
+    '''主要用于import某个包不存在时候，作为类的替代'''
+    def __init__(self, *args, **kwargs) -> None:
+        pass

@@ -1,13 +1,18 @@
 import numpy as np
-import torch
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from packaging import version
-from torch.utils.data import Dataset, IterableDataset
 import inspect
-from .import_utils import is_safetensors_available, is_sklearn_available
+from .import_utils import is_safetensors_available, is_sklearn_available, is_torch_available
 import os
-from torch import nn
 
+
+if is_torch_available():
+    import torch
+    from torch.utils.data import Dataset, IterableDataset
+    from torch import nn, Tensor
+    from torch.nn import Module
+else:
+    Tensor, Module, Dataset, IterableDataset = object, object, object, object
 
 if is_safetensors_available():
     from safetensors import safe_open
@@ -20,7 +25,7 @@ else:
     roc_auc_score = None
 
 
-def take_along_dim(input_tensor:torch.Tensor, indices:torch.Tensor, dim:int=None):
+def take_along_dim(input_tensor:Tensor, indices:Tensor, dim:int=None):
     '''兼容部分低版本pytorch没有torch.take_along_dim
     '''
     if version.parse(torch.__version__) > version.parse('1.8.1'):
@@ -36,7 +41,7 @@ def take_along_dim(input_tensor:torch.Tensor, indices:torch.Tensor, dim:int=None
         return res
 
 
-def torch_div(input:torch.Tensor, other:torch.Tensor, rounding_mode:Optional[str] = None):
+def torch_div(input:Tensor, other:Tensor, rounding_mode:Optional[str] = None):
     ''' torch.div兼容老版本
     '''
     if version.parse(torch.__version__) < version.parse('1.7.2'):
@@ -54,7 +59,7 @@ def softmax(x:np.ndarray, axis:int=-1):
     return x / x.sum(axis=axis, keepdims=True)
 
 
-def search_layer(model:nn.Module, layer_name:str, retrun_first:bool=True):
+def search_layer(model:Module, layer_name:str, retrun_first:bool=True):
     '''根据layer_name搜索并返回参数/参数list
     '''
     return_list = []
@@ -142,14 +147,14 @@ def set_precision(num:float, dense_round:int=1):
     return num
 
 
-def metric_mapping(metric:str, func:Callable, y_pred:Union[torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor]], 
-                   y_true:Union[torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor]]):
+def metric_mapping(metric:str, func:Callable, y_pred:Union[Tensor, List[Tensor], Tuple[Tensor]], 
+                   y_true:Union[Tensor, List[Tensor], Tuple[Tensor]]):
     '''metric的计算
 
     :param metric: str, 自带metrics的名称
     :param func: function, 透传的用户自定的计算指标的函数
-    :param y_pred: torch.Tensor, 样本的预测结果
-    :param y_true: torch.Tensor, 样本的真实结果
+    :param y_pred: Tensor, 样本的预测结果
+    :param y_true: Tensor, 样本的真实结果
     '''
     # 自定义metrics
     if inspect.isfunction(func):

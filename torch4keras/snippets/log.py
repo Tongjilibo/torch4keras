@@ -135,8 +135,8 @@ class SimpleStreamFileLogger(object):
         else:
             raise ValueError('Args `date_format` only support subdir|prefix|suffix.')
 
-        if (save_dir := os.path.dirname(self.file)) != '':
-            os.makedirs(save_dir, exist_ok=True)
+        if os.path.dirname(self.file) != '':
+            os.makedirs(os.path.dirname(self.file), exist_ok=True)
 
         # 创建日志器
         self.log = logging.getLogger(self.file_name)
@@ -228,8 +228,8 @@ class LoggerHandler(logging.Logger):
         # 文件流输出
         if log_path is None:
             return
-        if (dirname := os.path.dirname(log_path)) != '':
-            os.makedirs(dirname, exist_ok=True)
+        if os.path.dirname(log_path) != '':
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
         if 'FileHander' in handles:
             file_handle = logging.FileHandler(filename=log_path, mode='a', encoding='utf-8')
         elif 'RotatingFileHandler' in handles:

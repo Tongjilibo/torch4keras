@@ -406,11 +406,12 @@ class Trainer:
                            mail_user=mail_user_, mail_pwd=mail_pwd_, mail_sender=mail_sender_)
 
             # 训练异常则保存权重
-            if (save_ckpt_dir_when_error := kwargs.get('save_ckpt_dir_when_error')) is not None:
-                self.save_to_checkpoint(save_ckpt_dir_when_error, verbose=verbose, **kwargs)
+            if kwargs.get('save_ckpt_dir_when_error') is not None:
+                self.save_to_checkpoint(kwargs['save_ckpt_dir_when_error'], verbose=verbose, **kwargs)
 
             # 训练异常则打印当前batch
-            if (save_batch_path_when_error := kwargs.get('save_batch_path_when_error')) is not None:
+            save_batch_path_when_error = kwargs.get('save_batch_path_when_error')
+            if save_batch_path_when_error is not None:
                 os.makedirs(os.path.dirname(save_batch_path_when_error), exist_ok=True)
                 torch.save({'train_X': self.train_X.cpu(), 'train_y': self.train_y.cpu()}, save_batch_path_when_error)
             

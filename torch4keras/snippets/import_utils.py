@@ -26,6 +26,10 @@ def is_package_available(pkg_name: str, return_version: bool = False) -> Union[T
         return package_exists
 
 
+def is_torch_available():
+    return is_package_available("torch")
+
+
 def is_safetensors_available():
     return is_package_available("safetensors")
 
