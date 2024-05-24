@@ -55,14 +55,15 @@ def format_time(eta:Union[int, float], hhmmss=True):
 def timeit(func):
     '''装饰器, 计算函数消耗的时间
     
-    Example
-    --------------------------------------
+    Examples:
+    ```python
     >>> @timeit
     >>> def main(n=10):
-    >>>     for i in range(n):
-    >>>         time.sleep(0.01)
+    ...     for i in range(n):
+    ...         time.sleep(0.01)
 
     >>> main(10)
+    ```
     '''
     def warpper(*args, **kwargs):
         start = time.time()
@@ -80,16 +81,17 @@ def timeit(func):
 class Timeit:
     '''上下文管理器, 记录耗时/平均耗时
 
-    Example
-    ----------------------
+    Examples:
+    ```python
     >>> from torch4keras.snippets import Timeit
     >>> with Timeit() as ti:
-    >>>     for i in range(10):
-    >>>         time.sleep(0.1)
-    >>>         # ti.lap(name=i, reset=False)  # 统计累计耗时
-    >>>         # ti.lap(name=i, reset=True)  # 统计间隔耗时
-    >>>         # ti.lap(count=10, name=i, restart=True)  # 统计每段速度
-    >>>     # ti(10) # 统计速度
+    ...     for i in range(10):
+    ...         time.sleep(0.1)
+    ...         # ti.lap(name=i, reset=False)  # 统计累计耗时
+    ...         # ti.lap(name=i, reset=True)  # 统计间隔耗时
+    ...         # ti.lap(count=10, name=i, restart=True)  # 统计每段速度
+    ...     # ti(10) # 统计速度
+    ```
     '''
     def __enter__(self, template='Average speed: {:.2f}/s'):
         self.count = None
@@ -140,13 +142,14 @@ class Timeit:
 class Timeit2:
     '''记录耗时
 
-    Example
-    ----------------------
+    Examples:
+    ```python
     >>> ti = Timeit2()
     >>> for i in range(10):
-    >>>     time.sleep(0.1)
-    >>>     ti.lap(name=i)
+    ...     time.sleep(0.1)
+    ...     ti.lap(name=i)
     >>> ti.end() # 打印各个步骤时长
+    ```
     '''
     def __init__(self):
         self.reset()
@@ -235,12 +238,13 @@ def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str=""
 
 def email_when_error(receivers:Union[str,list], **configs):
     '''装饰器, 异常则发邮件
-    Example:
-    --------
+    Examples:
+    ```python
     >>> @email_when_error(receivers='tongjilibo@163.com')
     >>> def test():
-    >>>     return 1/0
+    ...     return 1/0
     >>> test()  # 调用
+    ```
     '''
     def actual_decorator(func):
         def new_func(*args, **kwargs):
@@ -262,9 +266,10 @@ def watch_system_state(log_dir:str, gpu_id_list:List[int]=None, pids:Union[int,L
     :param gpu_id_list: List[int], 监控的gpu
     :param pids: int/List[int], 监控的进程号
 
-    Example:
-    --------
+    Examples:
+    ```python
     >>> watch_system_state(log_dir='./system_states')
+    ```
     '''
     import psutil
     import pynvml

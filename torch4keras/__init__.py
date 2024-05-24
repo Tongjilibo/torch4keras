@@ -9,4 +9,4 @@ if is_torch_available():
         nn.Module.compile_torch = nn.Module.compile
         del nn.Module.compile
 else:
-    log_warn("PyTorch have not been found. only snippets can be used.")
+    log_warn("PyTorch have not been found. Models won't be available and only snippets can be used.")

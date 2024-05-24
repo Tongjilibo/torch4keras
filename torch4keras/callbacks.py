@@ -587,13 +587,14 @@ class EarlyStopping(Callback):
        :param baseline: None/float, 基线, 默认为None 
        :param restore_best_weights: bool, stopping时候是否恢复最优的权重, 默认为False
 
-       Example
-       ----------------
+       Examples:
+       ```python
        >>> # 如果连续3个epoch, test_acc还没有继续增长则停止训练
        >>> early_stop = EarlyStopping(monitor='test_acc', verbose=1, epoch_or_step='epoch', patience=3, min_max='max')
-       >>>
+
        >>> # 如果连续100个steps, loss还未继续下降则停止训练
        >>> early_stop = EarlyStopping(monitor='loss', verbose=1, epoch_or_step='step', patience=100, min_max='min')
+       ```
 
     '''
     def __init__(self, monitor:str='perf', min_delta:float=0, patience:int=0, verbose:int=0, min_max:Literal['auto', 'min', 'max']='auto', 
@@ -833,22 +834,23 @@ class Checkpoint(Callback):
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     
-    Example
-    ---------------
+    Examples:
+    ```python
     >>> # 每个epoch结束时保存
     >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}', epoch_or_step='epoch')
-    >>>
+    
     >>> # 每隔1000个steps保存
     >>> ckpt = Checkpoint(save_dir='./ckpt/{step}', epoch_or_step='step', interval=1000)
-    >>>
+    
     >>> # 保存loss最小的3个权重
     >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}', epoch_or_step='epoch', monitor='loss', min_max='min', max_save_count=3)
-    >>>
+    
     >>> # 保存最近的3个权重
     >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}', epoch_or_step='epoch', monitor=None, max_save_count=3)
-    >>>
+    
     >>> # 保存文件夹名称中含指标名, 方便查看
     >>> ckpt = Checkpoint(save_dir='./ckpt/{epoch}_{loss}')
+    ```
     '''
     def __init__(self, save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, monitor:str=None, 
                  min_max:Literal['max', 'min']='min', verbose:int=0, max_save_count:int=None, max_save_count_path:str=None, 
@@ -977,18 +979,19 @@ class Evaluator(Checkpoint):
     :param scheduler_path: str, scheduler保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     :param steps_params_path: str, 模型训练进度保存路径(含文件名), 可以使用{epoch}和{step}占位符, 默认为None表示不保存
     
-    Example
-    ------------------
+    Examples:
+    ```python
     >>> class MyEvaluator(Evaluator):
     >>> def evaluate(self):
     >>>     test_acc = random.random()  # 计算逻辑示例
     >>>     return {'test_acc': test_acc}
-    >>>
+    
     >>> # 每个epoch进行评估, 并保存test_acc最大的ckpt权重
     >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/', min_max='max', epoch_or_step='epoch')
-    >>>
+    
     >>> # 每隔1000个steps进行评估, 并保存test_acc最大的ckpt权重
     >>> evaluator = MyEvaluator(monitor='test_acc', save_dir='./ckpt/best/', min_max='max', epoch_or_step='step', interval=1000)
+    ```
     '''
     def __init__(self, monitor:str='perf', min_max:Literal['max', 'min']='max', verbose:int=2, 
                  save_dir:str=None, epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, **kwargs):
@@ -1042,10 +1045,11 @@ class Logger(Callback):
     :param separator: str, 指标间分隔符
     :param level: str, DEBUG/INFO/WARNING/ERROR/CRITICAL, 指定log的level
 
-    Example
-    ---------------------
+    Examples:
+    ```python
     >>> # 每隔100个step记录下当前指标
     >>> logger = Logger('./ckpt/log.log', interval=100)
+    ```
     '''
     def __init__(self, log_path:str, interval:int=100, mode:Literal['a', 'w']='a', separator:str='\t', 
                  level:Literal['DEBUG','INFO','WARNING','ERROR','CRITICAL']='DEBUG', name:str='root', **kwargs):
@@ -1099,9 +1103,10 @@ class Tensorboard(Callback):
     :param interval: int, 保存tensorboard的间隔
     :param prefix: str, tensorboard分栏的前缀, 默认为'train'
 
-    Example
-    --------------------
+    Examples:
+    ```python
     >>> ts_board = Tensorboard('./ckpt/tensorboard')
+    ```
     '''
     def __init__(self, log_dir:str, interval:int=100, prefix:str='Train', **kwargs):
         super(Tensorboard, self).__init__(**kwargs)
@@ -1153,9 +1158,10 @@ class SystemStateCallback(Tensorboard):
     :param gpu_id_list: List[int], 需要记录的gpuid列表
     :param pids: int/List[int], 需要记录的
 
-    Example
-    ---------------------------
+    Examples:
+    ```python
     >>> syscallback = SystemStateCallback('./ckpt/tensorboard/system')
+    ```
     '''
     def __init__(self, log_dir:str, interval:int=100, gpu_id_list:List[int]=None, pids:Union[int,List[int]]=None, **kwargs):
         super(SystemStateCallback, self).__init__(log_dir, interval, **kwargs)
@@ -1258,9 +1264,10 @@ class WandbCallback(Callback):
         logging or :obj:`"all"` to log gradients and parameters.
     :param project: str, wandb的project name, 默认为bert4torch
     
-    Example
-    ---------------------
+    Examples:
+    ```python
     >>> wandb = WandbCallback(save_code=True)
+    ```
     '''
     def __init__(self, project:str='bert4torch', trial_name:str=None, run_name:str=None, watch:str='gradients', 
                  interval:int=100, save_code:bool=False, config:dict=None):
@@ -1422,14 +1429,19 @@ class EmailCallback(Callback):
     :param mail_pwd: str, smtp的第三方密码
     :param mail_sender: str, 发件人邮箱
 
-    Example
-    ----------------------
+    Examples:
+    ```python
     >>> # 每个epoch结束后, 使用默认邮箱把对应的指标发送到指定邮箱
     >>> email = EmailCallback(mail_receivers='tongjilibo@163.com', epoch_or_step='epoch')
-    >>>
+    
     >>> # 每个epoch结束后, 使用自定义邮箱把对应的指标发送到指定邮箱
-    >>> email = EmailCallback(mail_receivers='tongjilibo@163.com', epoch_or_step='epoch', 
-    mail_host='smtp.163.com', mail_user='bert4torch', mail_pwd='VDSGQEHFXDZOCVEH', mail_sender='bert4torch@163.com')
+    >>> email = EmailCallback(mail_receivers='tongjilibo@163.com', 
+    ...                       epoch_or_step='epoch', 
+    ...                       mail_host='smtp.163.com', 
+    ...                       mail_user='bert4torch', 
+    ...                       mail_pwd='VDSGQEHFXDZOCVEH', 
+    ...                       mail_sender='bert4torch@163.com')
+    ```
     '''
     def __init__(self, mail_receivers:Union[str,list], mail_subject:str='', epoch_or_step:Literal['epoch', 'step']='epoch', interval:int=100, 
                  mail_host:str=None, mail_user:str=None, mail_pwd:str=None, mail_sender:str=None, **kwargs):

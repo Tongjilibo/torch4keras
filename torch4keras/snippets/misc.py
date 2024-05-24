@@ -8,13 +8,17 @@ from .import_utils import is_torch_available
 import json
 import time
 import sys
+import shutil
+import re
+
 
 if is_torch_available():
     import torch
     from torch import Tensor
     from torch.nn import Module
 else:
-    Tensor, Module = object, object
+    class Tensor: pass
+    class Module: pass
 
 
 def seed_everything(seed:int=None):
@@ -205,16 +209,15 @@ def find_tied_parameters(model: Module, **kwargs):
     Returns:
         List[List[str]]: A list of lists of parameter names being all tied together.
 
-    Example:
-
-    ```py
+    Examples:
+    ```python
     >>> from collections import OrderedDict
     >>> import torch.nn as nn
 
     >>> model = nn.Sequential(OrderedDict([("linear1", nn.Linear(4, 4)), ("linear2", nn.Linear(4, 4))]))
     >>> model.linear2.weight = model.linear1.weight
     >>> find_tied_parameters(model)
-    [['linear1.weight', 'linear2.weight']]
+    ... # [['linear1.weight', 'linear2.weight']]
     ```
     """
     # Initialize result and named_parameters before recursing.
@@ -325,12 +328,13 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
     :param description: 描述
     :param parse_known_args: bool, 只解析命令行中认识的参数
 
-    Example
-    -----------------------
+    Examples:
+    ```python
     >>> args = argument_parse()
     >>> args = argument_parse('deepspeed')
     >>> args = argument_parse(['deepspeed'])
     >>> args = argument_parse({'deepspeed': {'type': str, 'help': 'deepspeed config path'}})
+    ```
     '''
     import argparse
     parser = argparse.ArgumentParser(description=description)
@@ -361,7 +365,107 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
     return args
 
 
-class AnyClass:
-    '''主要用于import某个包不存在时候，作为类的替代'''
-    def __init__(self, *args, **kwargs) -> None:
-        pass
+def cuda_empty_cache(device=None):
+    '''清理gpu显存'''
+    if torch.cuda.is_available():
+        if device is None:
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+            return
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    else:
+        log_warn_once('torch.cuda.is_available() = False')
+
+
+class WebServing(object):
+    """简单的Web接口，基于bottlepy简单封装，仅作为临时测试使用，不保证性能。
+
+    Examples:
+    ```python
+    >>> arguments = {'text': (None, True), 'n': (int, False)}
+    >>> web = WebServing(port=8864)
+    >>> web.route('/gen_synonyms', gen_synonyms, arguments)
+    >>> web.start()
+    >>> # 然后访问 http://127.0.0.1:8864/gen_synonyms?text=你好
+    ```
+    
+    ```shell
+    >>> # 依赖（如果不用 server='paste' 的话，可以不装paste库）:
+    >>> pip install bottle
+    >>> pip install paste
+    ```
+    """
+    def __init__(self, host='0.0.0.0', port=8000, server='paste'):
+
+        import bottle
+
+        self.host = host
+        self.port = port
+        self.server = server
+        self.bottle = bottle
+
+    def wraps(self, func, arguments, method='GET'):
+        """封装为接口函数
+
+        :param func: 要转换为接口的函数，需要保证输出可以json化，即需要保证 json.dumps(func(inputs)) 能被执行成功；
+        :param arguments: 声明func所需参数，其中key为参数名，value[0]为对应的转换函数（接口获取到的参数值都是字符串型），value[1]为该参数是否必须；
+        :param method: 'GET'或者'POST'。
+        """
+        def new_func():
+            outputs = {'code': 0, 'desc': u'succeeded', 'data': {}}
+            kwargs = {}
+            for key, value in arguments.items():
+                if method == 'GET':
+                    result = self.bottle.request.GET.getunicode(key)
+                else:
+                    result = self.bottle.request.POST.getunicode(key)
+                if result is None:
+                    if value[1]:
+                        outputs['code'] = 1
+                        outputs['desc'] = 'lack of "%s" argument' % key
+                        return json.dumps(outputs, ensure_ascii=False)
+                else:
+                    if value[0] is not None:
+                        result = value[0](result)
+                    kwargs[key] = result
+            try:
+                outputs['data'] = func(**kwargs)
+            except Exception as e:
+                outputs['code'] = 2
+                outputs['desc'] = str(e)
+            return json.dumps(outputs, ensure_ascii=False)
+
+        return new_func
+
+    def route(self, path, func, arguments, method='GET'):
+        """添加接口"""
+        func = self.wraps(func, arguments, method)
+        self.bottle.route(path, method=method)(func)
+
+    def start(self):
+        """启动服务"""
+        self.bottle.run(host=self.host, port=self.port, server=self.server)
+
+
+def copytree(src:str, dst:str, ignore_copy_files:str=None, dirs_exist_ok=False):
+    '''从一个文件夹copy到另一个文件夹
+    
+    :param src: str, copy from src
+    :param dst: str, copy to dst
+    '''
+    def _ignore_copy_files(path, content):
+        to_ignore = []
+        if ignore_copy_files is None:
+            return to_ignore
+        
+        for file_ in content:
+            for pattern in ignore_copy_files:
+                if re.search(pattern, file_):
+                    to_ignore.append(file_)
+        return to_ignore
+
+    if src:
+        os.makedirs(src, exist_ok=True)
+    shutil.copytree(src, dst, ignore=_ignore_copy_files, dirs_exist_ok=dirs_exist_ok)
