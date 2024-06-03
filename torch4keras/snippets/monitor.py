@@ -188,12 +188,12 @@ class Timeit2:
                 self.cost['avg_' + k] = self.cost[k] / v
         
         if verbose > 0:
-            log_info('Cost detail')
-            pprint(self.cost)
-            print()
-
-        self.reset()
-        return self.cost
+            log_info(f'Cost detail: {self.cost}')
+            self.reset()
+        else:
+            cost = copy.deepcopy(self.cost)
+            self.reset()
+            return cost
 
 
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 

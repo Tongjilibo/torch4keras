@@ -1,5 +1,6 @@
 ## 更新历史
 
+- **20240603**: 去除对torch依赖,snippets部分可用；移动bert4torch中snippets
 - **20240418**: 增加YamlConfig和IniConfig, 优化deepspeed的使用，修复`_prepare_inputs`的bug，修复断点续训`SmoothMetricsCallback`起点错误的bug, Trainer断点续训记录batch数
 - **20240317**: 训练异常时保存权重，避免空数据集error，默认指标使用滑窗平滑，BaseModelDDP修改的更易用，mapping允许是函数更易用，Checkpoint增加save_on_train_end，增加SystemCallback，修改run_callback=False的bug, 适配build_MiniLLM_from_scratch, 修复ddp中mix_precision和torch重名的bug
 - **20240221**: fit中修改.train()逻辑减少耗时
