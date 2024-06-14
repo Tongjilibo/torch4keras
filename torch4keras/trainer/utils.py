@@ -1,13 +1,13 @@
 from torch import nn
 from torch4keras.snippets import log_info, log_warn
 from .base import Trainer
-from .dp import TrainerDP
-from .ddp import TrainerDDP
+from .dp import DPTrainer
+from .ddp import DDPTrainer
 
 
 def add_trainer(obj, include=None, exclude=None, verbose=0, replace_func=False):
     '''为nn.Module添加Triner对应的方法'''
-    if isinstance(obj, (Trainer, TrainerDP, TrainerDDP)):
+    if isinstance(obj, (Trainer, DPTrainer, DDPTrainer)):
         log_warn('obj is not a Trainer object')
         return obj
     elif not isinstance(obj, nn.Module):

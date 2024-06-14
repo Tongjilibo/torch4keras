@@ -36,3 +36,28 @@ def is_safetensors_available():
 
 def is_sklearn_available():
     return is_package_available("sklearn")
+
+
+def is_deepspeed_available():
+    package_exists = importlib.util.find_spec("deepspeed") is not None
+
+    # Check we're not importing a "deepspeed" directory somewhere but the actual library by trying to grab the version
+    # AND checking it has an author field in the metadata that is HuggingFace.
+    if package_exists:
+        try:
+            _ = importlib_metadata.metadata("deepspeed")
+            return True
+        except importlib_metadata.PackageNotFoundError:
+            return False
+
+
+def is_accelerate_available(check_partial_state=False):
+    '''是否可以使用accelerate'''
+    accelerate_available = importlib.util.find_spec("accelerate") is not None
+    if accelerate_available:
+        if check_partial_state:
+            return version.parse(importlib_metadata.version("accelerate")) >= version.parse("0.17.0")
+        else:
+            return True
+    else:
+        return False

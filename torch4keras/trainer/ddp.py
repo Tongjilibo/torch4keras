@@ -8,10 +8,25 @@ import os
 from .base import Trainer
 
 
-class TrainerDDP(nn.parallel.DistributedDataParallel, Trainer):
+class DDPTrainer(nn.parallel.DistributedDataParallel, Trainer):
     '''DistributedDataParallel模式使用多gpu的方法,
     1) 父类顺序颠倒也会出问题
-    2) 使用方式和DistributedDataParallel一致, TrainerDDP(net, *args, **kwargs)来使用
+    2) 使用方式和DistributedDataParallel一致, DDPTrainer(net, *args, **kwargs)来使用
+
+    Examples:
+    ```python
+    >>> from torch4keras.trainer import DDPTrainer
+    >>> args = DDPTrainer.init_process_group()
+    >>> # 用户自行定义好model
+    >>> model = DDPTrainer(
+    ...     model,
+    ...     master_rank=0,
+    ...     device_ids=[args.local_rank],
+    ...     output_device=args.local_rank,
+    ...     find_unused_parameters=False
+    ... )
+    >>> # 后续执行和Trainer一致
+    ```
     '''
     def __init__(self, *args, master_rank=0, **kwargs):
         Trainer.__init__(self)

@@ -12,7 +12,7 @@ from .base import Trainer
 
 class DeepSpeedTrainer(Trainer):
     '''deepspeed来训练'''
-    def __init__(self, module, verbose=1):
+    def __init__(self, module:nn.Module, verbose:int=1, **kwargs):
         super().__init__(module)
         self.module = module
 

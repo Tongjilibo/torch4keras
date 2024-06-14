@@ -21,5 +21,5 @@ class BaseModel(Trainer, nn.Module):
         nn.Module.__init__(self)
         Trainer.__init__(self, *args, **kwargs)
         
-BaseModelDP = TrainerDP  # 使用方式和nn.DataParallel一致
-BaseModelDDP = TrainerDDP  # 使用方式和DistributedDataParallel一致
+BaseModelDP = DPTrainer  # 使用方式和nn.DataParallel一致
+BaseModelDDP = DDPTrainer  # 使用方式和DistributedDataParallel一致
