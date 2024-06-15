@@ -708,8 +708,7 @@ class Trainer:
         else:
             return self
 
-    # 以下为增加了nn.Module自带的方法，方便外部调用，但是要注意尽量不要使用trainer = trainer.cuda()等方式
-    # 会导致返回的trainer只是nn.Module，而没有Trainer中的方法
+    # 以下为增加了nn.Module自带的方法
     def register_buffer(self, *args, **kwargs):
         self.unwrap_model().register_buffer(*args, **kwargs)
 
@@ -732,40 +731,52 @@ class Trainer:
         return self.unwrap_model().get_buffer(*args, **kwargs)
 
     def apply(self, *args, **kwargs):
-        return self.unwrap_model().apply(*args, **kwargs)
+        self.unwrap_model().apply(*args, **kwargs)
+        return self
 
     def cuda(self, *args, **kwargs):
-        return self.unwrap_model().cuda(*args, **kwargs)
+        self.unwrap_model().cuda(*args, **kwargs)
+        return self
 
     def ipu(self, *args, **kwargs):
-        return self.unwrap_model().ipu(*args, **kwargs)
+        self.unwrap_model().ipu(*args, **kwargs)
+        return self
 
     def xpu(self, *args, **kwargs):
-        return self.unwrap_model().xpu(*args, **kwargs)
+        self.unwrap_model().xpu(*args, **kwargs)
+        return self
 
     def cpu(self, *args, **kwargs):
-        return self.unwrap_model().cpu(*args, **kwargs)
+        self.unwrap_model().cpu(*args, **kwargs)
+        return self
 
     def type(self, *args, **kwargs):
-        return self.unwrap_model().type(*args, **kwargs)
+        self.unwrap_model().type(*args, **kwargs)
+        return self
 
     def float(self, *args, **kwargs):
-        return self.unwrap_model().float(*args, **kwargs)
+        self.unwrap_model().float(*args, **kwargs)
+        return self
 
     def double(self, *args, **kwargs):
-        return self.unwrap_model().double(*args, **kwargs)
+        self.unwrap_model().double(*args, **kwargs)
+        return self
 
     def half(self, *args, **kwargs):
-        return self.unwrap_model().half(*args, **kwargs)
+        self.unwrap_model().half(*args, **kwargs)
+        return self
 
     def bfloat16(self, *args, **kwargs):
-        return self.unwrap_model().bfloat16(*args, **kwargs)
+        self.unwrap_model().bfloat16(*args, **kwargs)
+        return self
 
     def to_empty(self, *args, **kwargs):
-        return self.unwrap_model().to_empty(*args, **kwargs)
+        self.unwrap_model().to_empty(*args, **kwargs)
+        return self
 
     def to(self, *args, **kwargs):
-        return self.unwrap_model().to(*args, **kwargs)
+        self.unwrap_model().to(*args, **kwargs)
+        return self
 
     def register_full_backward_pre_hook(self, *args, **kwargs):
         return self.unwrap_model().register_full_backward_pre_hook(*args, **kwargs)
@@ -819,19 +830,23 @@ class Trainer:
         return self.unwrap_model().named_modules(*args, **kwargs)
 
     def train(self, *args, **kwargs):
-        return self.unwrap_model().train(*args, **kwargs)
+        self.unwrap_model().train(*args, **kwargs)
+        return self
 
     def eval(self, *args, **kwargs):
-        return self.unwrap_model().eval(*args, **kwargs)
+        self.unwrap_model().eval(*args, **kwargs)
+        return self
 
     def requires_grad_(self, *args, **kwargs):
-        return self.unwrap_model().requires_grad_(*args, **kwargs)
+        self.unwrap_model().requires_grad_(*args, **kwargs)
+        return self
 
     def zero_grad(self, *args, **kwargs):
-        return self.unwrap_model().zero_grad(*args, **kwargs)
+        self.unwrap_model().zero_grad(*args, **kwargs)
 
     def share_memory(self, *args, **kwargs):
-        return self.unwrap_model().share_memory(*args, **kwargs)
+        self.unwrap_model().share_memory(*args, **kwargs)
+        return self
 
 
 Trainer.compile_training_components = Trainer.compile
