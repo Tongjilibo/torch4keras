@@ -3,7 +3,7 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
-from torch4keras.snippets import metric_mapping, get_parameter_device, log_info, log_warn, print_table
+from torch4keras.snippets import metric_mapping, get_parameter_device, log_info, log_warn, log_warn_once, print_table
 from torch4keras.snippets import print_trainable_parameters, colorful, send_email, load_checkpoint, save_checkpoint
 from torch4keras.callbacks import KerasProgbar, SmoothMetricsCallback, TqdmProgbar, ProgressBar2Progbar, Callback, CallbackList, History
 from collections import OrderedDict
@@ -162,9 +162,6 @@ class Trainer:
     def device(self, value):
         '''允许修改self.device'''
         self._device = value
-
-    def to_device(self, device:Union[str, torch.device, int]):
-        self.unwrap_model().to(device)
 
     def _move_to_model_device(self, inputs:Union[torch.Tensor, tuple, list, dict]):
         '''遍历并转移到model.device上（递归）'''
@@ -701,7 +698,7 @@ class Trainer:
             log_info('Successfuly save training checkpoint')
             print_table(load_info, headers=['File', 'Path'])
 
-    def unwrap_model(self):
+    def unwrap_model(self) -> nn.Module:
         '''返回nn.Module模块
         '''
         if isinstance(self, nn.Module):
@@ -710,6 +707,131 @@ class Trainer:
             return self.module
         else:
             return self
+
+    # 以下为增加了nn.Module自带的方法，方便外部调用，但是要注意尽量不要使用trainer = trainer.cuda()等方式
+    # 会导致返回的trainer只是nn.Module，而没有Trainer中的方法
+    def register_buffer(self, *args, **kwargs):
+        self.unwrap_model().register_buffer(*args, **kwargs)
+
+    def register_parameter(self, *args, **kwargs):
+        self.unwrap_model().register_parameter(*args, **kwargs)
+
+    def add_module(self, *args, **kwargs):
+        self.unwrap_model().add_module(*args, **kwargs)
+
+    def register_module(self, *args, **kwargs):
+        self.unwrap_model().register_module(*args, **kwargs)
+
+    def get_submodule(self, *args, **kwargs):
+        return self.unwrap_model().get_submodule(*args, **kwargs)
+
+    def get_parameter(self, *args, **kwargs):
+        return self.unwrap_model().get_parameter(*args, **kwargs)
+
+    def get_buffer(self, *args, **kwargs):
+        return self.unwrap_model().get_buffer(*args, **kwargs)
+
+    def apply(self, *args, **kwargs):
+        return self.unwrap_model().apply(*args, **kwargs)
+
+    def cuda(self, *args, **kwargs):
+        return self.unwrap_model().cuda(*args, **kwargs)
+
+    def ipu(self, *args, **kwargs):
+        return self.unwrap_model().ipu(*args, **kwargs)
+
+    def xpu(self, *args, **kwargs):
+        return self.unwrap_model().xpu(*args, **kwargs)
+
+    def cpu(self, *args, **kwargs):
+        return self.unwrap_model().cpu(*args, **kwargs)
+
+    def type(self, *args, **kwargs):
+        return self.unwrap_model().type(*args, **kwargs)
+
+    def float(self, *args, **kwargs):
+        return self.unwrap_model().float(*args, **kwargs)
+
+    def double(self, *args, **kwargs):
+        return self.unwrap_model().double(*args, **kwargs)
+
+    def half(self, *args, **kwargs):
+        return self.unwrap_model().half(*args, **kwargs)
+
+    def bfloat16(self, *args, **kwargs):
+        return self.unwrap_model().bfloat16(*args, **kwargs)
+
+    def to_empty(self, *args, **kwargs):
+        return self.unwrap_model().to_empty(*args, **kwargs)
+
+    def to(self, *args, **kwargs):
+        return self.unwrap_model().to(*args, **kwargs)
+
+    def register_full_backward_pre_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_full_backward_pre_hook(*args, **kwargs)
+
+    def register_backward_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_backward_hook(*args, **kwargs)
+
+    def register_full_backward_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_full_backward_hook(*args, **kwargs)
+
+    def register_forward_pre_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_forward_pre_hook(*args, **kwargs)
+
+    def register_forward_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_forward_hook(*args, **kwargs)
+
+    def register_state_dict_pre_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_state_dict_pre_hook(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        return self.unwrap_model().state_dict(*args, **kwargs)
+
+    def register_load_state_dict_post_hook(self, *args, **kwargs):
+        return self.unwrap_model().register_load_state_dict_post_hook(*args, **kwargs)
+
+    def load_state_dict(self, *args, **kwargs):
+        return self.unwrap_model().load_state_dict(*args, **kwargs)
+
+    def parameters(self, *args, **kwargs):
+        return self.unwrap_model().parameters(*args, **kwargs)
+
+    def named_parameters(self, *args, **kwargs):
+        return self.unwrap_model().named_parameters(*args, **kwargs)
+
+    def buffers(self, *args, **kwargs):
+        return self.unwrap_model().buffers(*args, **kwargs)
+
+    def named_buffers(self, *args, **kwargs):
+        return self.unwrap_model().named_buffers(*args, **kwargs)
+
+    def children(self, *args, **kwargs):
+        return self.unwrap_model().children(*args, **kwargs)
+
+    def named_children(self, *args, **kwargs):
+        return self.unwrap_model().named_children(*args, **kwargs)
+
+    def modules(self, *args, **kwargs):
+        return self.unwrap_model().modules(*args, **kwargs)
+
+    def named_modules(self, *args, **kwargs):
+        return self.unwrap_model().named_modules(*args, **kwargs)
+
+    def train(self, *args, **kwargs):
+        return self.unwrap_model().train(*args, **kwargs)
+
+    def eval(self, *args, **kwargs):
+        return self.unwrap_model().eval(*args, **kwargs)
+
+    def requires_grad_(self, *args, **kwargs):
+        return self.unwrap_model().requires_grad_(*args, **kwargs)
+
+    def zero_grad(self, *args, **kwargs):
+        return self.unwrap_model().zero_grad(*args, **kwargs)
+
+    def share_memory(self, *args, **kwargs):
+        return self.unwrap_model().share_memory(*args, **kwargs)
 
 
 Trainer.compile_training_components = Trainer.compile

@@ -99,9 +99,9 @@ def tran2dottableDict(dict_:dict):
     return traverse_dict(dict_)
 
 
-class JsonConfig:
+class JsonConfig(DottableDict):
     '''读取json配置文件并返回可.操作符的字典'''
-    def __new__(self, json_path:str, encoding:str='utf-8', dot:bool=True):
+    def __new__(cls, json_path:str, encoding:str='utf-8', dot:bool=True):
         data = json.load(open(json_path, "r", encoding=encoding))
         if dot:
             return tran2dottableDict(data)
@@ -109,9 +109,9 @@ class JsonConfig:
             return data
 
 
-class YamlConfig:
+class YamlConfig(DottableDict):
     '''读取yaml配置文件并返回可.操作符的字典'''
-    def __new__(self, yaml_path:str, encoding:str='utf-8', dot:bool=True):
+    def __new__(cls, yaml_path:str, encoding:str='utf-8', dot:bool=True):
         import yaml
         data = yaml.load(open(yaml_path, "r", encoding=encoding), Loader=yaml.FullLoader)
         if dot:
@@ -119,9 +119,9 @@ class YamlConfig:
         else:
             return data
 
-class IniConfig:
+class IniConfig(DottableDict):
     '''读取ini配置文件'''
-    def __new__(self, ini_path:str, encoding:str='utf-8', dot:bool=True):
+    def __new__(cls, ini_path:str, encoding:str='utf-8', dot:bool=True):
         import configparser
         config = configparser.ConfigParser()
         config.read(ini_path, encoding=encoding)

@@ -7,8 +7,9 @@ from .utils import *
 from typing import Literal
 
 
-class AutoTrainer:
-    def __init__(self, *args, trainer_type:Literal['deepspeed', 'ddp', 'dp', 'accelerate', 'auto', 'base']='base', **kwargs) -> Trainer:
+# 这里理论上不应该从Trainer继承，这里只是为了后续的代码提示
+class AutoTrainer(Trainer):
+    def __new__(cls, *args, trainer_type:Literal['deepspeed', 'ddp', 'dp', 'accelerate', 'auto', 'base']='base', **kwargs) -> Trainer:
         from torch4keras.snippets import is_deepspeed_available, is_accelerate_available, log_info
         if trainer_type == 'auto':
             if is_deepspeed_available():
