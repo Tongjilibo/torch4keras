@@ -37,5 +37,5 @@ class AutoTrainer(Trainer):
         else:
             raise ValueError(f'Args `{trainer_type}` not supported')
         
-        log_info(f'Initialize {trainer_type} trainer success.')
+        # log_info(f'Initialize `{trainer_type}` trainer success.')
         return trainer
