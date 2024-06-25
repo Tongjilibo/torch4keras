@@ -313,26 +313,45 @@ def print_table(data:Union[List, List[List], List[Dict]], headers:List=None):
     ... # +--------------------+
     ```
     '''
+    def print_width(s:str):  
+        '''字符串的打印宽度'''
+        width = 0  
+        # 遍历字符串中的每个字符  
+        for char in s:  
+            width += 2 if has_full_char(char) else 1
+        return width
+    
+    def has_full_char(s:str):
+        '''是否包含中文字符'''
+        for char in s:  
+            if '\u4e00' <= char <= '\u9fff' or '\uff00' <= char <= '\uffef':
+                return True
+        return False
+
     assert isinstance(data, list), 'Args `data` only accept list format'
     if isinstance(data[0], dict):
         headers = list(data[0].keys())
         data = [list(i.values()) for i in data]
 
     # 获取列的最大宽度
-    max_widths = [max(len(str(row[i])) for row in data) for i in range(len(data[0]))]  
+    max_widths = [max(len(str(row[i])) for row in data) for i in range(len(data[0]))]
+    max_print_widths = [max(print_width(str(row[i])) for row in data) for i in range(len(data[0]))]
     
     # 打印表头  
     if headers:
         max_widths = [max(i, len(j)) for i, j in zip(max_widths, headers)]
-        row_to_print = ' | '.join(str(header).ljust(max_widths[i]) for i, header in enumerate(headers))  
-        print(f'+{"-".join("-" * (w + 2) for w in max_widths)}+')  
+        max_print_widths = [max(i, print_width(j)) for i, j in zip(max_print_widths, headers)]
+        row_to_print = ' | '.join(str(header).ljust(max_widths[i] if has_full_char(str(header)) 
+                                                    else max_print_widths[i]) for i, header in enumerate(headers))  
+        print(f'+{"-".join("-" * (w + 2) for w in max_print_widths)}+')  
         print(f'| {row_to_print} |')  
-    print(f'+{"-".join("-" * (w + 2) for w in max_widths)}+')        
+    print(f'+{"-".join("-" * (w + 2) for w in max_print_widths)}+')        
       
     # 打印数据行  
     for row in data:  
-        row_to_print = ' | '.join(str(item).ljust(max_widths[i]) for i, item in enumerate(row))  
+        row_to_print = ' | '.join(str(item).ljust(max_widths[i] if has_full_char(str(item)) 
+                                                  else max_print_widths[i]) for i, item in enumerate(row))  
         print(f'| {row_to_print} |')  
       
     # 打印表格底部边界  
-    print(f'+{"-".join("-" * (w + 2) for w in max_widths)}+')  
+    print(f'+{"-".join("-" * (w + 2) for w in max_print_widths)}+')
