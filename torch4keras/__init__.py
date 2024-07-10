@@ -1,4 +1,4 @@
-from .snippets import is_torch_available, log_warn
+from .snippets import is_torch_available, log_warn_once
 
 if is_torch_available():
     from torch import nn
@@ -9,4 +9,4 @@ if is_torch_available():
         nn.Module.compile_torch = nn.Module.compile
         del nn.Module.compile
 else:
-    log_warn("PyTorch have not been found. Models won't be available and only snippets can be used.")
+    log_warn_once("PyTorch have not been found. Models won't be available and only snippets can be used.")
