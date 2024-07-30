@@ -1,5 +1,6 @@
 ## 更新历史
 
+- **20240730**: 小修改(print_table允许中文, 未安装torch时候仅提醒一次)
 - **20240619**: trainer中可调用nn.Module方法，增加AutoTrainer
 - **20240603**: 去除对torch依赖,snippets部分可用；移动bert4torch中snippets
 - **20240418**: 增加YamlConfig和IniConfig, 优化deepspeed的使用，修复`_prepare_inputs`的bug，修复断点续训`SmoothMetricsCallback`起点错误的bug, Trainer断点续训记录batch数

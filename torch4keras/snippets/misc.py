@@ -469,3 +469,44 @@ def copytree(src:str, dst:str, ignore_copy_files:str=None, dirs_exist_ok=False):
     if src:
         os.makedirs(src, exist_ok=True)
     shutil.copytree(src, dst, ignore=_ignore_copy_files, dirs_exist_ok=dirs_exist_ok)
+
+
+def add_start_docstrings(*docstr):
+    '''装饰器，用于在类docstring前添加统一说明'''
+    def docstring_decorator(fn):
+        fn.__doc__ = "".join(docstr) + (fn.__doc__ if fn.__doc__ is not None else "")
+        return fn
+
+    return docstring_decorator
+
+
+def add_start_docstrings_to_model_forward(*docstr):
+    '''装饰器，用于在nn.Module.forward前添加统一说明'''
+    def docstring_decorator(fn):
+        docstring = "".join(docstr) + (fn.__doc__ if fn.__doc__ is not None else "")
+        class_name = f"[`{fn.__qualname__.split('.')[0]}`]"
+        intro = f"   The {class_name} forward method, overrides the `__call__` special method."
+        note = r"""
+
+    <Tip>
+
+    Although the recipe for forward pass needs to be defined within this function, one should call the [`Module`]
+    instance afterwards instead of this since the former takes care of running the pre and post processing steps while
+    the latter silently ignores them.
+
+    </Tip>
+"""
+
+        fn.__doc__ = intro + note + docstring
+        return fn
+
+    return docstring_decorator
+
+
+def add_end_docstrings(*docstr):
+    '''装饰器，用于在类docstring后添加统一说明'''
+    def docstring_decorator(fn):
+        fn.__doc__ = (fn.__doc__ if fn.__doc__ is not None else "") + "".join(docstr)
+        return fn
+
+    return docstring_decorator
