@@ -10,6 +10,7 @@ import time
 import sys
 import shutil
 import re
+import requests
 
 
 if is_torch_available():
@@ -279,7 +280,6 @@ def check_cuda_capability():
     else:
         log_error('CUDA not available')
 
-
   
 def check_file_modify_time(file_path:Union[str, List[str]], duration:int=None, verbose=0):
     """  
@@ -320,6 +320,26 @@ def check_file_modified(file_path:Union[str, List[str]], duration:int=1, verbose
     '''判断文件在duration区间是否被修改
     '''
     return check_file_modify_time(file_path, duration, verbose)
+
+
+def check_url_available(url:str, timeout:int=5, verbose:int=0):
+    '''检测某个网站是否可以访问'''
+    try:  
+        # 发送GET请求  
+        response = requests.get(url, timeout=timeout)  # 设置超时时间为5秒  
+          
+        # 检查响应状态码  
+        if response.status_code == 200:  
+            return True  
+        else:
+            if verbose > 1:
+                log_error(f"url={url}, response.status_code={response.status_code}")  
+            return False  
+    except requests.exceptions.RequestException as e:  
+        # 处理请求异常，例如DNS查询失败、拒绝连接等
+        if verbose > 1:
+            log_error(f"Access {url} error: {e}")  
+        return False
 
 
 def argument_parse(arguments:Union[str, list, dict]=None, description='argument_parse', parse_known_args:bool=True, dot:bool=True):
