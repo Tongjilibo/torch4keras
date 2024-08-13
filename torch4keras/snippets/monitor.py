@@ -95,7 +95,7 @@ class Timeit:
     '''
     def __enter__(self, template='Average speed: {:.2f}/s'):
         self.count = None
-        self.start_tm = time.time()
+        self.global_start_tm = self.start_tm = time.time()
         self.template = template
         return self
 
@@ -106,7 +106,7 @@ class Timeit:
         '''自定义开始记录的地方'''
         self.start_tm = time.time()
     
-    def lap(self, name:str=None, count:int=None, reset=False):
+    def lap(self, name:str=None, count:int=None, reset:bool=False):
         '''
         :params name: 打印时候自定义的前缀
         :params count: 需要计算平均生成速度中统计的次数
@@ -114,19 +114,28 @@ class Timeit:
         '''
         if count is not None:
             self.count = count
-        name = '' if name is None else str(name).strip() + ' - '
+        name = '' if name is None else str(name).strip()
 
         end_tm = time.time()
-        consume = end_tm - self.start_tm
+        # 如果是reset则使用上一轮重置后的self.start_tm, 否则使用一开始的self.global_start_tm
+        if reset:
+            start_tm = self.start_tm
+            prefix = 'Interval'
+        else:
+            start_tm = self.global_start_tm
+            prefix = 'Accumulated'
+        
+        consume = end_tm - start_tm
         if self.count is None:
-            # 只log时间
+            # 只记录耗时
             consume = format_time(consume, hhmmss=False)
-            start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_tm))
+            start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_tm))
             end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
-            log_info(name + f'Cost {consume} [{start1} < {end1}]')
+            log_info(f'{name} {prefix} Cost {consume} [{start1} < {end1}]')
         elif consume > 0:
+            # 记录平均耗时
             speed = self.count / consume
-            log_info(name + self.template.format(speed))
+            log_info(f'{name} {prefix} {self.template.format(speed)}')
         else:
             pass
             # log_warn('Time duration = 0')
@@ -135,8 +144,7 @@ class Timeit:
             self.reset()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.lap()
-        print()
+        self.lap(name='Total', reset=False)
 
 
 class Timeit2:
@@ -180,7 +188,7 @@ class Timeit2:
         if verbose > 1:
             start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_tm))
             end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
-            log_info(name + f'Cost {consume} [{start1} < {end1}]')
+            log_info(f'{name} Cost {consume} [{start1} < {end1}]')
 
     def end(self, verbose=1):
         for k, v in self.count.items():

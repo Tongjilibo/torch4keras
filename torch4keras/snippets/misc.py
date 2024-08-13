@@ -11,6 +11,7 @@ import sys
 import shutil
 import re
 import requests
+import functools
 
 
 if is_torch_available():
@@ -340,6 +341,12 @@ def check_url_available(url:str, timeout:int=5, verbose:int=0):
         if verbose > 1:
             log_error(f"Access {url} error: {e}")  
         return False
+
+
+@functools.lru_cache(None)
+def check_url_available_cached(url:str, timeout:int=5, verbose:int=0):
+    '''检测某个网站是否可以访问, 不重复检测节约时间'''
+    return check_url_available(url, timeout, verbose)
 
 
 def argument_parse(arguments:Union[str, list, dict]=None, description='argument_parse', parse_known_args:bool=True, dot:bool=True):
