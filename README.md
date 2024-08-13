@@ -68,10 +68,10 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 ## 4. 版本历史
 |更新日期| 版本 | 版本说明 |
 |------| ----------------- |----------- |
+|20240730|v0.2.5|小修改(print_table允许中文, 未安装torch时候仅提醒一次)|
 |20240619|v0.2.4|trainer中可调用nn.Module方法，增加AutoTrainer|
 |20240603|v0.2.3|去除对torch依赖,snippets部分可用；移动bert4torch中snippets|
 |20240418|v0.2.2|增加YamlConfig和IniConfig, 优化deepspeed的使用，修复`_prepare_inputs`的bug，修复断点续训`SmoothMetricsCallback`起点错误的bug, Trainer断点续训记录batch数|
-|20240317|v0.2.1.post2     |训练异常时保存权重，避免空数据集error，默认指标使用滑窗平滑，BaseModelDDP修改的更易用，mapping允许是函数更易用，Checkpoint增加save_on_train_end，增加SystemCallback，修改run_callback=False的bug, 适配build_MiniLLM_from_scratch, 修复ddp中mix_precision和torch重名的bug|
 
 [更多版本](https://github.com/Tongjilibo/torch4keras/blob/master/docs/Update.md)
 
