@@ -57,6 +57,12 @@ class DDPTrainer(nn.parallel.DistributedDataParallel, Trainer):
     @classmethod
     def init_process_group(cls, master_rank=0, seed=42):
         '''初始化各项参数'''
+
+        if os.name == 'nt':
+            # windows: Diff between backends: https://pytorch.org/docs/stable/distributed.html
+            torch.distributed.init_process_group(backend="gloo")
+        else:  # linux
+            torch.distributed.init_process_group(backend='nccl')
         cls.ddp_config = DottableDict()
         cls.ddp_config.rank = int(os.environ["RANK"])
         cls.ddp_config.local_rank = int(os.getenv('LOCAL_RANK'))
