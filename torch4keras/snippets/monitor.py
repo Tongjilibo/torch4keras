@@ -5,8 +5,13 @@ import traceback
 import copy
 import functools
 from .log import log_info, log_warn, log_error
+from .import_utils import is_torch_available, is_xpu_available, is_npu_available, is_mps_available
 from pprint import pprint
 import datetime
+
+
+if is_torch_available():
+    import torch
 
 
 def format_timestamp(timestamp, format='%Y-%m-%d %H:%M:%S', verbose=0):
@@ -352,3 +357,109 @@ def watch_system_state(log_dir:str, gpu_id_list:List[int]=None, pids:Union[int,L
     pynvml.nvmlShutdown()
 
     return
+
+
+def convert_file_size_to_int(size: Union[int, str]):
+    """
+    Converts a size expressed as a string with digits an unit (like `"5MB"`) to an integer (in bytes).
+
+    Args:
+        size (`int` or `str`): The size to convert. Will be directly returned if an `int`.
+
+    Example:
+
+    ```py
+    >>> convert_file_size_to_int("1MiB")
+    1048576
+    ```
+    """
+    mem_size = 0
+    err_msg = (
+        f"`size` {size} is not in a valid format. Use an integer for bytes, or a string with an unit (like '5.0GB')."
+    )
+    try:
+        if isinstance(size, int):
+            mem_size = size
+        elif size.upper().endswith("GIB"):
+            mem_size = int(float(size[:-3]) * (2**30))
+        elif size.upper().endswith("MIB"):
+            mem_size = int(float(size[:-3]) * (2**20))
+        elif size.upper().endswith("KIB"):
+            mem_size = int(float(size[:-3]) * (2**10))
+        elif size.upper().endswith("GB"):
+            int_size = int(float(size[:-2]) * (10**9))
+            mem_size = int_size // 8 if size.endswith("b") else int_size
+        elif size.upper().endswith("MB"):
+            int_size = int(float(size[:-2]) * (10**6))
+            mem_size = int_size // 8 if size.endswith("b") else int_size
+        elif size.upper().endswith("KB"):
+            int_size = int(float(size[:-2]) * (10**3))
+            mem_size = int_size // 8 if size.endswith("b") else int_size
+    except ValueError:
+        raise ValueError(err_msg)
+
+    if mem_size <= 0:
+        raise ValueError(err_msg)
+    return mem_size
+
+
+def get_max_memory(max_memory: Optional[Dict[Union[int, str], Union[int, str]]] = None):
+    """
+    Get the maximum memory available if nothing is passed, converts string to int otherwise.
+    """
+    import psutil
+
+    if max_memory is None:
+        if not (torch.cuda.is_available() or is_npu_available() or is_xpu_available()):
+            max_memory = {}
+
+        else:
+            # Make sure CUDA is initialized on each GPU to have the right memory info.
+            if is_npu_available():
+                for i in range(torch.npu.device_count()):
+                    _ = torch.tensor(0, device=torch.device("npu", i))
+                max_memory = {i: torch.npu.mem_get_info(i)[0] for i in range(torch.npu.device_count())}
+            elif is_xpu_available():
+                for i in range(torch.xpu.device_count()):
+                    _ = torch.tensor(0, device=torch.device("xpu", i))
+                max_memory = {i: torch.xpu.max_memory_allocated(i) for i in range(torch.xpu.device_count())}
+            else:
+                for i in range(torch.cuda.device_count()):
+                    _ = torch.tensor([0], device=i)
+                max_memory = {i: torch.cuda.mem_get_info(i)[0] for i in range(torch.cuda.device_count())}
+        # allocate everything in the mps device as the RAM is shared
+        if is_mps_available():
+            max_memory["mps"] = psutil.virtual_memory().available
+        else:
+            max_memory["cpu"] = psutil.virtual_memory().available
+        return max_memory
+
+    for key in max_memory:
+        if isinstance(max_memory[key], str):
+            max_memory[key] = convert_file_size_to_int(max_memory[key])
+
+    # Need to sort the device by type to make sure that we allocate the gpu first.
+    # As gpu/npu/xpu are represented by int, we need to sort them first.
+    gpu_devices = [k for k in max_memory.keys() if isinstance(k, int)]
+    gpu_devices.sort()
+    # check if gpu/npu/xpu devices are available and if not, throw a warning
+    if is_npu_available():
+        num_devices = torch.npu.device_count()
+    elif is_xpu_available():
+        num_devices = torch.xpu.device_count()
+    else:
+        num_devices = torch.cuda.device_count()
+    for device in gpu_devices:
+        if device >= num_devices or device < 0:
+            log_warn(f"Device {device} is not available, available devices are {list(range(num_devices))}")
+    # Add the other devices in the preset order if they are available
+    all_devices = gpu_devices + [k for k in ["mps", "cpu", "disk"] if k in max_memory.keys()]
+    # Raise an error if a device is not recognized
+    for k in max_memory.keys():
+        if k not in all_devices:
+            raise ValueError(
+                f"Device {k} is not recognized, available devices are integers(for GPU/XPU), 'mps', 'cpu' and 'disk'"
+            )
+    max_memory = {k: max_memory[k] for k in all_devices}
+
+    return max_memory
