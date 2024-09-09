@@ -78,37 +78,59 @@ def get_parameter_device(parameter):
 
 
 class DottableDict(dict):
-    '''支持点操作符的字典'''
+    '''支持点操作符的字典，包括自动创建不存在的键和嵌套字典'''  
+    use_default_value:bool=False
     def __init__(self, *args, **kwargs):
-        dict.__init__(self, *args, **kwargs)
-        self.__dict__ = self
-    def allowDotting(self, state=True):
-        if state:
-            self.__dict__ = self
+        super().__init__(*args, **kwargs)
+        self._convert_values_to_dottable()
+  
+    def _convert_values_to_dottable(self):
+        """递归地将所有字典值转换为 DottableDict 实例"""
+        for key, value in self.items():
+            if isinstance(value, dict) and not isinstance(value, DottableDict):
+                self[key] = DottableDict(value)
+                self[key]._convert_values_to_dottable()  # 递归转换嵌套字典
+  
+    def __getattr__(self, item): 
+        if self.use_default_value:  
+            if item not in self:
+                return None
+            return self[item]
         else:
-            self.__dict__ = dict()
+            try:
+                return self[item]
+            except KeyError:
+                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
+  
+    def __setattr__(self, key, value):
+        if key.startswith('__') and key.endswith('__'):
+            # 允许设置特殊方法名
+            super().__setattr__(key, value)
+        else:
+            if isinstance(value, dict) and not isinstance(value, DottableDict):
+                value = DottableDict(value)
+            self[key] = value
 KwargsConfig = DottableDict
 
 
-def tran2dottableDict(dict_:dict):
-    '''将一个嵌套字典转成DottableDict'''
-    def traverse_dict(d): 
-        d = DottableDict(d)
-        for key, value in d.items():
-            if isinstance(value, dict):
-                d[key] = traverse_dict(value)
-        return d
-    return traverse_dict(dict_)
-
-
 class JsonConfig(DottableDict):
-    '''读取json配置文件并返回可.操作符的字典'''
-    def __new__(cls, json_path:str, encoding:str='utf-8', dot:bool=True):
-        data = json.load(open(json_path, "r", encoding=encoding))
-        if dot:
-            return tran2dottableDict(data)
-        else:
-            return data
+    '''读取json配置文件/字符串/字典并返回可.操作符的字典
+    1. json文件路径
+    2. json字符串
+    3. 字典
+    '''
+    def __new__(cls, json_path_or_str:Union[str,dict], encoding:str='utf-8', dot:bool=True):
+        # 字符串
+        if isinstance(json_path_or_str, str):
+            # 文件路径
+            if os.path.exists(json_path_or_str):
+                data = json.load(open(json_path_or_str, "r", encoding=encoding))
+            # json字符串
+            else:
+                data = json.loads(json_path_or_str, "r", encoding=encoding)
+        elif isinstance(json_path_or_str, dict):
+            pass
+        return DottableDict(data) if dot else data
 
 
 class YamlConfig(DottableDict):
@@ -116,10 +138,8 @@ class YamlConfig(DottableDict):
     def __new__(cls, yaml_path:str, encoding:str='utf-8', dot:bool=True):
         import yaml
         data = yaml.load(open(yaml_path, "r", encoding=encoding), Loader=yaml.FullLoader)
-        if dot:
-            return tran2dottableDict(data)
-        else:
-            return data
+        return DottableDict(data) if dot else data
+
 
 class IniConfig(DottableDict):
     '''读取ini配置文件'''
@@ -388,7 +408,7 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
         args = parser.parse_args()
     
     if dot is True:
-        args = tran2dottableDict(vars(args))
+        args = DottableDict(vars(args))
     return args
 
 
