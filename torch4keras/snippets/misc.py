@@ -12,6 +12,7 @@ import shutil
 import re
 import requests
 import functools
+from collections import OrderedDict, defaultdict
 
 
 if is_torch_available():
@@ -113,6 +114,93 @@ class DottableDict(dict):
 KwargsConfig = DottableDict
 
 
+class CachedDictBySize(OrderedDict):
+    '''按照size来缓存的字典, 超过maxsize会pop最老的item'''
+    def __init__(self, *args, maxsize=100, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__maxsize = maxsize
+        # 如果初始化时字典已经超过了maxsize，则移除多余的项
+        while len(self) > self.__maxsize:
+            self.popitem(last=False)
+    
+    def __setitem__(self, key, value):
+        # 检查字典是否已满，如果满了则移除最早的项
+        if len(self) >= self.__maxsize:
+            self.popitem(last=False)
+        # 使用super()来避免无限递归
+        super().__setitem__(key, value)
+
+
+class CachedDictByFreq(dict):
+    '''按照freq来缓存的字典, 超过maxsize会先pop频次最低的item'''
+    def __init__(self, *args, maxsize=100, **kwargs):  
+        super().__init__(*args, **kwargs)  
+        self.__maxsize = maxsize  
+        self.__frequency = defaultdict(int)  # 用于跟踪每个键的访问频次  
+          
+        # 如果初始化时字典已经超过了maxsize，则移除多余的项  
+        self._trim_to_maxsize(self.__maxsize)  
+      
+    def __setitem__(self, key, value):  
+        if key not in self:
+            # 先去掉最低频的，如果先set_item则可能会把当前key,value去掉
+            self._trim_to_maxsize(self.__maxsize-1)
+            
+        super().__setitem__(key, value)  # 这里如果value不一致，则直接替换，仅以key为准
+        
+        # 更新频次
+        self.__frequency[key] += 1
+      
+    def __getitem__(self, key):  
+        # 每当项被访问时，更新其频次, 仅当key存在的时候，如果key不存在，则freq不变
+        value = super().__getitem__(key)
+        self.__frequency[key] += 1  
+        return value
+      
+    def _trim_to_maxsize(self, maxsize):  
+        # 辅助方法，用于在初始化或需要时修剪到maxsize  
+        while len(self) > maxsize:  
+            min_freq_key = min(self.__frequency, key=self.__frequency.get)  
+            del self[min_freq_key]  
+            del self.__frequency[min_freq_key]  
+
+
+class CachedDictByTimeout(dict):
+    '''按照time来缓存的字典, 超过最大时长会pop最老的item'''
+    def __init__(self, *args, timeout=60, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__timeout = timeout  # 超时时间，以秒为单位
+  
+    def __setitem__(self, key, value):
+        super().__setitem__(key, (value, time.time()))  # 存储值和创建时间（或更新时间）
+  
+    def __getitem__(self, key):
+        value, last_access = super().__getitem__(key)
+        if time.time() - last_access > self.__timeout:
+            # 如果key已过期，则从字典中删除它并抛出KeyError
+            del self[key]
+            raise KeyError(f"Key `{key}` has expired")
+        return value
+  
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+  
+    # 注意：由于我们重写了__getitem__，所以pop方法不会自动检查过期项
+    # 但我们可以提供一个自定义的pop方法，如果需要的话
+    def pop(self, key, default=None):
+        if key in self:
+            value, last_access = super().__getitem__(key)
+            if time.time() - last_access > self.__timeout:
+                del self[key]
+                return default
+            else:
+                return super().pop(key)[0]  # 只返回值，不返回时间戳
+        return default
+
+ 
 class JsonConfig(DottableDict):
     '''读取json配置文件/字符串/字典并返回可.操作符的字典
     1. json文件路径
