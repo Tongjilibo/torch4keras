@@ -645,3 +645,14 @@ def add_end_docstrings(*docstr):
         return fn
 
     return docstring_decorator
+
+
+class NoopContextManager:
+    '''无意义的上下文管理器占位'''
+    def __enter__(self):
+        # 不执行任何操作
+        return None
+ 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # 不执行任何操作，也不抑制异常
+        return False

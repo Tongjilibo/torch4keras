@@ -54,6 +54,19 @@ def log_level(string:str, level:Union[int, str]=0, verbose:int=1):
 info_level_prefix = log_level
 
 
+def log_free(string:str, prefix:str, string_color:str=None, prefix_color:str='yellow', verbose:int=1):
+    '''自由log'''
+    if string_color:
+        string = colorful(string, color=string_color)
+    if prefix:
+        prefix = colorful(prefix, color=prefix_color)
+        string = prefix + ' ' + string
+    
+    if verbose != 0:
+        print(string)
+    return string
+
+
 def log_info(string:str, verbose:int=1):
     '''[INFO]: message, 绿色前缀'''
     res = colorful('[INFO]', color='green') + ' ' + string.strip()

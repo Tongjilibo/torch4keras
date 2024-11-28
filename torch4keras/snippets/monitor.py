@@ -83,13 +83,13 @@ def timeit(func):
     return warpper
 
 
-class Timeit:
+class TimeitContextManager:
     '''上下文管理器, 记录耗时/平均耗时
 
     Examples:
     ```python
-    >>> from torch4keras.snippets import Timeit
-    >>> with Timeit() as ti:
+    >>> from torch4keras.snippets import TimeitContextManager
+    >>> with TimeitContextManager() as ti:
     ...     for i in range(10):
     ...         time.sleep(0.1)
     ...         # ti.lap(name=i, reset=False)  # 统计累计耗时
@@ -152,12 +152,12 @@ class Timeit:
         self.lap(name='Total', reset=False)
 
 
-class Timeit2:
+class TimeitLogger:
     '''记录耗时
 
     Examples:
     ```python
-    >>> ti = Timeit2()
+    >>> ti = TimeitLogger()
     >>> for i in range(10):
     ...     time.sleep(0.1)
     ...     ti.lap(name=i)
