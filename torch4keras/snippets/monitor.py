@@ -152,6 +152,12 @@ class TimeitContextManager:
         self.lap(name='Total', reset=False)
 
 
+class Timeit(TimeitContextManager):
+    def __init__(self) -> None:
+        super().__init__()
+        raise DeprecationWarning('`Timeit` has been deprecated since torch4keras==v0.2.8, use `TimeitContextManager` instead')
+
+
 class TimeitLogger:
     '''记录耗时
 
@@ -207,6 +213,12 @@ class TimeitLogger:
             cost = copy.deepcopy(self.cost)
             self.reset()
             return cost
+
+
+class Timeit2(TimeitLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        raise DeprecationWarning('`Timeit2` has been deprecated since torch4keras==v0.2.8, use `TimeitLogger` instead')
 
 
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 
