@@ -40,6 +40,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 ## 4. 版本历史
 |更新日期| 版本 | 版本说明 |
 |------| ----------------- |----------- |
+|20250211|v0.2.8|屏蔽torch.load警告, Timeit提示|
 |20240928|v0.2.7|修改ddp的init_process_group;增加一些available函数,增加get_max_memory;DottableDict支持.赋值和嵌套;增加cachedict|
 |20240814|v0.2.6|小修改(增加check_url_available_cached, 修复Timeit)|
 |20240730|v0.2.5|小修改(print_table允许中文, 未安装torch时候仅提醒一次)|
