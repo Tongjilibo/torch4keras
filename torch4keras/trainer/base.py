@@ -13,6 +13,7 @@ import os
 import math
 import re
 import traceback
+import importlib
 
 
 class Trainer:
@@ -111,8 +112,12 @@ class Trainer:
         assert mixed_precision in {True, False, 'fp16', 'bf16'}
         self.mixed_precision_mode = 'fp16' if mixed_precision is True else mixed_precision
         if self.mixed_precision_mode:
-            self.autocast = torch.cuda.amp.autocast
-            self.scaler = torch.cuda.amp.GradScaler()
+            if importlib.util.find_spec("torch.amp") is not None:
+                self.autocast = torch.amp.autocast
+                self.scaler = torch.amp.GradScaler()
+            else:
+                self.autocast = torch.cuda.amp.autocast
+                self.scaler = torch.cuda.amp.GradScaler()
 
         # 训练过程观测的指标
         self.metrics = OrderedDict({'loss': None})
