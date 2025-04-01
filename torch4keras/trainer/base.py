@@ -112,12 +112,8 @@ class Trainer:
         assert mixed_precision in {True, False, 'fp16', 'bf16'}
         self.mixed_precision_mode = 'fp16' if mixed_precision is True else mixed_precision
         if self.mixed_precision_mode:
-            if importlib.util.find_spec("torch.amp") is not None:
-                self.autocast = torch.amp.autocast
-                self.scaler = torch.amp.GradScaler()
-            else:
-                self.autocast = torch.cuda.amp.autocast
-                self.scaler = torch.cuda.amp.GradScaler()
+            self.autocast = torch.amp.autocast if importlib.util.find_spec("torch.amp") else torch.cuda.amp.autocast
+            self.scaler = torch.amp.GradScaler() if importlib.util.find_spec("torch.amp") else torch.cuda.amp.GradScaler()
 
         # 训练过程观测的指标
         self.metrics = OrderedDict({'loss': None})
@@ -212,7 +208,8 @@ class Trainer:
         ''' Perform a training step on a batch of inputs. '''
         # 计算loss
         if self.mixed_precision_mode:
-            with self.autocast(dtype=torch.float16 if self.mixed_precision_mode=='fp16' else torch.bfloat16):
+            kwargs = {'device_type': 'cuda'} if importlib.util.find_spec("torch.amp") else dict()
+            with self.autocast(dtype=torch.float16 if self.mixed_precision_mode=='fp16' else torch.bfloat16, **kwargs):
                 output = self._forward(train_X)
                 loss_detail = self.criterion(output, train_y)
         else:

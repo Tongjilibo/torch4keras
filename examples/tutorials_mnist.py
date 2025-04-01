@@ -51,7 +51,7 @@ if method == 1:
     model = MyModel(net).to(device)
     optimizer = optim.Adam(model.parameters())
     scheduler = get_linear_schedule_with_warmup(optimizer, steps_per_epoch, steps_per_epoch*epochs)
-    model.compile(optimizer=optimizer, scheduler=scheduler, loss=nn.CrossEntropyLoss(), metrics=['acc'])
+    model.compile(optimizer=optimizer, scheduler=scheduler, mixed_precision=True, loss=nn.CrossEntropyLoss(), metrics=['acc'])
 
 elif method == 2:
     # 方式2：把nn.Module传入Trainer
