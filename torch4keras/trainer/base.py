@@ -53,7 +53,7 @@ class Trainer:
     >>> model.fit(train_dataloader, steps_per_epoch=None, epochs=5)
     ```
     '''
-    def __init__(self, module:nn.Module=None):
+    def __init__(self, module:nn.Module=None, *args, **kwargs):
         super(Trainer, self).__init__()
         self.initialize(module)
     
