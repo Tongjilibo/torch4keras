@@ -3,10 +3,11 @@ from typing import Any, Tuple, Union
 from packaging import version
 from functools import lru_cache
 from packaging.version import Version, parse
-from .log import log_warn_once
+from .log import log_warn_once, log_error_once
 import os
 import sys
 import operator as op
+from contextlib import contextmanager
 if sys.version_info < (3, 8):
     import importlib_metadata
 else:
@@ -174,3 +175,34 @@ def is_xpu_available(check_device=False):
 def is_mps_available():
     import torch
     return is_torch_version(">=", "1.12") and torch.backends.mps.is_available() and torch.backends.mps.is_built()
+
+
+@contextmanager
+def safe_import(pkg_name: str = None):
+    '''import some module safely
+    - 部分包中使用到某些函数，import出错也不影响其他函数的运行
+    - 如果下面函数入参类型声明使用到了这个包，这种方式也会报错，比如定义`def func(df:pd.DataFrame)`，但是不存在pandas包
+
+    :param pkg_name: str, 包名，用于检查module是否存在，默认为None表示不检查
+
+    ### Example
+    ```python
+    from torch4keras.snippets import safe_import
+    with safe_import('pptx') as si:
+        if si:  # 包存在才执行
+            from pptx import Presentation
+
+    # 不验证包是否存在, import出错不影响运行
+    with safe_import():
+        import fitz
+    '''
+    try:
+        if pkg_name is None:  # 未指定包名
+            yield True
+        elif not is_package_available(pkg_name): # 指定包名但不存在
+            log_warn_once(f"No module named '{pkg_name}'")
+            yield False
+        else:  # 指定报名且存在
+            yield True
+    except Exception as e:
+        log_warn_once(f"{e}")
