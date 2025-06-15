@@ -40,6 +40,7 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 ## 4. 版本历史
 |更新日期| 版本 | 版本说明 |
 |------| ----------------- |----------- |
+|20250615|v0.3.0|增加`safe_torch_load`和`safe_import`|
 |20250511|v0.2.9.post2|trainer增加kwargs|
 |20250401|v0.2.9|更新torch.amp|
 |20250211|v0.2.8|屏蔽torch.load警告, Timeit提示|

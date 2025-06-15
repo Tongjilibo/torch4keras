@@ -210,6 +210,14 @@ def metric_mapping(metric:str, func:Callable, y_pred:Union[Tensor, List[Tensor],
     return None
 
 
+def safe_torch_load(checkpoint:str, map_location='cpu'):
+    '''安全加载torch checkpoint, 支持weights_only参数'''
+    if 'weights_only' in inspect.signature(torch.load).parameters:
+        return torch.load(checkpoint, map_location=map_location, weights_only=True)
+    else:
+        return torch.load(checkpoint, map_location=map_location)
+
+
 def load_checkpoint(checkpoint:str, load_safetensors:bool=False):
     '''加载ckpt, 支持torch.load和safetensors
     '''
@@ -229,10 +237,7 @@ def load_checkpoint(checkpoint:str, load_safetensors:bool=False):
         return safe_load_file(checkpoint)
     else:
         # 正常加载pytorch_model.bin
-        if 'weights_only' in inspect.signature(torch.load).parameters:
-            return torch.load(checkpoint, map_location='cpu', weights_only=True)
-        else:
-            return torch.load(checkpoint, map_location='cpu')
+        return safe_torch_load(checkpoint)
 
 
 def save_checkpoint(state_dict:dict, save_path:str, save_safetensors:bool=False):
