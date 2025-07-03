@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Type
 import os
 import random
 from .log import log_info, log_warn, log_error, log_warn_once, print_table
@@ -656,3 +656,123 @@ class NoopContextManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         # 不执行任何操作，也不抑制异常
         return False
+
+
+
+def cache_text(file_path=None):
+    '''把一个字符串缓存到本地txt'''
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if file_path is not None:
+                if os.path.exists(file_path):
+                    # 文件存在则直接读取
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+                else:
+                    # 文件不存在则调用原函数提取文本
+                    text: str = func(*args, **kwargs) or ""  # 调用原函数提取文本
+
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)  # 确保目录存在
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(text)
+                    return text
+            else:
+                return func(*args, **kwargs) or ""
+        return wrapper
+    return decorator
+
+
+def try_except(
+    exception: Type[Exception] = Exception,  # 默认捕获所有 Exception
+    logger: Optional[Callable[[str], None]] = None,  # 自定义日志记录函数
+    default: Any = None,  # 异常时的返回值
+    reraise: bool = False,  # 是否重新抛出异常
+):
+    """
+    通用的 try-except 装饰器
+    
+    Args:
+        exception: 要捕获的异常类型（默认捕获所有 Exception）
+        logger: 日志记录函数（如 logging.error 或 print）
+        default: 发生异常时的返回值
+        reraise: 是否重新抛出异常（True 时忽略 default 参数）
+    """
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except exception as e:
+                error_msg = f"Exception in {func.__name__}: {str(e)}"
+                if logger:
+                    logger(error_msg)
+                else:
+                    log_error(error_msg)  # 默认打印到控制台
+                
+                if reraise:
+                    raise  # 重新抛出异常
+                return default
+        return wrapper
+    return decorator
+
+
+class TryExcept:
+    """
+    通用的 try-except 上下文管理器
+    
+    Args:
+        exception: 要捕获的异常类型（默认捕获所有 Exception）
+        logger: 日志记录函数（如 logging.error 或 print）
+        default: 发生异常时的返回值（仅对返回值的上下文管理器有用）
+        reraise: 是否重新抛出异常
+    """
+    def __init__( 
+        self,
+        exception: Type[Exception] = Exception,
+        logger: Optional[Callable[[str], None]] = None,
+        default: Any = None,
+        reraise: bool = False,
+    ):
+        self.exception = exception
+        self.logger = logger
+        self.default = default
+        self.reraise = reraise
+ 
+    def __enter__(self):
+        """进入上下文时无需特殊操作，返回自身以便在 with 块中使用"""
+        return self
+ 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """退出上下文时处理异常"""
+        if exc_type is not None:  # 如果有异常发生
+            if issubclass(exc_type, self.exception):  # 检查是否是指定的异常类型
+                error_msg = f"{exc_val}"
+                if self.logger:
+                    self.logger(error_msg)
+                else:
+                    log_error(error_msg)  # 默认打印到控制台
+                
+                if self.reraise:
+                    return False  # 重新抛出异常（返回 False 会传播异常）
+                return True  # 抑制异常（返回 True 表示已处理）
+            else:
+                return False  # 不是指定的异常类型，重新抛出
+        return False  # 没有异常发生
+ 
+    def run(self, func: Callable, *args, **kwargs) -> Any:
+        """
+        可选：像装饰器一样运行函数（类似原装饰器的功能）
+        """
+        try:
+            return func(*args, **kwargs)
+        except self.exception as e:
+            error_msg = f"Exception in {func.__name__}: {e}"
+            if self.logger:
+                self.logger(error_msg)
+            else:
+                log_error(error_msg)
+            
+            if self.reraise:
+                raise
+            return self.default
