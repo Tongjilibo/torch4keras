@@ -3,10 +3,8 @@ import time
 import os
 import traceback
 import copy
-import functools
-from .log import log_info, log_warn, log_error
+from .log import log_info, log_warn, log_error, colorful
 from .import_utils import is_torch_available, is_xpu_available, is_npu_available, is_mps_available
-from pprint import pprint
 import datetime
 
 
@@ -78,7 +76,7 @@ def timeit(func):
         start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
         end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end))
 
-        log_info(f'Function `{func.__name__}` cost {consume} [{start1} < {end1}]')
+        log_info(f'Function `{func.__name__}` cost {colorful(consume)} [{start1} < {end1}]')
         return res
     return warpper
 
@@ -98,10 +96,9 @@ class TimeitContextManager:
     ...     # ti(10) # 统计速度
     ```
     '''
-    def __enter__(self, template='Average speed: {:.2f}/s'):
+    def __enter__(self):
         self.count = None
         self.global_start_tm = self.start_tm = time.time()
-        self.template = template
         return self
 
     def __call__(self, count):
@@ -131,16 +128,14 @@ class TimeitContextManager:
             prefix = 'Accumulated'
         
         consume = end_tm - start_tm
-        if self.count is None:
-            # 只记录耗时
+        start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_tm))
+        end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
+        if self.count is None:  # 只记录耗时
             consume = format_time(consume, hhmmss=False)
-            start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_tm))
-            end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
-            log_info(f'{name} {prefix} Cost {consume} [{start1} < {end1}]')
-        elif consume > 0:
-            # 记录平均耗时
-            speed = self.count / consume
-            log_info(f'{name} {prefix} {self.template.format(speed)}')
+            log_info(f'{name} {prefix} Cost {colorful(consume)} [{start1} < {end1}]')
+        elif consume > 0:  # 记录平均耗时
+            speed = f'{self.count / consume:.2f}/s'
+            log_info(f'{name} {prefix} Average speed {colorful(speed)} [{start1} < {end1}]')
         else:
             pass
             # log_warn('Time duration = 0')
@@ -150,12 +145,6 @@ class TimeitContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.lap(name='Total', reset=False)
-
-
-class Timeit(TimeitContextManager):
-    def __init__(self) -> None:
-        super().__init__()
-        raise DeprecationWarning('`Timeit` has been deprecated since torch4keras==v0.2.8, use `TimeitContextManager` instead')
 
 
 class TimeitLogger:
@@ -199,7 +188,7 @@ class TimeitLogger:
         if verbose > 1:
             start1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_tm))
             end1 = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_tm))
-            log_info(f'{name} Cost {consume} [{start1} < {end1}]')
+            log_info(f'{name} Cost {colorful(consume)} [{start1} < {end1}]')
 
     def end(self, verbose=1):
         for k, v in self.count.items():
@@ -213,12 +202,6 @@ class TimeitLogger:
             cost = copy.deepcopy(self.cost)
             self.reset()
             return cost
-
-
-class Timeit2(TimeitLogger):
-    def __init__(self) -> None:
-        super().__init__()
-        raise DeprecationWarning('`Timeit2` has been deprecated since torch4keras==v0.2.8, use `TimeitLogger` instead')
 
 
 def send_email(mail_receivers:Union[str,list], mail_subject:str, mail_msg:str="", mail_host:str=None, 
