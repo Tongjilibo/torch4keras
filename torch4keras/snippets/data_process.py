@@ -225,7 +225,10 @@ def load_checkpoint(checkpoint:str, load_safetensors:bool=False):
         # 加载safetensors格式
         with safe_open(checkpoint, framework="pt") as f:
             metadata = f.metadata()
-        if metadata.get("format") not in ["pt", "tf", "flax"]:
+        
+        if metadata is None:
+            pass
+        elif metadata.get("format") not in ["pt", "tf", "flax"]:
             raise OSError(
                 f"The safetensors archive passed at {checkpoint} does not contain the valid metadata. Make sure "
                 "you save your model with the `save_pretrained` method."
