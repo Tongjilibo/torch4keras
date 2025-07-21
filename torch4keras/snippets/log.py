@@ -33,7 +33,7 @@ def colorful(obj, color="yellow", display_type="plain"):
     |8            |    不可见     |
     '''
     color_dict = {"black":"30", "red":"31", "green":"32", "yellow":"33",
-                    "blue":"34", "purple":"35","cyan":"36",  "white":"37"}
+                  "blue":"34", "purple":"35","cyan":"36",  "white":"37"}
     display_type_dict = {"plain":"0","highlight":"1","underline":"4",
                 "shine":"5","inverse":"7","invisible":"8"}
     s = str(obj)
@@ -41,6 +41,46 @@ def colorful(obj, color="yellow", display_type="plain"):
     display  = display_type_dict.get(display_type,"")
     out = '\033[{};{}m'.format(display,color_code)+s+'\033[0m'
     return out 
+
+
+def black(obj, display_type="plain"):
+    '''黑色'''
+    return colorful(obj, color='black', display_type=display_type)
+
+
+def red(obj, display_type="plain"):
+    '''红色'''
+    return colorful(obj, color='red', display_type=display_type)
+
+
+def green(obj, display_type="plain"):
+    '''绿色'''
+    return colorful(obj, color='green', display_type=display_type)
+
+
+def yellow(obj, display_type="plain"):
+    '''黄色'''
+    return colorful(obj, color='yellow', display_type=display_type)
+
+
+def blue(obj, display_type="plain"):
+    '''蓝色'''
+    return colorful(obj, color='blue', display_type=display_type)
+
+
+def purple(obj, display_type="plain"):
+    '''紫色'''
+    return colorful(obj, color='purple', display_type=display_type)
+
+
+def cyan(obj, display_type="plain"):
+    '''洋红'''
+    return colorful(obj, color='cyan', display_type=display_type)
+
+
+def white(obj, display_type="plain"):
+    '''白色'''
+    return colorful(obj, color='white', display_type=display_type)
 
 
 def log_level(string:str, level:Union[int, str]=0, verbose:int=1):
