@@ -80,7 +80,7 @@ def get_parameter_device(parameter):
 
 class DottableDict(dict):
     '''支持点操作符的字典，包括自动创建不存在的键和嵌套字典'''  
-    use_default_value:bool=False
+    use_default_value: bool = False
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._convert_values_to_dottable()
@@ -94,9 +94,7 @@ class DottableDict(dict):
   
     def __getattr__(self, item): 
         if self.use_default_value:  
-            if item not in self:
-                return None
-            return self[item]
+            return self.get(item)
         else:
             try:
                 return self[item]
