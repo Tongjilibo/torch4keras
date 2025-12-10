@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Type, Iterable, Self
 import os
 import random
 from .log import log_info, log_warn, log_error, log_warn_once, print_table
@@ -13,6 +13,7 @@ import re
 import requests
 import functools
 from collections import OrderedDict, defaultdict
+import copy
 
 
 if is_torch_available():
@@ -79,36 +80,123 @@ def get_parameter_device(parameter):
 
 
 class DottableDict(dict):
-    '''支持点操作符的字典，包括自动创建不存在的键和嵌套字典'''  
-    use_default_value: bool = False
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._convert_values_to_dottable()
-  
-    def _convert_values_to_dottable(self):
-        """递归地将所有字典值转换为 DottableDict 实例"""
-        for key, value in self.items():
-            if isinstance(value, dict) and not isinstance(value, DottableDict):
-                self[key] = DottableDict(value)
-                self[key]._convert_values_to_dottable()  # 递归转换嵌套字典
-  
-    def __getattr__(self, item): 
-        if self.use_default_value:  
-            return self.get(item)
+    """支持通过点操作符 (.key) 访问/设置/删除字典键的增强字典。"""
+    # 获取 dict 类型的所有非魔法属性（通常是公共方法）
+    _DICT_METHODS = frozenset(name for name in dir(dict) if not (name.startswith('__') and name.endswith('__')))
+    # 添加你自己在 DottableDict 中定义的方法
+    _CUSTOM_METHODS = frozenset({"to_dict", "copy", "deepcopy"})
+    # 合并成最终的受保护键集合
+    _PROTECTED_KEYS = _DICT_METHODS | _CUSTOM_METHODS
+    
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        merged = dict(*args, **kwargs)
+        for key in merged:
+            self._check_protected_key(key)
+        converted = {k: self._convert_value(v) for k, v in merged.items()}
+        super().__init__(converted)
+
+    @staticmethod
+    def _convert_value(value: Any) -> Any:
+        if isinstance(value, dict) and not isinstance(value, DottableDict):
+            return DottableDict(value)
+        elif isinstance(value, (list, tuple)):
+            return type(value)(DottableDict._convert_value(item) for item in value)
+        return value
+
+    def _check_protected_key(self, key: Any) -> None:
+        """检查给定的键是否是受保护的键，并在必要时引发异常。"""
+        if isinstance(key, str) and key in self._PROTECTED_KEYS:
+            # 根据上下文，你可以选择抛出不同的异常或提供更具体的错误信息
+            # 这里统一抛出 ValueError，符合你之前的模式
+            raise ValueError(f"Key '{key}' is protected (conflicts with built-in method).")
+        
+    def __getattr__(self, key: str) -> Any:
+        if key in self:
+            return self[key]
         else:
-            try:
-                return self[item]
-            except KeyError:
-                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
-  
-    def __setattr__(self, key, value):
-        if key.startswith('__') and key.endswith('__'):
-            # 允许设置特殊方法名
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        if key.startswith("__") and key.endswith("__"):
             super().__setattr__(key, value)
         else:
-            if isinstance(value, dict) and not isinstance(value, DottableDict):
-                value = DottableDict(value)
-            self[key] = value
+            self._check_protected_key(key)
+            self[key] = self._convert_value(value)
+
+    def __delattr__(self, key: str) -> None:
+        if key.startswith("__") and key.endswith("__"):
+            super().__delattr__(key)
+        else:
+            try:
+                del self[key]
+            except KeyError:
+                raise AttributeError(f"'{self.__class__.__name__}' has no attribute '{key}'")
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        self._check_protected_key(key)
+        super().__setitem__(key, self._convert_value(value))
+
+    def __copy__(self) -> Self:
+        new_dict = self.__class__()
+        for key, value in self.items():
+            new_dict[key] = value
+        return new_dict
+
+    def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None) -> Self:
+        if memo is None:
+            memo = {}
+        if id(self) in memo:
+            return memo[id(self)]
+        new_dict = self.__class__()
+        memo[id(self)] = new_dict
+        for key, value in self.items():
+            new_dict[key] = copy.deepcopy(value, memo)
+        return new_dict
+
+    def update(self, other: Optional[Union[Dict[Any, Any], Iterable[Any]]] = None, **kwargs: Any) -> None: # Renamed __m
+        if other is None:
+            converted = {}
+        elif isinstance(other, dict):
+            converted = {k: self._convert_value(v) for k, v in other.items()}
+        else:
+            # Convert iterable of pairs [(k1, v1), (k2, v2), ...]
+            converted = [(k, self._convert_value(v)) for k, v in other]
+        super().update(converted)
+
+        if not kwargs:
+            return
+        converted = {k: self._convert_value(v) for k, v in kwargs.items()}
+        super().update(converted)
+
+    def to_dict(self, memo: Optional[Dict[int, Any]] = None) -> Dict[Any, Any]:
+        if memo is None:
+            memo = {}
+        if id(self) in memo:
+            return memo[id(self)]
+        result = {}
+        memo[id(self)] = result
+        for key, value in self.items():
+            if isinstance(value, DottableDict):
+                result[key] = value.to_dict(memo)
+            elif isinstance(value, (list, tuple)):
+                result[key] = type(value)(
+                    item.to_dict(memo) if isinstance(item, DottableDict) else item
+                    for item in value
+                )
+            else:
+                result[key] = value
+        return result
+
+    def copy(self) -> Self:
+        return self.__copy__()
+
+    def deepcopy(self) -> Self:
+        return self.__deepcopy__()
+
+    def __repr__(self) -> str:
+        return f"DottableDict({super().__repr__()})"
+
 KwargsConfig = DottableDict
 
 
