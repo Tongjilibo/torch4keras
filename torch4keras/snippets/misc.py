@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Type, Iterable, Self
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Type, Iterable
 import os
 import random
 from .log import log_info, log_warn, log_error, log_warn_once, print_table
@@ -137,13 +137,13 @@ class DottableDict(dict):
         self._check_protected_key(key)
         super().__setitem__(key, self._convert_value(value))
 
-    def __copy__(self) -> Self:
+    def __copy__(self):
         new_dict = self.__class__()
         for key, value in self.items():
             new_dict[key] = value
         return new_dict
 
-    def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None) -> Self:
+    def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None):
         if memo is None:
             memo = {}
         if id(self) in memo:
@@ -188,10 +188,10 @@ class DottableDict(dict):
                 result[key] = value
         return result
 
-    def copy(self) -> Self:
+    def copy(self):
         return self.__copy__()
 
-    def deepcopy(self) -> Self:
+    def deepcopy(self):
         return self.__deepcopy__()
 
     def __repr__(self) -> str:
