@@ -16,7 +16,7 @@ import sys
 from enum import Enum, unique
 from .snippets.shell import run_shell_script
 
-VERSION = "v0.3.2"
+VERSION = "v0.3.3"
 
 line_length = 70
 
