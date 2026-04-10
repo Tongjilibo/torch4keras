@@ -3,7 +3,7 @@ import time
 import os
 import traceback
 import copy
-from .log import log_info, log_warn, log_error, colorful
+from .logging import log_info, log_warn, log_error, colorful
 from .import_utils import is_torch_available, is_xpu_available, is_npu_available, is_mps_available
 import datetime
 

@@ -2,7 +2,7 @@ import numpy as np
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Type, Iterable
 import os
 import random
-from .log import log_info, log_warn, log_error, log_warn_once, print_table
+from .logging import log_info, log_warn, log_error, log_warn_once, print_table
 from .monitor import format_timestamp, format_time
 from .import_utils import is_torch_available
 import json
@@ -18,11 +18,11 @@ import copy
 
 if is_torch_available():
     import torch
-    from torch import Tensor
     from torch.nn import Module
+    from torch import Tensor
 else:
-    class Tensor: pass
     class Module: pass
+    class Tensor: pass
 
 
 def seed_everything(seed:int=None):
@@ -79,37 +79,21 @@ def get_parameter_device(parameter):
         return first_tuple[1].device
 
 
-class DottableDict(dict):
-    """支持通过点操作符 (.key) 访问/设置/删除字典键的增强字典。"""
-    # 获取 dict 类型的所有非魔法属性（通常是公共方法）
-    _DICT_METHODS = frozenset(name for name in dir(dict) if not (name.startswith('__') and name.endswith('__')))
-    # 添加你自己在 DottableDict 中定义的方法
-    _CUSTOM_METHODS = frozenset({"to_dict", "copy", "deepcopy"})
-    # 合并成最终的受保护键集合
-    _PROTECTED_KEYS = _DICT_METHODS | _CUSTOM_METHODS
-    
+class DotDict(dict):
+    """支持通过点操作符 (.key) 访问/设置/删除字典键的增强字典。"""   
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         merged = dict(*args, **kwargs)
-        for key in merged:
-            self._check_protected_key(key)
-        converted = {k: self._convert_value(v) for k, v in merged.items()}
+        converted = {k: self._convert(v) for k, v in merged.items()}
         super().__init__(converted)
 
     @staticmethod
-    def _convert_value(value: Any) -> Any:
-        if isinstance(value, dict) and not isinstance(value, DottableDict):
-            return DottableDict(value)
+    def _convert(value: Any) -> Any:
+        if isinstance(value, dict) and not isinstance(value, DotDict):
+            return DotDict(value)
         elif isinstance(value, (list, tuple)):
-            return type(value)(DottableDict._convert_value(item) for item in value)
+            return type(value)(DotDict._convert(item) for item in value)
         return value
-
-    def _check_protected_key(self, key: Any) -> None:
-        """检查给定的键是否是受保护的键，并在必要时引发异常。"""
-        if isinstance(key, str) and key in self._PROTECTED_KEYS:
-            # 根据上下文，你可以选择抛出不同的异常或提供更具体的错误信息
-            # 这里统一抛出 ValueError，符合你之前的模式
-            raise ValueError(f"Key '{key}' is protected (conflicts with built-in method).")
         
     def __getattr__(self, key: str) -> Any:
         if key in self:
@@ -118,55 +102,44 @@ class DottableDict(dict):
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __setattr__(self, key: str, value: Any) -> None:
-        if key.startswith("__") and key.endswith("__"):
-            super().__setattr__(key, value)
-        else:
-            self._check_protected_key(key)
-            self[key] = self._convert_value(value)
+        if hasattr(self.__class__, key):
+            raise AttributeError("'DotDict' object attribute '{0}' is read-only".format(key))
+        self[key] = self._convert(value)
 
-    def __delattr__(self, key: str) -> None:
-        if key.startswith("__") and key.endswith("__"):
-            super().__delattr__(key)
-        else:
-            try:
-                del self[key]
-            except KeyError:
-                raise AttributeError(f"'{self.__class__.__name__}' has no attribute '{key}'")
+    def __delattr__(self, name):
+        del self[name]
 
     def __setitem__(self, key: Any, value: Any) -> None:
-        self._check_protected_key(key)
-        super().__setitem__(key, self._convert_value(value))
+        super().__setitem__(key, value)
 
-    def __copy__(self):
-        new_dict = self.__class__()
-        for key, value in self.items():
-            new_dict[key] = value
-        return new_dict
+    def copy(self):
+        return copy.copy(self)
 
-    def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None):
-        if memo is None:
-            memo = {}
+    def deepcopy(self):
+        return copy.deepcopy(self)
+
+    def __deepcopy__(self, memo):
         if id(self) in memo:
             return memo[id(self)]
-        new_dict = self.__class__()
-        memo[id(self)] = new_dict
+        new_dict  = self.__class__()
+        memo[id(self)] = new_dict 
         for key, value in self.items():
-            new_dict[key] = copy.deepcopy(value, memo)
-        return new_dict
+            new_dict [copy.deepcopy(key, memo)] = copy.deepcopy(value, memo)
+        return new_dict 
 
     def update(self, other: Optional[Union[Dict[Any, Any], Iterable[Any]]] = None, **kwargs: Any) -> None: # Renamed __m
         if other is None:
             converted = {}
         elif isinstance(other, dict):
-            converted = {k: self._convert_value(v) for k, v in other.items()}
+            converted = {k: self._convert(v) for k, v in other.items()}
         else:
             # Convert iterable of pairs [(k1, v1), (k2, v2), ...]
-            converted = [(k, self._convert_value(v)) for k, v in other]
+            converted = [(k, self._convert(v)) for k, v in other]
         super().update(converted)
 
         if not kwargs:
             return
-        converted = {k: self._convert_value(v) for k, v in kwargs.items()}
+        converted = {k: self._convert(v) for k, v in kwargs.items()}
         super().update(converted)
 
     def to_dict(self, memo: Optional[Dict[int, Any]] = None) -> Dict[Any, Any]:
@@ -177,27 +150,38 @@ class DottableDict(dict):
         result = {}
         memo[id(self)] = result
         for key, value in self.items():
-            if isinstance(value, DottableDict):
+            if isinstance(value, DotDict):
                 result[key] = value.to_dict(memo)
             elif isinstance(value, (list, tuple)):
                 result[key] = type(value)(
-                    item.to_dict(memo) if isinstance(item, DottableDict) else item
+                    item.to_dict(memo) if isinstance(item, DotDict) else item
                     for item in value
                 )
             else:
                 result[key] = value
         return result
 
-    def copy(self):
-        return self.__copy__()
-
-    def deepcopy(self):
-        return self.__deepcopy__()
-
     def __repr__(self) -> str:
-        return f"DottableDict({super().__repr__()})"
+        return f"DotDict({super().__repr__()})"
 
-KwargsConfig = DottableDict
+DottableDict = DotDict
+KwargConfig = DotDict
+
+
+def func_return_dotdict(func:Callable):
+    '''
+    装饰器：将函数返回值中的所有字典（包括嵌套/列表中的字典）转换为 DotDict
+    '''
+    def wrapper(*args, **kwargs):
+        res = func(*args, **kwargs)
+        if isinstance(res, dict):
+            try:
+                return DotDict(res)
+            except Exception:
+                return res
+        else:
+            return res
+    return wrapper
 
 
 class CachedDictBySize(OrderedDict):
@@ -287,7 +271,7 @@ class CachedDictByTimeout(dict):
         return default
 
  
-class JsonConfig(DottableDict):
+class JsonConfig(DotDict):
     '''读取json配置文件/字符串/字典并返回可.操作符的字典
     1. json文件路径
     2. json字符串
@@ -304,25 +288,25 @@ class JsonConfig(DottableDict):
                 data = json.loads(json_path_or_str, "r", encoding=encoding)
         elif isinstance(json_path_or_str, dict):
             pass
-        return DottableDict(data) if dot else data
+        return DotDict(data) if dot else data
 
 
-class YamlConfig(DottableDict):
+class YamlConfig(DotDict):
     '''读取yaml配置文件并返回可.操作符的字典'''
     def __new__(cls, yaml_path:str, encoding:str='utf-8', dot:bool=True):
         import yaml
         data = yaml.load(open(yaml_path, "r", encoding=encoding), Loader=yaml.FullLoader)
-        return DottableDict(data) if dot else data
+        return DotDict(data) if dot else data
 
 
-class IniConfig(DottableDict):
+class IniConfig(DotDict):
     '''读取ini配置文件'''
     def __new__(cls, ini_path:str, encoding:str='utf-8', dot:bool=True):
         import configparser
         config = configparser.ConfigParser()
         config.read(ini_path, encoding=encoding)
         if dot:
-            return DottableDict({section: DottableDict(config.items(section)) for section in config.sections()})
+            return DotDict({section: DotDict(config.items(section)) for section in config.sections()})
         else:
             return config
 
@@ -582,7 +566,7 @@ def argument_parse(arguments:Union[str, list, dict]=None, description='argument_
         args = parser.parse_args()
     
     if dot is True:
-        args = DottableDict(vars(args))
+        args = DotDict(vars(args))
     return args
 
 

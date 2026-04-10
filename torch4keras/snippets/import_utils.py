@@ -3,7 +3,7 @@ from typing import Any, Tuple, Union
 from packaging import version
 from functools import lru_cache
 from packaging.version import Version, parse
-from .log import log_warn_once, log_error_once
+from .logging import log_warn_once, log_error_once
 import os
 import sys
 import operator as op
