@@ -46,6 +46,8 @@ pip install git+https://github.com/Tongjilibo/torch4keras.git
 
 | 更新日期 | 版本         | 版本说明                                                                                                            |
 | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| 20260513 | v0.3.4       | 把transfromers的logging模块迁移，修改名称为DotDict                                                                     |
+| 20260114 | v0.3.3       | 修改功能函数（DottableDict）                                                                                        |
 | 20250925 | v0.3.2       | 增加常见 `shell`命令                                                                                              |
 | 20250721 | v0.3.1       | add `cache_text`, `try_except`, `TryExcept`, 完善耗时计算，修改 `load_checkpoint`，增加 `green`等颜色函数 |
 | 20250615 | v0.3.0       | 增加 `safe_torch_load`和 `safe_import`                                                                          |
